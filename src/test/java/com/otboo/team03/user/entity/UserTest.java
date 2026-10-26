@@ -16,7 +16,7 @@ class UserTest {
         String name = "테스트 사용자";
 
         // when
-        User user = User.create(email, encodedPassword, name);
+        User user = new User(email, encodedPassword, name);
 
         // then
         assertThat(user.getEmail()).isEqualTo(email);
