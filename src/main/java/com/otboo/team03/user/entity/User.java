@@ -1,22 +1,17 @@
 package com.otboo.team03.user.entity;
 
+import com.otboo.team03.global.entity.BaseUpdatableEntity;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import java.time.Instant;
-import java.util.UUID;
 
 @Entity
 @Table(name = "users")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class User {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+public class User extends BaseUpdatableEntity {
 
     @Column(nullable = false, unique = true, length = 255)
     private String email;
@@ -34,21 +29,11 @@ public class User {
     @Column(nullable = false)
     private boolean locked;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
-
     public User(String email, String encodedPassword, String name) {
         this.email = email;
         this.password = encodedPassword;
         this.name = name;
         this.role = UserRole.USER;
         this.locked = false;
-
-        Instant now = Instant.now();
-        this.createdAt = now;
-        this.updatedAt = now;
     }
 }
