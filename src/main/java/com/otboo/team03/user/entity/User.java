@@ -1,6 +1,6 @@
 package com.otboo.team03.user.entity;
 
-import com.otboo.team03.global.entity.BaseUpdatableEntity;
+import com.otboo.team03.global.domain.UpdateEntity;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
 @Table(name = "users")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class User extends BaseUpdatableEntity {
+public class User extends UpdateEntity {
 
     @Column(nullable = false, unique = true, length = 255)
     private String email;
