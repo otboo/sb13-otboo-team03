@@ -56,6 +56,10 @@ dependencies {
         testImplementation 'org.springframework.boot:spring-boot-testcontainers'
         testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
         testImplementation 'org.testcontainers:testcontainers-postgresql'
+
+        // Security
+        implementation 'org.springframework.boot:spring-boot-starter-security'
+        testImplementation 'org.springframework.security:spring-security-test'
 }
 
 tasks.named('test') {
