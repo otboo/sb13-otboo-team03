@@ -15,8 +15,8 @@ CREATE TABLE users
 CREATE TABLE weathers
 (
     id                        UUID          NOT NULL,
-    nx                        INTEGER       NOT NULL,
-    ny                        INTEGER       NOT NULL,
+    latitude                  DOUBLE PRECISION NOT NULL,
+    longitude                 DOUBLE PRECISION NOT NULL,
     forecasted_at             TIMESTAMPTZ   NOT NULL,
     forecast_at               TIMESTAMPTZ   NOT NULL,
     sky_status                VARCHAR(30)   NOT NULL,
@@ -74,8 +74,6 @@ CREATE TABLE profiles
     birth_date              DATE             NULL,
     latitude                DOUBLE PRECISION NULL,
     longitude               DOUBLE PRECISION NULL,
-    nx                      INTEGER          NULL,
-    ny                      INTEGER          NULL,
     temperature_sensitivity INTEGER          NULL,
     location_names          JSONB            NULL,
     created_at              TIMESTAMPTZ      NOT NULL,
