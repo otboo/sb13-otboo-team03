@@ -3,6 +3,7 @@ package com.otboo.team03.user.controller;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.UserRole;
+import com.otboo.team03.user.exception.DuplicateEmailException;
 import com.otboo.team03.user.service.UserService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -106,6 +107,32 @@ class UserControllerTest {
                     .andExpect(status().isBadRequest());
 
             validator.close();
+        }
+
+        @Test
+        @DisplayName("실패 - 이메일 중복 (409 Conflict)")
+        void createUser_duplicateEmail() throws Exception {
+            // given
+            given(userService.createUser(any(UserCreateRequest.class)))
+                    .willThrow(new DuplicateEmailException());
+
+            MockMvc mockMvc = MockMvcBuilders
+                    .standaloneSetup(userController)
+                    .build();
+
+            // when & then
+            mockMvc.perform(post("/api/users")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                            {
+                              "name": "홍길동",
+                              "email": "test@example.com",
+                              "password": "password123!"
+                            }
+                            """))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.exceptionName").exists())
+                    .andExpect(jsonPath("$.message").exists());
         }
     }
 }
