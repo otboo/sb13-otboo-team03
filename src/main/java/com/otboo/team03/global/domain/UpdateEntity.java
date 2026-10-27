@@ -5,7 +5,7 @@ import lombok.Getter;
 import lombok.ToString;
 import org.springframework.data.annotation.LastModifiedDate;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @MappedSuperclass
 @Getter
@@ -13,5 +13,5 @@ import java.time.LocalDateTime;
 public abstract class UpdateEntity extends CreateEntity {
 
     @LastModifiedDate
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 }
