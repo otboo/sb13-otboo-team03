@@ -1,5 +1,6 @@
 package com.otboo.team03.user.controller;
 
+import com.otboo.team03.global.exception.GlobalExceptionHandler;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.UserRole;
@@ -118,6 +119,7 @@ class UserControllerTest {
 
             MockMvc mockMvc = MockMvcBuilders
                     .standaloneSetup(userController)
+                    .setControllerAdvice(new GlobalExceptionHandler())
                     .build();
 
             // when & then

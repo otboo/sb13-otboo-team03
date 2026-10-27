@@ -21,6 +21,10 @@ public class UserController {
 
     @PostMapping
     public ResponseEntity<UserDto> createUser(@Valid @RequestBody UserCreateRequest request) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        UserDto response = userService.createUser(request);
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(response);
     }
 }
