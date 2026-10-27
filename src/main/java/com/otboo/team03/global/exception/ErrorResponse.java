@@ -1,19 +1,21 @@
 package com.otboo.team03.global.exception;
 
-import java.time.Instant;
+import java.util.Map;
 
 public record ErrorResponse (
-        Instant timestamp,
-        int status,
-        String code,
-        String message
+        String exceptionName,
+        String message,
+        Map<String, String> details
 ) {
-    public static ErrorResponse from(ErrorCode errorCode) {
+    public static ErrorResponse from(ErrorCode errorCode, Map<String, String> details) {
         return new ErrorResponse(
-                Instant.now(),
-                errorCode.getHttpStatus().value(),
                 errorCode.name(),
-                errorCode.getMessage()
+                errorCode.getMessage(),
+                details
         );
+    }
+
+    public static ErrorResponse from(ErrorCode errorCode) {
+        return from(errorCode, Map.of());
     }
 }
