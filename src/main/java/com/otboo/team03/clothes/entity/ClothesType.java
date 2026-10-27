@@ -1,4 +1,4 @@
-package com.otboo.team03.global.domain;
+package com.otboo.team03.clothes.entity;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
