@@ -31,13 +31,13 @@ CREATE TABLE weathers
     CONSTRAINT pk_weathers PRIMARY KEY (id)
 );
 
-CREATE TABLE attribute_definition
+CREATE TABLE clothes_attribute_definitions
 (
     id                UUID         NOT NULL,
     name              VARCHAR(255) NOT NULL,
     selectable_values TEXT[] NOT NULL,
     created_at        TIMESTAMPTZ  NOT NULL,
-    CONSTRAINT pk_attribute_definition PRIMARY KEY (id)
+    CONSTRAINT pk_clothes_attribute_definitions PRIMARY KEY (id)
 );
 
 CREATE TABLE outbox_events
@@ -69,15 +69,15 @@ CREATE TABLE processed_events
 CREATE TABLE profiles
 (
     user_id                 UUID             NOT NULL,
-    profile_image_url       VARCHAR(2048) NULL,
-    gender                  VARCHAR(10) NULL,
-    birth_date              DATE             NOT NULL,
-    latitude                DOUBLE PRECISION NOT NULL,
-    longitude               DOUBLE PRECISION NOT NULL,
-    nx                      INTEGER NULL,
-    ny                      INTEGER NULL,
-    temperature_sensitivity INTEGER NULL,
-    location_names          JSONB            NOT NULL,
+    profile_image_url       VARCHAR(2048)    NULL,
+    gender                  VARCHAR(10)      NULL,
+    birth_date              DATE             NULL,
+    latitude                DOUBLE PRECISION NULL,
+    longitude               DOUBLE PRECISION NULL,
+    nx                      INTEGER          NULL,
+    ny                      INTEGER          NULL,
+    temperature_sensitivity INTEGER          NULL,
+    location_names          JSONB            NULL,
     created_at              TIMESTAMPTZ      NOT NULL,
     updated_at              TIMESTAMPTZ      NOT NULL,
     CONSTRAINT pk_profiles PRIMARY KEY (user_id),
@@ -103,7 +103,7 @@ CREATE TABLE clothes_attribute
     value         VARCHAR(255) NOT NULL,
     CONSTRAINT pk_clothes_attribute PRIMARY KEY (clothes_id, definition_id),
     CONSTRAINT fk_clothes_to_clothes_attribute FOREIGN KEY (clothes_id) REFERENCES clothes (id),
-    CONSTRAINT fk_attribute_definition_to_clothes_attribute FOREIGN KEY (definition_id) REFERENCES attribute_definition (id)
+    CONSTRAINT fk_clothes_attribute_definitions_to_clothes_attribute FOREIGN KEY (definition_id) REFERENCES clothes_attribute_definitions (id)
 );
 
 CREATE TABLE feeds
@@ -199,7 +199,7 @@ CREATE TABLE direct_message
 
 
 CREATE INDEX idx_direct_message_1 ON direct_message (id, dm_key, created_at);
-CREATE INDEX idx_feeds_1 ON feeds (id, created_at);
-CREATE INDEX idx_feeds_2 ON feeds (id, author_id, created_at);
+CREATE INDEX idx_feeds_1 ON feeds (created_at, id);
+CREATE INDEX idx_feeds_2 ON feeds (author_id, created_at, id);
 CREATE INDEX idx_notifications_1 ON notifications (id, receiver_id, created_at);
-CREATE INDEX idx_feed_comments_1 ON feed_comments (id, feed_id, created_at);
+CREATE INDEX idx_feed_comments_1 ON feed_comments (feed_id, created_at, id);
