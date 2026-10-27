@@ -1,5 +1,6 @@
 package com.otboo.team03.user.dto.response;
 
+import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.entity.UserRole;
 
 import java.time.Instant;
@@ -13,4 +14,14 @@ public record UserDto(
         UserRole role,
         boolean locked
 ) {
+    public static UserDto from(User user) {
+        return new UserDto(
+                user.getId(),
+                user.getCreatedAt(),
+                user.getEmail(),
+                user.getName(),
+                user.getRole(),
+                user.isLocked()
+        );
+    }
 }

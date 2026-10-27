@@ -47,6 +47,9 @@ class UserServiceTest {
         given(passwordEncoder.encode(request.password()))
                 .willReturn("encodedPassword");
 
+        given(userRepository.save(any(User.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+
         // when
         UserDto result = userService.createUser(request);
 
