@@ -1,4 +1,4 @@
-package com.otboo.team03.clothes.dto.request;
+package com.otboo.team03.global.domain;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;

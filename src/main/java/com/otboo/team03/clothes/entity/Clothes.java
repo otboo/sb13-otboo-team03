@@ -1,6 +1,6 @@
 package com.otboo.team03.clothes.entity;
 
-import com.otboo.team03.clothes.dto.request.ClothesType;
+import com.otboo.team03.global.domain.ClothesType;
 import com.otboo.team03.global.domain.BaseEntity;
 import jakarta.persistence.*;
 import lombok.AccessLevel;

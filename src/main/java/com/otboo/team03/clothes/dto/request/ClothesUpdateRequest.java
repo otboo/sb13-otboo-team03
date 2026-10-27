@@ -1,5 +1,6 @@
 package com.otboo.team03.clothes.dto.request;
 
+import com.otboo.team03.global.domain.ClothesType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 

@@ -1,6 +1,6 @@
 package com.otboo.team03.clothes.dto.response;
 
-import com.otboo.team03.clothes.dto.request.ClothesType;
+import com.otboo.team03.global.domain.ClothesType;
 
 import java.util.List;
 import java.util.UUID;
