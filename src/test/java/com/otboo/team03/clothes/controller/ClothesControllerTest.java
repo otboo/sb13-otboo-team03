@@ -26,6 +26,7 @@ class ClothesControllerTest {
     private ClothesService service;
     private MockMvc mvc;
     private final UUID ownerId = UUID.randomUUID();
+    private final UUID definitionId = UUID.randomUUID();
     private final UUID clothesId = UUID.randomUUID();
 
     @BeforeEach
@@ -47,15 +48,15 @@ class ClothesControllerTest {
         // when + then: 프론트처럼 JSON 요청을 보내 상태 코드와 응답 필드를 확인한다.
         mvc.perform(post("/api/clothes").contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"ownerId":"%s","name":"반팔","type":"TOP","attributes":[]}
-                                """.formatted(ownerId)))
+                                {"ownerId":"%s","name":"반팔","type":"TOP","attributes":[{"definitionId":"%s","value":"파랑"}]}
+                                """.formatted(ownerId, definitionId)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(clothesId.toString()))
                 .andExpect(jsonPath("$.ownerId").value(ownerId.toString()))
                 .andExpect(jsonPath("$.name").value("반팔"))
                 .andExpect(jsonPath("$.type").value("TOP"));
         // JSON이 요청 DTO로 변환되어 Service에 전달됐는지도 검증한다.
-        verify(service).create(new ClothesCreateRequest(ownerId, "반팔", ClothesType.TOP, List.of()));
+        verify(service).create(new ClothesCreateRequest(ownerId, "반팔", ClothesType.TOP, List.of(new com.otboo.team03.clothes.dto.request.ClothesAttributeDto(definitionId, "파랑"))));
     }
 
     @Test
@@ -93,5 +94,16 @@ class ClothesControllerTest {
 
     private ClothesDto response() {
         return new ClothesDto(clothesId, ownerId, "반팔", null, ClothesType.TOP, List.of());
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "null", "[]", "[null]", "[{\"value\":\"파랑\"}]", "[{\"definitionId\":\"00000000-0000-0000-0000-000000000001\",\"value\":\" \"}]"
+    })
+    @DisplayName("속성 목록이나 항목의 필수 값이 유효하지 않으면 400으로 거절한다")
+    void invalidAttributes(String attributes) throws Exception {
+        mvc.perform(post("/api/clothes").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"ownerId\":\"" + ownerId + "\",\"name\":\"반팔\",\"type\":\"TOP\",\"attributes\":" + attributes + "}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
     }
 }

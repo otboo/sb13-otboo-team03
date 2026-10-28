@@ -8,14 +8,18 @@ public enum ErrorCode {
 
     // user
     DUPLICATE_EMAIL(HttpStatus.BAD_REQUEST, "이미 사용 중인 이메일입니다."),
-
+    NOT_FOUND_USER(HttpStatus.NOT_FOUND, "사용자가 존재하지 않습니다."),
     // common
     INVALID_INPUT_VALUE(HttpStatus.BAD_REQUEST, "입력값이 올바르지 않습니다."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 내부 오류가 발생했습니다."),
 
     //clothes
-    NOT_FOUND_CLOTHES(HttpStatus.NOT_FOUND,"의상이 존재하지 않습니다.");
+    NOT_FOUND_CLOTHES(HttpStatus.NOT_FOUND,"의상이 존재하지 않습니다."),
 
+    //attribute
+    DUPLICATE_ATTRIBUTE(HttpStatus.BAD_REQUEST,"이미 정의된 속성입니다."),
+    NOT_FOUND_ATTRIBUTE_DEFINITION(HttpStatus.NOT_FOUND,"속성 정의 없음"),
+    INVALID_CLOTHES_ATTRIBUTE_VALUE(HttpStatus.BAD_REQUEST, "허용되지 않은 의상 속성 값입니다.");
     private final HttpStatus httpStatus;
     private final String message;
 
