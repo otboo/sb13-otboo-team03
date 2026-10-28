@@ -132,7 +132,7 @@ class UserControllerTest {
                               "password": "password123!"
                             }
                             """))
-                    .andExpect(status().isConflict())
+                    .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.exceptionName").exists())
                     .andExpect(jsonPath("$.message").exists());
         }
