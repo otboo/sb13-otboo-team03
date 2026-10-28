@@ -4,6 +4,7 @@ plugins {
     id 'jacoco'
     id 'org.springframework.boot' version '4.1.2'
     id 'io.spring.dependency-management' version '1.1.7'
+    id 'jacoco'
 }
 
 group = 'com.sb13.otboo.team03'
@@ -58,6 +59,10 @@ dependencies {
         testImplementation 'org.springframework.boot:spring-boot-testcontainers'
         testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
         testImplementation 'org.testcontainers:testcontainers-postgresql'
+
+        // Security
+        implementation 'org.springframework.boot:spring-boot-starter-security'
+        testImplementation 'org.springframework.security:spring-security-test'
 }
 
 tasks.named('test') {
@@ -75,5 +80,28 @@ tasks.named('jacocoTestReport') {
         // HTML은 사람이 확인하는 용도, XML은 CI 등 도구가 읽는 용도다.
         html.required = true
         xml.required = true
+    }
+}
+
+tasks.named('jacocoTestReport') {
+    dependsOn tasks.named('test')
+
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+tasks.named('jacocoTestCoverageVerification') {
+    dependsOn tasks.named('test')
+
+    violationRules {
+        rule {
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+        }
     }
 }
