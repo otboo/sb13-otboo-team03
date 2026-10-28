@@ -1,4 +1,3 @@
-
 package com.otboo.team03.global.security.jwt;
 
 import com.nimbusds.jose.JOSEException;
@@ -43,9 +42,7 @@ public class JwtTokenProvider {
         this.refreshTokenValidity = properties.refreshTokenValidity();
 
         if (secret.getBytes(StandardCharsets.UTF_8).length < 32) {
-            throw new IllegalArgumentException(
-                    "JWT Secret은 최소 32바이트 이상이어야 합니다."
-            );
+            throw new IllegalArgumentException("JWT Secret은 최소 32바이트 이상이어야 합니다.");
         }
     }
 
@@ -69,10 +66,7 @@ public class JwtTokenProvider {
                     .jwtID(UUID.randomUUID().toString())
                     .build();
 
-            SignedJWT jwt = new SignedJWT(
-                    new JWSHeader(JWSAlgorithm.HS256),
-                    claims
-            );
+            SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims);
 
             jwt.sign(new MACSigner(secret.getBytes(StandardCharsets.UTF_8)));
 
@@ -92,13 +86,8 @@ public class JwtTokenProvider {
         try {
             var processor = new DefaultJWTProcessor<SecurityContext>();
 
-            processor.setJWSKeySelector(
-                    new JWSVerificationKeySelector<>(
-                            JWSAlgorithm.HS256,
-                            new ImmutableSecret<>(
-                                    secret.getBytes(StandardCharsets.UTF_8)
-                            )
-                    )
+            processor.setJWSKeySelector(new JWSVerificationKeySelector<>(
+                            JWSAlgorithm.HS256, new ImmutableSecret<>(secret.getBytes(StandardCharsets.UTF_8)))
             );
 
             JWTClaimsSet claims = processor.process(token, null);
@@ -108,8 +97,8 @@ public class JwtTokenProvider {
 
             if (claims.getIssueTime() == null
                     || claims.getExpirationTime() == null
-                    || !claims.getExpirationTime().toInstant()
-                    .isAfter(Instant.now())) {
+                    || !claims.getExpirationTime().toInstant().isAfter(Instant.now())
+            ) {
                 throw new InvalidJwtException();
             }
 
@@ -121,8 +110,7 @@ public class JwtTokenProvider {
 
             return claims;
 
-        } catch (ParseException | BadJOSEException | JOSEException
-                 | IllegalArgumentException e) {
+        } catch (ParseException | BadJOSEException | JOSEException | IllegalArgumentException e) {
             throw new InvalidJwtException();
         }
     }
