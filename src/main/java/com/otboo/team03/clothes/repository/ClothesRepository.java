@@ -5,7 +5,4 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.UUID;
 
-public interface ClothesRepository extends JpaRepository<Clothes, UUID > {
-
-    Clothes id(UUID id);
-}
+public interface ClothesRepository extends JpaRepository<Clothes, UUID > { }
