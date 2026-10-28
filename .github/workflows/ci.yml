@@ -3,6 +3,8 @@ name: CI
 on:
   pull_request:
     branches: [main, dev]
+  push:
+    branches: [main, dev]
   workflow_dispatch:
 
 permissions:
@@ -51,8 +53,15 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
 
-      - name: Build and test
-        run: bash ./gradlew clean build --no-daemon
+      - name: Build, test and generate coverage
+        run: bash ./gradlew clean build jacocoTestReport --no-daemon
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./build/reports/jacoco/test/jacocoTestReport.xml
+          fail_ci_if_error: true
 
       - name: Upload test reports
         if: always()
