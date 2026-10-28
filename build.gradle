@@ -58,8 +58,9 @@ dependencies {
         testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
         testImplementation 'org.testcontainers:testcontainers-postgresql'
 
-
-
+        // Security
+        implementation 'org.springframework.boot:spring-boot-starter-security'
+        testImplementation 'org.springframework.security:spring-security-test'
 
         // JWT
         implementation 'com.nimbusds:nimbus-jose-jwt:10.10'
