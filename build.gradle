@@ -57,6 +57,12 @@ dependencies {
         testImplementation 'org.springframework.boot:spring-boot-testcontainers'
         testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
         testImplementation 'org.testcontainers:testcontainers-postgresql'
+
+
+
+
+        // JWT
+        implementation 'com.nimbusds:nimbus-jose-jwt:10.10'
 }
 
 tasks.named('test') {
