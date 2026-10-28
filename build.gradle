@@ -4,7 +4,6 @@ plugins {
     id 'jacoco'
     id 'org.springframework.boot' version '4.1.2'
     id 'io.spring.dependency-management' version '1.1.7'
-    id 'jacoco'
 }
 
 group = 'com.sb13.otboo.team03'
@@ -76,19 +75,11 @@ jacoco {
 }
 
 tasks.named('jacocoTestReport') {
+    dependsOn tasks.named('test')
     reports {
         // HTML은 사람이 확인하는 용도, XML은 CI 등 도구가 읽는 용도다.
         html.required = true
         xml.required = true
-    }
-}
-
-tasks.named('jacocoTestReport') {
-    dependsOn tasks.named('test')
-
-    reports {
-        xml.required = true
-        html.required = true
     }
 }
 
