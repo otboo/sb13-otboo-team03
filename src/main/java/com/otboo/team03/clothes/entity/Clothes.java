@@ -42,4 +42,13 @@ public class Clothes extends BaseEntity {
         this.imageUrl = imageUrl;
         this.ownerId = ownerId;
     }
+    public void update(String name, ClothesType type) {
+        // PATCH에서 생략되거나 null인 값은 기존 값을 유지한다.
+        if (name != null) {
+            this.name = name;
+        }
+        if (type != null) {
+            this.type = type;
+        }
+    }
 }
