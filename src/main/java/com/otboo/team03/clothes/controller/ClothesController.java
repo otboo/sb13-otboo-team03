@@ -1,6 +1,7 @@
 package com.otboo.team03.clothes.controller;
 
 import com.otboo.team03.clothes.dto.request.ClothesCreateRequest;
+import com.otboo.team03.clothes.dto.request.ClothesUpdateRequest;
 import com.otboo.team03.clothes.dto.response.ClothesDto;
 import com.otboo.team03.clothes.service.ClothesService;
 import jakarta.validation.Valid;
@@ -26,6 +27,25 @@ public class ClothesController {
                 .body(clothesDto);
     }
 
+    @GetMapping("/{clothesId}")
+    public ResponseEntity<ClothesDto> findById(@PathVariable UUID clothesId) {
+        ClothesDto clothesDto = clothesService.findById(clothesId);
+        return ResponseEntity.ok(clothesDto);
+    }
 
+    @PatchMapping("/{clothesId}")
+    public ResponseEntity<ClothesDto> update(@PathVariable UUID clothesId,
+                                            @RequestBody @Valid ClothesUpdateRequest request) {
+        // URL의 ID와 JSON 수정 요청을 Service에 전달한다.
+        ClothesDto clothesDto = clothesService.update(clothesId, request);
+        return ResponseEntity.ok(clothesDto);
+    }
 
+    @DeleteMapping("/{clothesId}")
+    public ResponseEntity<Void> delete(@PathVariable UUID clothesId) {
+        clothesService.delete(clothesId);
+
+        return ResponseEntity
+                .noContent().build();
+    }
 }

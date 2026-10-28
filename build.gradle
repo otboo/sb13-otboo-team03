@@ -1,5 +1,7 @@
 plugins {
     id 'java'
+    // 테스트 중 실행된 코드의 범위를 측정한다.
+    id 'jacoco'
     id 'org.springframework.boot' version '4.1.2'
     id 'io.spring.dependency-management' version '1.1.7'
 }
@@ -60,4 +62,18 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // 테스트 실행 후 HTML/XML 커버리지 리포트를 만든다.
+    finalizedBy tasks.named('jacocoTestReport')
+}
+
+jacoco {
+    toolVersion = '0.8.14'
+}
+
+tasks.named('jacocoTestReport') {
+    reports {
+        // HTML은 사람이 확인하는 용도, XML은 CI 등 도구가 읽는 용도다.
+        html.required = true
+        xml.required = true
+    }
 }
