@@ -1,12 +1,20 @@
 package com.otboo.team03.clothes.service;
 
 import com.otboo.team03.clothes.dto.request.ClothesCreateRequest;
+import com.otboo.team03.clothes.dto.request.ClothesAttributeDto;
+import com.otboo.team03.clothes.dto.response.ClothesAttributeWithDefDto;
+import com.otboo.team03.clothes.entity.ClothesAttribute;
+import com.otboo.team03.clothes.entity.ClothesAttributeDefinition;
+import com.otboo.team03.clothes.repository.ClothesAttributeRepository;
+import com.otboo.team03.clothes.repository.ClothesAttributeDefinitionRepository;
 import com.otboo.team03.clothes.dto.response.ClothesDto;
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.clothes.repository.ClothesRepository;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.user.exception.UserNotFoundException;
+import com.otboo.team03.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,6 +39,14 @@ class ClothesServiceTest {
     @Mock
     private ClothesRepository clothesRepository;
 
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private ClothesAttributeRepository clothesAttributeRepository;
+    @Mock
+    private ClothesAttributeDefinitionRepository clothesAttributeDefinitionRepository;
+
     // 실제 검증 대상이다. 위 가짜 Repository를 생성자에 주입한다.
     @InjectMocks
     private ClothesService clothesService;
@@ -41,11 +57,18 @@ class ClothesServiceTest {
         // given: 요청과 DB 저장 후 반환될 객체를 준비한다.
         UUID ownerId = UUID.randomUUID();
         UUID clothesId = UUID.randomUUID();
-        ClothesCreateRequest request = new ClothesCreateRequest(ownerId, "반팔", ClothesType.TOP, List.of());
+        UUID definitionId = UUID.randomUUID();
+        ClothesCreateRequest request = new ClothesCreateRequest(ownerId, "반팔", ClothesType.TOP,
+                List.of(new ClothesAttributeDto(definitionId, "파랑")));
         Clothes saved = new Clothes("반팔", ClothesType.TOP, null, ownerId);
         // 실제 JPA를 실행하지 않으므로, DB가 발급할 ID를 테스트에서 대신 설정한다.
         ReflectionTestUtils.setField(saved, "id", clothesId);
+        // 소유자가 존재해야 생성 검증을 통과한다.
+        when(userRepository.existsById(ownerId)).thenReturn(true);
         when(clothesRepository.save(any(Clothes.class))).thenReturn(saved);
+        ClothesAttributeDefinition definition = new ClothesAttributeDefinition("색상", List.of("파랑", "빨강"));
+        ReflectionTestUtils.setField(definition, "id", definitionId);
+        when(clothesAttributeDefinitionRepository.findById(definitionId)).thenReturn(Optional.of(definition));
 
         // when: 실제 Service의 생성 메서드를 실행한다.
         ClothesDto result = clothesService.create(request);
@@ -59,7 +82,31 @@ class ClothesServiceTest {
         assertThat(submitted.getType()).isEqualTo(ClothesType.TOP);
         assertThat(submitted.getImageUrl()).isNull();
         // 생성 ID를 포함한 저장 결과가 응답 DTO에 반영됐는지도 확인한다.
-        assertThat(result).isEqualTo(new ClothesDto(clothesId, ownerId, "반팔", null, ClothesType.TOP, List.of()));
+        assertThat(result).isEqualTo(new ClothesDto(clothesId, ownerId, "반팔", null, ClothesType.TOP,
+                List.of(new ClothesAttributeWithDefDto(definitionId, "색상", List.of("파랑", "빨강"), "파랑"))));
+        ArgumentCaptor<ClothesAttribute> attributeCaptor = ArgumentCaptor.forClass(ClothesAttribute.class);
+        verify(clothesAttributeRepository).save(attributeCaptor.capture());
+        assertThat(attributeCaptor.getValue().getClothes()).isSameAs(saved);
+        assertThat(attributeCaptor.getValue().getDefinition()).isSameAs(definition);
+        assertThat(attributeCaptor.getValue().getValue()).isEqualTo("파랑");
+    }
+
+    @Test
+    @DisplayName("소유자가 없으면 사용자 없음 예외가 발생하고 의상을 저장하지 않는다")
+    void createWhenOwnerMissing() {
+        // given: 요청에 ID는 있지만 실제 사용자는 없는 상황이다.
+        UUID ownerId = UUID.randomUUID();
+        UUID definitionId = UUID.randomUUID();
+        ClothesCreateRequest request = new ClothesCreateRequest(ownerId, "반팔", ClothesType.TOP,
+                List.of(new ClothesAttributeDto(definitionId, "파랑")));
+        when(userRepository.existsById(ownerId)).thenReturn(false);
+
+        // when + then: 예외 종류와 에러 코드를 확인한다.
+        assertThatThrownBy(() -> clothesService.create(request))
+                .isInstanceOfSatisfying(UserNotFoundException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND_USER));
+        // 검증 실패 후에는 의상 Repository를 호출하지 않아야 한다.
+        verifyNoInteractions(clothesRepository);
     }
 
     @Test
@@ -132,5 +179,74 @@ class ClothesServiceTest {
                 new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest("새 이름", null, null)))
                 .isInstanceOfSatisfying(OtbooException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND_CLOTHES));
+    }
+    @Test
+    @DisplayName("없는 속성 정의는 의상 저장 전에 거절한다")
+    void createWithMissingDefinition() {
+        UUID owner = UUID.randomUUID();
+        UUID definition = UUID.randomUUID();
+        when(userRepository.existsById(owner)).thenReturn(true);
+        when(clothesAttributeDefinitionRepository.findById(definition)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> clothesService.create(new ClothesCreateRequest(owner, "반팔", ClothesType.TOP,
+                List.of(new ClothesAttributeDto(definition, "파랑")))))
+                .isInstanceOfSatisfying(OtbooException.class,
+                        ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND_ATTRIBUTE_DEFINITION));
+        verifyNoInteractions(clothesRepository, clothesAttributeRepository);
+    }
+
+    @Test
+    @DisplayName("허용되지 않은 선택값은 의상 저장 전에 거절한다")
+    void createWithInvalidValue() {
+        UUID owner = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        when(userRepository.existsById(owner)).thenReturn(true);
+        when(clothesAttributeDefinitionRepository.findById(id)).thenReturn(Optional.of(
+                new ClothesAttributeDefinition("색상", List.of("파랑"))));
+        assertThatThrownBy(() -> clothesService.create(new ClothesCreateRequest(owner, "반팔", ClothesType.TOP,
+                List.of(new ClothesAttributeDto(id, "철")))))
+                .isInstanceOfSatisfying(OtbooException.class,
+                        ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_CLOTHES_ATTRIBUTE_VALUE));
+        verifyNoInteractions(clothesRepository, clothesAttributeRepository);
+    }
+
+    @Test
+    @DisplayName("중복 정의는 재조회하거나 저장하지 않고 거절한다")
+    void createWithDuplicateDefinition() {
+        UUID owner = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        when(userRepository.existsById(owner)).thenReturn(true);
+        when(clothesAttributeDefinitionRepository.findById(id)).thenReturn(Optional.of(
+                new ClothesAttributeDefinition("색상", List.of("파랑"))));
+        ClothesAttributeDto attribute = new ClothesAttributeDto(id, "파랑");
+        assertThatThrownBy(() -> clothesService.create(new ClothesCreateRequest(owner, "반팔", ClothesType.TOP,
+                List.of(attribute, attribute))))
+                .isInstanceOfSatisfying(OtbooException.class,
+                        ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.DUPLICATE_ATTRIBUTE));
+        verify(clothesAttributeDefinitionRepository, times(1)).findById(id);
+        verifyNoInteractions(clothesRepository, clothesAttributeRepository);
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.NullSource
+    @org.junit.jupiter.params.provider.EmptySource
+    @DisplayName("Service를 직접 호출해도 속성 목록 누락과 빈 목록을 거절한다")
+    void createWithoutAttributes(List<ClothesAttributeDto> attributes) {
+        assertThatThrownBy(() -> clothesService.create(new ClothesCreateRequest(
+                UUID.randomUUID(), "반팔", ClothesType.TOP, attributes)))
+                .isInstanceOfSatisfying(OtbooException.class,
+                        ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT_VALUE));
+        verifyNoInteractions(userRepository, clothesRepository, clothesAttributeRepository,
+                clothesAttributeDefinitionRepository);
+    }
+
+    @Test
+    @DisplayName("Service를 직접 호출해도 null 속성 항목을 저장하지 않는다")
+    void createWithNullAttribute() {
+        UUID ownerId = UUID.randomUUID();
+        when(userRepository.existsById(ownerId)).thenReturn(true);
+        assertThatThrownBy(() -> clothesService.create(new ClothesCreateRequest(ownerId, "반팔", ClothesType.TOP,
+                java.util.Collections.singletonList(null))))
+                .isInstanceOfSatisfying(OtbooException.class,
+                        ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT_VALUE));
+        verifyNoInteractions(clothesRepository, clothesAttributeRepository, clothesAttributeDefinitionRepository);
     }
 }
