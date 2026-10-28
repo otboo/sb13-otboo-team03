@@ -28,6 +28,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -115,16 +116,18 @@ class ClothesCreateIntegrationTest {
     }
 
     @Test
-    @DisplayName("현재 권한 제한: 비로그인 요청도 다른 소유자 ID로 생성된다")
-    void currentSecurityGap() throws Exception {
-        // 실제 Security 필터를 포함한다. 이 테스트는 현재의 권한 공백을 드러낸다.
-        // 인증/소유자 검증을 구현할 때 이 기대값을 401/403 거절 검증으로 바꿔야 한다.
-        mvc.perform(post("/api/clothes").contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                        {"ownerId":"%s","name":"반팔","type":"TOP",
-                         "attributes":[{"definitionId":"%s","value":"파랑"}]}
-                        """.formatted(owner.getId(), color.getId())))
-                .andExpect(status().isCreated());
+    @DisplayName("비로그인 사용자는 의상을 생성할 수 없다")
+    void unauthenticatedUserCannotCreateClothes() throws Exception {
+        mvc.perform(post("/api/clothes")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                    {"ownerId":"%s","name":"반팔","type":"TOP",
+                     "attributes":[{"definitionId":"%s","value":"파랑"}]}
+                    """.formatted(owner.getId(), color.getId())))
+                .andExpect(status().isUnauthorized());
+
+        assertThat(clothesRepository.count()).isZero();
     }
 
     private ClothesCreateRequest request() {
