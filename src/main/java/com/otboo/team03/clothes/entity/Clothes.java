@@ -6,7 +6,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import java.util.UUID;
+import com.otboo.team03.user.entity.User;
 
 /**
  * 사용자가 등록한 의상의 기본 정보.
@@ -32,15 +32,18 @@ public class Clothes extends BaseEntity {
     @Column(name = "image_url", length = 2048)
     private String imageUrl;
 
-    @Column(name = "owner_id", nullable = false)
-    private UUID ownerId;
+    // 여러 의상이 한 사용자를 참조한다. DB에는 기존 owner_id 외래 키를 사용한다.
+    // 의상 삭제가 사용자 삭제로 전파되지 않도록 cascade는 지정하지 않는다.
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "owner_id", nullable = false)
+    private User owner;
 
     public Clothes(String name, ClothesType type,
-                   String imageUrl, UUID ownerId) {
+                   String imageUrl, User owner) {
         this.name = name;
         this.type = type;
         this.imageUrl = imageUrl;
-        this.ownerId = ownerId;
+        this.owner = owner;
     }
     public void update(String name, ClothesType type) {
         // PATCH에서 생략되거나 null인 값은 기존 값을 유지한다.

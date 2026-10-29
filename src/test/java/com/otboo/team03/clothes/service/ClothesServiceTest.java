@@ -15,6 +15,7 @@ import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.UserRepository;
+import com.otboo.team03.user.entity.User;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -60,11 +61,11 @@ class ClothesServiceTest {
         UUID definitionId = UUID.randomUUID();
         ClothesCreateRequest request = new ClothesCreateRequest(ownerId, "반팔", ClothesType.TOP,
                 List.of(new ClothesAttributeDto(definitionId, "파랑")));
-        Clothes saved = new Clothes("반팔", ClothesType.TOP, null, ownerId);
+        Clothes saved = new Clothes("반팔", ClothesType.TOP, null, owner(ownerId));
         // 실제 JPA를 실행하지 않으므로, DB가 발급할 ID를 테스트에서 대신 설정한다.
         ReflectionTestUtils.setField(saved, "id", clothesId);
         // 소유자가 존재해야 생성 검증을 통과한다.
-        when(userRepository.existsById(ownerId)).thenReturn(true);
+        when(userRepository.findById(ownerId)).thenReturn(Optional.of(owner(ownerId)));
         when(clothesRepository.save(any(Clothes.class))).thenReturn(saved);
         ClothesAttributeDefinition definition = new ClothesAttributeDefinition("색상", List.of("파랑", "빨강"));
         ReflectionTestUtils.setField(definition, "id", definitionId);
@@ -77,7 +78,7 @@ class ClothesServiceTest {
         ArgumentCaptor<Clothes> captor = ArgumentCaptor.forClass(Clothes.class);
         verify(clothesRepository).save(captor.capture());
         Clothes submitted = captor.getValue();
-        assertThat(submitted.getOwnerId()).isEqualTo(ownerId);
+        assertThat(submitted.getOwner().getId()).isEqualTo(ownerId);
         assertThat(submitted.getName()).isEqualTo("반팔");
         assertThat(submitted.getType()).isEqualTo(ClothesType.TOP);
         assertThat(submitted.getImageUrl()).isNull();
@@ -99,7 +100,7 @@ class ClothesServiceTest {
         UUID definitionId = UUID.randomUUID();
         ClothesCreateRequest request = new ClothesCreateRequest(ownerId, "반팔", ClothesType.TOP,
                 List.of(new ClothesAttributeDto(definitionId, "파랑")));
-        when(userRepository.existsById(ownerId)).thenReturn(false);
+        when(userRepository.findById(ownerId)).thenReturn(Optional.empty());
 
         // when + then: 예외 종류와 에러 코드를 확인한다.
         assertThatThrownBy(() -> clothesService.create(request))
@@ -115,7 +116,7 @@ class ClothesServiceTest {
         // given: Optional.of는 조회 결과가 있는 상황을 표현한다.
         UUID clothesId = UUID.randomUUID();
         UUID ownerId = UUID.randomUUID();
-        Clothes clothes = new Clothes("청바지", ClothesType.BOTTOM, "https://example.com/jeans.png", ownerId);
+        Clothes clothes = new Clothes("청바지", ClothesType.BOTTOM, "https://example.com/jeans.png", owner(ownerId));
         ReflectionTestUtils.setField(clothes, "id", clothesId);
         when(clothesRepository.findById(clothesId)).thenReturn(Optional.of(clothes));
 
@@ -145,7 +146,7 @@ class ClothesServiceTest {
     void updateNameOnly() {
         UUID id = UUID.randomUUID();
         UUID ownerId = UUID.randomUUID();
-        Clothes clothes = new Clothes("기존 이름", ClothesType.TOP, "image.png", ownerId);
+        Clothes clothes = new Clothes("기존 이름", ClothesType.TOP, "image.png", owner(ownerId));
         ReflectionTestUtils.setField(clothes, "id", id);
         when(clothesRepository.findById(id)).thenReturn(Optional.of(clothes));
 
@@ -160,7 +161,7 @@ class ClothesServiceTest {
     @DisplayName("수정 시 이름이 생략되면 유지하고 타입을 변경한다")
     void updateTypeOnly() {
         UUID id = UUID.randomUUID();
-        Clothes clothes = new Clothes("기존 이름", ClothesType.TOP, null, UUID.randomUUID());
+        Clothes clothes = new Clothes("기존 이름", ClothesType.TOP, null, owner(UUID.randomUUID()));
         when(clothesRepository.findById(id)).thenReturn(Optional.of(clothes));
 
         ClothesDto result = clothesService.update(id,
@@ -185,7 +186,7 @@ class ClothesServiceTest {
     void createWithMissingDefinition() {
         UUID owner = UUID.randomUUID();
         UUID definition = UUID.randomUUID();
-        when(userRepository.existsById(owner)).thenReturn(true);
+        when(userRepository.findById(owner)).thenReturn(Optional.of(owner(owner)));
         when(clothesAttributeDefinitionRepository.findById(definition)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> clothesService.create(new ClothesCreateRequest(owner, "반팔", ClothesType.TOP,
                 List.of(new ClothesAttributeDto(definition, "파랑")))))
@@ -199,7 +200,7 @@ class ClothesServiceTest {
     void createWithInvalidValue() {
         UUID owner = UUID.randomUUID();
         UUID id = UUID.randomUUID();
-        when(userRepository.existsById(owner)).thenReturn(true);
+        when(userRepository.findById(owner)).thenReturn(Optional.of(owner(owner)));
         when(clothesAttributeDefinitionRepository.findById(id)).thenReturn(Optional.of(
                 new ClothesAttributeDefinition("색상", List.of("파랑"))));
         assertThatThrownBy(() -> clothesService.create(new ClothesCreateRequest(owner, "반팔", ClothesType.TOP,
@@ -214,7 +215,7 @@ class ClothesServiceTest {
     void createWithDuplicateDefinition() {
         UUID owner = UUID.randomUUID();
         UUID id = UUID.randomUUID();
-        when(userRepository.existsById(owner)).thenReturn(true);
+        when(userRepository.findById(owner)).thenReturn(Optional.of(owner(owner)));
         when(clothesAttributeDefinitionRepository.findById(id)).thenReturn(Optional.of(
                 new ClothesAttributeDefinition("색상", List.of("파랑"))));
         ClothesAttributeDto attribute = new ClothesAttributeDto(id, "파랑");
@@ -242,11 +243,74 @@ class ClothesServiceTest {
     @DisplayName("Service를 직접 호출해도 null 속성 항목을 저장하지 않는다")
     void createWithNullAttribute() {
         UUID ownerId = UUID.randomUUID();
-        when(userRepository.existsById(ownerId)).thenReturn(true);
+        when(userRepository.findById(ownerId)).thenReturn(Optional.of(owner(ownerId)));
         assertThatThrownBy(() -> clothesService.create(new ClothesCreateRequest(ownerId, "반팔", ClothesType.TOP,
                 java.util.Collections.singletonList(null))))
                 .isInstanceOfSatisfying(OtbooException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT_VALUE));
         verifyNoInteractions(clothesRepository, clothesAttributeRepository, clothesAttributeDefinitionRepository);
+    }
+    @Test
+    @DisplayName("단건 조회 응답에 속성 정의와 실제 선택값을 포함한다")
+    void findByIdWithAttributes() {
+        UUID id = UUID.randomUUID();
+        UUID definitionId = UUID.randomUUID();
+        Clothes clothes = new Clothes("반팔", ClothesType.TOP, null, owner(UUID.randomUUID()));
+        ReflectionTestUtils.setField(clothes, "id", id);
+        ClothesAttributeDefinition definition = new ClothesAttributeDefinition("색상", List.of("파랑", "빨강"));
+        ReflectionTestUtils.setField(definition, "id", definitionId);
+        when(clothesRepository.findById(id)).thenReturn(Optional.of(clothes));
+        when(clothesAttributeRepository.findAllByClothes_Id(id)).thenReturn(
+                List.of(new ClothesAttribute(clothes, definition, "파랑")));
+
+        ClothesDto result = clothesService.findById(id);
+
+        assertThat(result.attributes()).containsExactly(new ClothesAttributeWithDefDto(
+                definitionId, "색상", List.of("파랑", "빨강"), "파랑"));
+        verify(clothesAttributeRepository).findAllByClothes_Id(id);
+    }
+    @Test
+    @DisplayName("목록의 속성을 한 번만 조회하고 각 의상에 맞게 연결한다")
+    void findAllByOwnerIdWithAttributes() {
+        UUID owner = UUID.randomUUID();
+        Clothes top = new Clothes("반팔", ClothesType.TOP, null, owner(owner));
+        Clothes pants = new Clothes("바지", ClothesType.BOTTOM, null, owner(owner));
+        Clothes hat = new Clothes("모자", ClothesType.HAT, null, owner(owner));
+        for (Clothes clothes : List.of(top, pants, hat)) {
+            ReflectionTestUtils.setField(clothes, "id", UUID.randomUUID());
+        }
+        ClothesAttributeDefinition color = new ClothesAttributeDefinition("색상", List.of("파랑", "빨강"));
+        ReflectionTestUtils.setField(color, "id", UUID.randomUUID());
+        List<UUID> ids = List.of(top.getId(), pants.getId(), hat.getId());
+        when(clothesRepository.findAllByOwner_Id(owner)).thenReturn(List.of(top, pants, hat));
+        // DB 반환 순서가 의상 목록 순서와 달라도 올바르게 묶여야 한다.
+        when(clothesAttributeRepository.findAllByClothes_IdIn(ids)).thenReturn(List.of(
+                new ClothesAttribute(pants, color, "빨강"), new ClothesAttribute(top, color, "파랑")));
+
+        List<ClothesDto> result = clothesService.findAllByOwnerId(owner);
+
+        assertThat(result).extracting(ClothesDto::id).containsExactlyElementsOf(ids);
+        assertThat(result.get(0).attributes()).extracting(ClothesAttributeWithDefDto::value).containsExactly("파랑");
+        assertThat(result.get(1).attributes()).extracting(ClothesAttributeWithDefDto::value).containsExactly("빨강");
+        assertThat(result.get(2).attributes()).isEmpty();
+        verify(clothesRepository).findAllByOwner_Id(owner);
+        verify(clothesAttributeRepository).findAllByClothes_IdIn(ids);
+        verifyNoMoreInteractions(clothesAttributeRepository);
+    }
+
+    @Test
+    @DisplayName("의상이 없으면 속성을 조회하지 않고 빈 목록을 반환한다")
+    void findAllByOwnerIdWhenEmpty() {
+        UUID owner = UUID.randomUUID();
+        when(clothesRepository.findAllByOwner_Id(owner)).thenReturn(List.of());
+
+        assertThat(clothesService.findAllByOwnerId(owner)).isEmpty();
+        verifyNoInteractions(clothesAttributeRepository);
+    }
+    // DB 없이도 소유자 ID를 가진 User 객체를 준비한다.
+    private User owner(UUID id) {
+        User user = new User(id + "@example.com", "encoded", "소유자");
+        ReflectionTestUtils.setField(user, "id", id);
+        return user;
     }
 }

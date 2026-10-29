@@ -2,10 +2,7 @@ package com.otboo.team03.clothes.dto.response;
 
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesType;
-import com.otboo.team03.user.entity.User;
-import com.otboo.team03.user.entity.UserRole;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -37,7 +34,7 @@ public record ClothesDto(
     public static ClothesDto from(Clothes clothes, List<ClothesAttributeWithDefDto> attributes) {
         return new ClothesDto(
                 clothes.getId(),
-                clothes.getOwnerId(),
+                clothes.getOwner().getId(),
                 clothes.getName(),
                 clothes.getImageUrl(),
                 clothes.getType(),

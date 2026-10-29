@@ -92,6 +92,30 @@ class ClothesControllerTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    @DisplayName("ownerId 쿼리 파라미터를 전달하고 의상 목록을 반환한다")
+    void findAllByOwnerId() throws Exception {
+        when(service.findAllByOwnerId(ownerId)).thenReturn(List.of(response()));
+
+        mvc.perform(get("/api/clothes").param("ownerId", ownerId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(clothesId.toString()))
+                .andExpect(jsonPath("$[0].ownerId").value(ownerId.toString()));
+        verify(service).findAllByOwnerId(ownerId);
+    }
+
+    @Test
+    @DisplayName("조회된 의상이 없으면 200과 빈 배열을 반환한다")
+    void findAllByOwnerIdWhenEmpty() throws Exception {
+        when(service.findAllByOwnerId(ownerId)).thenReturn(List.of());
+
+        mvc.perform(get("/api/clothes").param("ownerId", ownerId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[]"));
+        verify(service).findAllByOwnerId(ownerId);
+    }
+
     private ClothesDto response() {
         return new ClothesDto(clothesId, ownerId, "반팔", null, ClothesType.TOP, List.of());
     }

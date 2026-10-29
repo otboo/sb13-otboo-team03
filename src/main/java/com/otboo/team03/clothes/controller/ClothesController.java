@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
+import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
@@ -25,6 +26,14 @@ public class ClothesController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(clothesDto);
+    }
+
+    @GetMapping
+    public ResponseEntity<List<ClothesDto>> findAllByOwnerId(@RequestParam UUID ownerId) {
+        // /api/clothes?ownerId=... 의 쿼리 파라미터를 받아 사용자별 목록을 조회한다.
+        List<ClothesDto> clothesResponses = clothesService.findAllByOwnerId(ownerId);
+        // 결과가 없으면 200 OK와 빈 JSON 배열([])을 반환한다.
+        return ResponseEntity.ok(clothesResponses);
     }
 
     @GetMapping("/{clothesId}")

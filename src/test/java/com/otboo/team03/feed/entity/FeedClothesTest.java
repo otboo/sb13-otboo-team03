@@ -2,6 +2,8 @@ package com.otboo.team03.feed.entity;
 
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesType;
+import com.otboo.team03.user.entity.User;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -25,7 +27,7 @@ class FeedClothesTest {
         "흰색 티셔츠",
         ClothesType.TOP,
         null,
-        authorId
+        owner(authorId)
     );
 
     // when
@@ -68,7 +70,7 @@ class FeedClothesTest {
         "청바지",
         ClothesType.BOTTOM,
         null,
-        UUID.randomUUID()
+        owner(UUID.randomUUID())
     );
 
     // when
@@ -83,5 +85,10 @@ class FeedClothesTest {
             () -> new FeedClothes(feed, null)
         )
     );
+  }
+  private User owner(UUID id) {
+    User user = new User(id + "@example.com", "encoded", "소유자");
+    ReflectionTestUtils.setField(user, "id", id);
+    return user;
   }
 }

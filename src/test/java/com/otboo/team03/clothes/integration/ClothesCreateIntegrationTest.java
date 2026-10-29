@@ -51,6 +51,7 @@ class ClothesCreateIntegrationTest {
     @Autowired ClothesRepository clothesRepository;
     @Autowired ClothesAttributeDefinitionRepository definitions;
     @Autowired UserRepository users;
+    @Autowired jakarta.persistence.EntityManagerFactory entityManagerFactory;
     @Autowired MockMvc mvc;
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @MockitoSpyBean ClothesAttributeRepository attributes;
@@ -89,6 +90,9 @@ class ClothesCreateIntegrationTest {
         assertThat(result.attributes()).extracting(dto -> dto.value()).containsExactly("파랑", "면");
         // 현재 이미지는 처리하지 않으므로 null이다. 업로드 성공을 검증하는 테스트는 아니다.
         assertThat(result.imageUrl()).isNull();
+        // 생성 트랜잭션이 끝난 뒤 다시 조회해도 모든 속성 정보가 반환되는지 확인한다.
+        ClothesDto retrieved = service.findById(result.id());
+        assertThat(retrieved.attributes()).containsExactlyInAnyOrderElementsOf(result.attributes());
     }
 
     @Test
@@ -125,6 +129,34 @@ class ClothesCreateIntegrationTest {
                          "attributes":[{"definitionId":"%s","value":"파랑"}]}
                         """.formatted(owner.getId(), color.getId())))
                 .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("사용자별 목록은 다른 사용자 의상을 제외하고 속성을 일괄 조회한다")
+    void listByOwnerWithBoundedQueries() {
+        ClothesDto first = service.create(request());
+        ClothesDto second = service.create(request());
+        User other = users.saveAndFlush(new User(UUID.randomUUID() + "@example.com", "encoded", "다른 사용자"));
+        service.create(new ClothesCreateRequest(other.getId(), "다른 의상", ClothesType.TOP,
+                List.of(new ClothesAttributeDto(color.getId(), "빨강"))));
+
+        // Hibernate 통계로 실제 SELECT 수가 의상 수만큼 늘어나지 않는지 확인한다.
+        org.hibernate.stat.Statistics statistics = entityManagerFactory
+                .unwrap(org.hibernate.SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+        try {
+            List<ClothesDto> result = service.findAllByOwnerId(owner.getId());
+            assertThat(result).extracting(ClothesDto::id).containsExactlyInAnyOrder(first.id(), second.id());
+            assertThat(result).allSatisfy(dto -> {
+                assertThat(dto.ownerId()).isEqualTo(owner.getId());
+                assertThat(dto.attributes()).containsExactlyElementsOf(first.attributes());
+            });
+            // 의상 목록 SELECT 1회 + 속성과 정의의 JOIN SELECT 1회.
+            assertThat(statistics.getPrepareStatementCount()).isEqualTo(2);
+        } finally {
+            statistics.setStatisticsEnabled(false);
+        }
     }
 
     private ClothesCreateRequest request() {
