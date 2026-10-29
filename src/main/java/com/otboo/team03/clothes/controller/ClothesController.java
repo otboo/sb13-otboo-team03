@@ -4,6 +4,10 @@ import com.otboo.team03.clothes.dto.request.ClothesCreateRequest;
 import com.otboo.team03.clothes.dto.request.ClothesUpdateRequest;
 import com.otboo.team03.clothes.dto.response.ClothesDto;
 import com.otboo.team03.clothes.service.ClothesService;
+import com.otboo.team03.global.exception.ErrorCode;
+import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.global.security.OtbooUserDetails;
+import org.springframework.security.core.Authentication;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -20,7 +24,18 @@ public class ClothesController {
     private final ClothesService clothesService;
 
     @PostMapping
-    public ResponseEntity<ClothesDto > create(@RequestBody @Valid ClothesCreateRequest request){
+    public ResponseEntity<ClothesDto > create(@RequestBody @Valid ClothesCreateRequest request, Authentication authentication){
+        //Spring Security가 현재 인증 정보를 전달
+        if(authentication == null || !authentication.isAuthenticated()
+        || !(authentication.getPrincipal()  instanceof  OtbooUserDetails userDetails)){
+            //getPrincipal은 인증된 사용자의 객체를 꺼내는 것과 userDetails에서 서버가 인즈한 사용자 id를 가져옴
+            throw  new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
+
+        if (!userDetails.getUserDto().id().equals(request.ownerId())) {
+            throw new OtbooException(ErrorCode.ACCESS_DENIED);
+        }
+
         ClothesDto clothesDto =  clothesService.create(request);
 
         return ResponseEntity
