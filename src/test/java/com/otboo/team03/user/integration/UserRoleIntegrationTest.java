@@ -1,6 +1,7 @@
 
 package com.otboo.team03.user.integration;
 
+import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.entity.UserRole;
 import com.otboo.team03.user.init.AdminProperties;
@@ -66,6 +67,9 @@ class UserRoleIntegrationTest {
 
     @Autowired
     private AdminProperties adminProperties;
+
+    @Autowired
+    private JwtRegistry jwtRegistry;
 
     @Nested
     @DisplayName("사용자 권한 변경 접근 제어")
@@ -204,6 +208,47 @@ class UserRoleIntegrationTest {
                                 .cookie(userRefreshCookie, refreshCsrfCookie)
                                 .header("X-XSRF-TOKEN", refreshCsrfCookie.getValue()))
                         .andExpect(status().isUnauthorized());
+
+            } finally {
+                userRepository.deleteById(user.getId());
+            }
+        }
+
+        @Test
+        @DisplayName("동일 권한 변경 요청 시 기존 JWT 세션이 유지된다")
+        void updateRole_sameRole_keepsExistingTokens() throws Exception {
+            // given
+            String password = "password123!";
+            User user = createUser(password);
+
+            try {
+                MvcResult userLogin = login(user.getEmail(), password);
+                String userAccessToken = getAccessToken(userLogin);
+                Cookie userRefreshCookie = userLogin.getResponse().getCookie("REFRESH_TOKEN");
+
+                assertThat(userRefreshCookie).isNotNull();
+
+                MvcResult adminLogin = login(adminProperties.email(), adminProperties.password());
+                String adminAccessToken = getAccessToken(adminLogin);
+                Cookie csrfCookie = getCsrfCookie();
+
+                // when: USER → USER 권한 변경 요청
+                mockMvc.perform(patch("/api/users/{userId}/role", user.getId())
+                                .header("Authorization", "Bearer " + adminAccessToken)
+                                .cookie(csrfCookie)
+                                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                {
+                                  "role": "USER"
+                                }
+                                """))
+                        .andExpect(status().isNoContent());
+
+                // then: 기존 권한 및 JWT 세션 유지
+                assertThat(userRepository.findById(user.getId()).orElseThrow().getRole()).isEqualTo(UserRole.USER);
+                assertThat(jwtRegistry.hasActiveJwtInformationByAccessToken(userAccessToken)).isTrue();
+                assertThat(jwtRegistry.hasActiveJwtInformationByRefreshToken(userRefreshCookie.getValue())).isTrue();
 
             } finally {
                 userRepository.deleteById(user.getId());
