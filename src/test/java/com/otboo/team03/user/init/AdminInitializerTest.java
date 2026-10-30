@@ -9,6 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.DefaultApplicationArguments;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,5 +65,18 @@ class AdminInitializerTest {
         verify(userRepository).existsByEmail("admin@example.com");
         verify(userRepository, never()).save(any(User.class));
         verifyNoInteractions(passwordEncoder);
+    }
+
+    @Test
+    void run_onApplicationStartup_initializesAdmin() throws Exception {
+        // given
+        when(userRepository.existsByEmail("admin@example.com")).thenReturn(false);
+        when(passwordEncoder.encode("adminPassword123!")).thenReturn("encodedPassword");
+
+        // when
+        adminInitializer.run(new DefaultApplicationArguments(new String[0]));
+
+        // then
+        verify(userRepository).save(any(User.class));
     }
 }

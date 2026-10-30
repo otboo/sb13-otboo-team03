@@ -3,6 +3,7 @@ package com.otboo.team03.user.init;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.entity.UserRole;
 import com.otboo.team03.user.repository.UserRepository;
+import org.springframework.boot.ApplicationArguments;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 public class AdminInitializer {
@@ -31,5 +32,9 @@ public class AdminInitializer {
         admin.changeRole(UserRole.ADMIN);
 
         userRepository.save(admin);
+    }
+
+    public void run(ApplicationArguments args) {
+        // TODO: GREEN 단계에서 initialize() 호출
     }
 }
