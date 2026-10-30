@@ -1,0 +1,3 @@
+otboo:
+  jwt:
+    secret: otboo-test-only-secret-key-12345678901234567890

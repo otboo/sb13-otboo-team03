@@ -196,7 +196,7 @@ class AuthServiceTest {
 
             // when & then
             assertThatThrownBy(() -> authService.refresh(REFRESH_TOKEN))
-                    .isInstanceOf(UsernameNotFoundException.class);
+                    .isInstanceOf(InvalidJwtException.class);
 
             then(jwtRegistry).should(never())
                     .rotateJwtInformation(anyString(), any());
