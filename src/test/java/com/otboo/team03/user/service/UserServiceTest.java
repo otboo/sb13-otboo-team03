@@ -5,6 +5,7 @@ import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.entity.UserRole;
 import com.otboo.team03.user.exception.DuplicateEmailException;
+import com.otboo.team03.user.exception.LastAdminException;
 import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -140,5 +141,22 @@ class UserServiceTest {
         assertThat(user.getRole()).isEqualTo(UserRole.USER);
         verify(userRepository).findById(userId);
         verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void updateRole_lastAdmin_throwsException() {
+        // given
+        UUID userId = UUID.randomUUID();
+        User admin = new User("admin@example.com", "encodedPassword", "관리자");
+        admin.changeRole(UserRole.ADMIN);
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(admin));
+        when(userRepository.countByRole(UserRole.ADMIN)).thenReturn(1L);
+
+        // when & then
+        assertThatThrownBy(() -> userService.updateRole(userId, UserRole.USER))
+                .isInstanceOf(LastAdminException.class);
+
+        assertThat(admin.getRole()).isEqualTo(UserRole.ADMIN);
     }
 }
