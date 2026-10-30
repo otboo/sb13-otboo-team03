@@ -10,6 +10,7 @@ import com.otboo.team03.global.security.jwt.JwtInformation;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.security.jwt.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
@@ -35,7 +36,12 @@ public class AuthService {
         // 토큰에서 사용자 UUID 추출
         UUID userId = jwtTokenProvider.getUserId(refreshToken);
 
-        OtbooUserDetails userDetails = (OtbooUserDetails) userDetailsService.loadUserById(userId);
+        OtbooUserDetails userDetails;
+        try {
+            userDetails = (OtbooUserDetails) userDetailsService.loadUserById(userId);
+        } catch (UsernameNotFoundException ex) {
+            throw new InvalidJwtException();
+        }
 
         // 계정 잠금 및 비활성 상태 확인
         if (!userDetails.isEnabled()
