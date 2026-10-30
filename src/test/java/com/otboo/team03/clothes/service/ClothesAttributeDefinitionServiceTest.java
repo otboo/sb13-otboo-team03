@@ -35,11 +35,11 @@ class ClothesAttributeDefinitionServiceTest {
     @Test
     void listReturnsDefinitionDataAndEmptyList() {
         var definition = new ClothesAttributeDefinition("소재", List.of("면", "울"));
-        when(repository.findAll()).thenReturn(List.of(definition), List.of());
-        var result = service.findAll();
+        when(repository.findAll(any(org.springframework.data.domain.Sort.class))).thenReturn(List.of(definition), List.of());
+        var result = service.findAll("name", "ASCENDING", null);
         assertThat(result).hasSize(1);
         assertThat(result.get(0).name()).isEqualTo("소재");
         assertThat(result.get(0).selectableValues()).containsExactly("면", "울");
-        assertThat(service.findAll()).isEmpty();
+        assertThat(service.findAll("name", "ASCENDING", null)).isEmpty();
     }
 }

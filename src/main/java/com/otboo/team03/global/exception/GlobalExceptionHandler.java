@@ -4,6 +4,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -47,6 +49,22 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(errorCode.getHttpStatus())
                 .body(errorResponse);
+    }
+
+    /** Controller 호출 전 발생하는 타입 변환 실패도 클라이언트 입력 오류로 응답한다. */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        ErrorCode code = ErrorCode.INVALID_INPUT_VALUE;
+        return ResponseEntity.status(code.getHttpStatus()).body(ErrorResponse.from(
+                code, Map.of(ex.getName(), "요청 값의 형식 또는 허용 범위가 올바르지 않습니다.")));
+    }
+
+    /** 필수 쿼리 파라미터 누락을 내부 서버 오류와 구분한다. */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingParameter(MissingServletRequestParameterException ex) {
+        ErrorCode code = ErrorCode.INVALID_INPUT_VALUE;
+        return ResponseEntity.status(code.getHttpStatus()).body(ErrorResponse.from(
+                code, Map.of(ex.getParameterName(), "필수 요청 파라미터입니다.")));
     }
 
     @ExceptionHandler(Exception.class)

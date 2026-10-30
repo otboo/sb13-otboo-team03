@@ -295,7 +295,7 @@ class ClothesCreateIntegrationTest {
     @Test
     @DisplayName("인증 사용자는 정의를 조회하고 관리자의 CSRF 없는 등록은 거부한다")
     void definitionListAndCsrfProtection() throws Exception {
-        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/clothes/attribute-defs")
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/clothes/attribute-defs").param("sortBy", "name").param("sortDirection", "ASCENDING")
                 .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER")))
                 .andExpect(status().isOk())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$[0].id").value(color.getId().toString()))
@@ -307,6 +307,46 @@ class ClothesCreateIntegrationTest {
                 .content("{\"name\":\"소재\",\"selectableValues\":[\"면\"]}"))
                 .andExpect(status().isForbidden());
         assertThat(definitions.count()).isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("정의 조회는 이름·생성시각 양방향 정렬과 부분 검색을 적용한다")
+    void definitionSearchAndSort() throws Exception {
+        var first = definitions.saveAndFlush(new ClothesAttributeDefinition("alpha fabric", List.of("면")));
+        var second = definitions.saveAndFlush(new ClothesAttributeDefinition("beta fabric", List.of("울")));
+        jdbc.update("UPDATE clothes_attribute_definitions SET created_at = ? WHERE id = ?",
+                java.sql.Timestamp.from(java.time.Instant.parse("2020-01-01T00:00:00Z")), first.getId());
+        jdbc.update("UPDATE clothes_attribute_definitions SET created_at = ? WHERE id = ?",
+                java.sql.Timestamp.from(java.time.Instant.parse("2021-01-01T00:00:00Z")), second.getId());
+        for (String field : List.of("name", "createdAt")) {
+            for (String direction : List.of("ASCENDING", "DESCENDING")) {
+                mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/clothes/attribute-defs")
+                        .param("sortBy", field).param("sortDirection", direction).param("keywordLike", "FABRIC")
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user")))
+                        .andExpect(status().isOk())
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.length()").value(2))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$[0].id")
+                                .value((direction.equals("ASCENDING") ? first : second).getId().toString()));
+            }
+        }
+        assertThat(definitionService.findAll("name", "ASCENDING", "no-match")).isEmpty();
+        // LIKE의 %와 _를 와일드카드가 아닌 검색 문자로 취급한다.
+        assertThat(definitionService.findAll("name", "ASCENDING", "%")).isEmpty();
+    }
+
+    @Autowired com.otboo.team03.clothes.service.ClothesAttributeDefinitionService definitionService;
+    @Test
+    @DisplayName("정의 조회의 필수 정렬 누락과 잘못된 허용값은 400을 반환한다")
+    void invalidDefinitionSort() throws Exception {
+        for (String[] params : new String[][]{{null, "ASCENDING"}, {"name", null},
+                {"invalid", "ASCENDING"}, {"name", "invalid"}}) {
+            var request = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/clothes/attribute-defs")
+                    .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user"));
+            if (params[0] != null) request.param("sortBy", params[0]);
+            if (params[1] != null) request.param("sortDirection", params[1]);
+            mvc.perform(request).andExpect(status().isBadRequest())
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.exceptionName").value("INVALID_INPUT_VALUE"));
+        }
     }
 
     private ClothesCreateRequest request() {

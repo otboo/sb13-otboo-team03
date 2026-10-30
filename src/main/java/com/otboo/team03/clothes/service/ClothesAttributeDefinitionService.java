@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import org.springframework.data.domain.Sort;
 
 @Service
 @RequiredArgsConstructor
@@ -34,12 +35,21 @@ public class ClothesAttributeDefinitionService {
         return ClothesAttributeDefDto.from(repository.save(definition));
     }
 
+    /** 이름 부분 일치 검색과 명세의 정렬 조건을 DB 조회에 적용한다. */
     @Transactional(readOnly = true)
-    public List<ClothesAttributeDefDto> findAll() {
-        // 공유 정의와 선택지를 반환한다. 특정 의상의 선택값은 ClothesService에서 조회한다.
-        // 정의가 없으면 빈 목록을 반환하며, 조회 과정에서 정의를 새로 만들지 않는다.
-        return repository.findAll().stream()
-                .map(ClothesAttributeDefDto::from)
-                .toList();
+    public List<ClothesAttributeDefDto> findAll(String sortBy, String sortDirection, String keywordLike) {
+        // 외부 입력을 임의의 엔티티 필드명으로 사용하지 않도록 허용값만 통과시킨다.
+        if (!("createdAt".equals(sortBy) || "name".equals(sortBy))
+                || !("ASCENDING".equals(sortDirection) || "DESCENDING".equals(sortDirection))) {
+            throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+        Sort.Direction direction = "ASCENDING".equals(sortDirection)
+                ? Sort.Direction.ASC : Sort.Direction.DESC;
+        // 같은 정렬값도 일정한 순서로 반환하도록 ID를 보조 기준으로 사용한다.
+        Sort sort = Sort.by(direction, sortBy).and(Sort.by(direction, "id"));
+        List<ClothesAttributeDefinition> definitions = keywordLike == null || keywordLike.isEmpty()
+                ? repository.findAll(sort)
+                : repository.findByNameContainingIgnoreCase(keywordLike, sort);
+        return definitions.stream().map(ClothesAttributeDefDto::from).toList();
     }
 }

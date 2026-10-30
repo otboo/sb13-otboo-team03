@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -41,7 +42,10 @@ public class ClothesAttributeDefinitionController {
      * 전체 목록을 반환하고, 정의가 없으면 200 OK와 빈 배열을 반환한다.
      */
     @GetMapping
-    public ResponseEntity<List<ClothesAttributeDefDto>> findAll() {
-        return ResponseEntity.ok(service.findAll());
+    public ResponseEntity<List<ClothesAttributeDefDto>> findAll(
+            @RequestParam String sortBy,
+            @RequestParam String sortDirection,
+            @RequestParam(required = false) String keywordLike) {
+        return ResponseEntity.ok(service.findAll(sortBy, sortDirection, keywordLike));
     }
 }

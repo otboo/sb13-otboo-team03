@@ -182,6 +182,42 @@ class ClothesControllerTest {
                 .formatted(ownerId, definitionId);
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"abc", "2147483648", "-2147483649"})
+    @DisplayName("limit의 형식 오류와 int 범위 초과는 서비스 호출 없이 400을 반환한다")
+    void invalidLimitConversion(String limit) throws Exception {
+        mvc.perform(get("/api/clothes").param("ownerId", ownerId.toString()).param("limit", limit))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.exceptionName").value("INVALID_INPUT_VALUE"))
+                .andExpect(jsonPath("$.details.limit").exists());
+        verifyNoInteractions(service);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"ownerId", "limit"})
+    @DisplayName("필수 목록 파라미터 누락은 서비스 호출 없이 400을 반환한다")
+    void missingRequiredListParameter(String missing) throws Exception {
+        var request = get("/api/clothes");
+        if (!missing.equals("ownerId")) request.param("ownerId", ownerId.toString());
+        if (!missing.equals("limit")) request.param("limit", "20");
+        mvc.perform(request)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.exceptionName").value("INVALID_INPUT_VALUE"))
+                .andExpect(jsonPath("$.details." + missing).exists());
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    @DisplayName("UUID와 enum의 형식 오류도 400으로 처리한다")
+    void invalidUuidAndType() throws Exception {
+        mvc.perform(get("/api/clothes").param("ownerId", "invalid").param("limit", "20"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/clothes").param("ownerId", ownerId.toString()).param("limit", "20")
+                        .param("typeEqual", "UNKNOWN"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+
     private ClothesDto response() {
         return new ClothesDto(clothesId, ownerId, "반팔", null, ClothesType.TOP, List.of());
     }
