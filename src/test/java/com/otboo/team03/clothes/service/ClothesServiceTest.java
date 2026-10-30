@@ -53,6 +53,87 @@ class ClothesServiceTest {
     private ClothesService clothesService;
 
     @Test
+    @DisplayName("서비스 직접 호출도 생성 필수값과 이름 길이를 검사하고 저장하지 않는다")
+    void invalidCreateFieldsDoNotAccessRepositories() {
+        UUID owner = UUID.randomUUID();
+        var attributes = List.of(new ClothesAttributeDto(UUID.randomUUID(), "파랑"));
+        var invalid = java.util.Arrays.asList(
+                null,
+                new ClothesCreateRequest(null, "이름", ClothesType.TOP, attributes),
+                new ClothesCreateRequest(owner, "이름", null, attributes),
+                new ClothesCreateRequest(owner, null, ClothesType.TOP, attributes),
+                new ClothesCreateRequest(owner, " ", ClothesType.TOP, attributes),
+                new ClothesCreateRequest(owner, "a".repeat(256), ClothesType.TOP, attributes));
+        for (var request : invalid) {
+            assertInvalidInput(() -> clothesService.create(request));
+        }
+        verifyNoInteractions(userRepository, clothesRepository, clothesAttributeRepository,
+                clothesAttributeDefinitionRepository);
+    }
+
+    @Test
+    @DisplayName("생성 속성의 누락값·공백·길이 초과는 저장 전에 거절한다")
+    void invalidCreateAttributeFields() {
+        UUID ownerId = UUID.randomUUID();
+        when(userRepository.findById(ownerId)).thenReturn(Optional.of(owner(ownerId)));
+        for (var attribute : invalidAttributeFields()) {
+            assertInvalidInput(() -> clothesService.create(new ClothesCreateRequest(
+                    ownerId, "이름", ClothesType.TOP, java.util.Arrays.asList(attribute))));
+        }
+        verifyNoInteractions(clothesRepository, clothesAttributeRepository, clothesAttributeDefinitionRepository);
+    }
+
+    @Test
+    @DisplayName("수정의 잘못된 이름과 속성은 원래 이름·타입을 변경하지 않는다")
+    void invalidUpdateFieldsPreserveEntity() {
+        UUID id = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        Clothes clothes = new Clothes("원래 이름", ClothesType.TOP, null, owner(ownerId));
+        when(clothesRepository.findById(id)).thenReturn(Optional.of(clothes));
+        var requests = new java.util.ArrayList<com.otboo.team03.clothes.dto.request.ClothesUpdateRequest>();
+        requests.add(null);
+        requests.add(new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest(" ", null, null));
+        requests.add(new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest("a".repeat(256), null, null));
+        for (var attribute : invalidAttributeFields()) {
+            requests.add(new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest(
+                    "변경되면 안 됨", ClothesType.OUTER, java.util.Arrays.asList(attribute)));
+        }
+        for (var request : requests) {
+            assertInvalidInput(() -> clothesService.update(id, request, ownerId));
+            assertThat(clothes.getName()).isEqualTo("원래 이름");
+            assertThat(clothes.getType()).isEqualTo(ClothesType.TOP);
+        }
+        verifyNoInteractions(clothesAttributeRepository, clothesAttributeDefinitionRepository);
+    }
+
+    @Test
+    @DisplayName("잘못된 커서 조회 조건은 DB를 호출하지 않는다")
+    void invalidCursorRequestsDoNotQuery() {
+        UUID ownerId = UUID.randomUUID();
+        assertInvalidInput(() -> clothesService.findAll(null, 20, null, null, null));
+        for (int limit : new int[]{0, -1, Integer.MAX_VALUE}) {
+            assertInvalidInput(() -> clothesService.findAll(ownerId, limit, null, null, null));
+        }
+        assertInvalidInput(() -> clothesService.findAll(ownerId, 20, null, "이름", null));
+        assertInvalidInput(() -> clothesService.findAll(ownerId, 20, null, null, UUID.randomUUID()));
+        verifyNoInteractions(clothesRepository, clothesAttributeRepository);
+    }
+
+    private List<ClothesAttributeDto> invalidAttributeFields() {
+        UUID definitionId = UUID.randomUUID();
+        return java.util.Arrays.asList(null,
+                new ClothesAttributeDto(null, "파랑"),
+                new ClothesAttributeDto(definitionId, null),
+                new ClothesAttributeDto(definitionId, " "),
+                new ClothesAttributeDto(definitionId, "a".repeat(256)));
+    }
+
+    private void assertInvalidInput(org.assertj.core.api.ThrowableAssert.ThrowingCallable action) {
+        assertThatThrownBy(action).isInstanceOfSatisfying(OtbooException.class,
+                e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT_VALUE));
+    }
+
+    @Test
     @DisplayName("생성 요청의 기본 정보를 저장하고 저장 결과를 DTO로 반환한다")
     void create() {
         // given: 요청과 DB 저장 후 반환될 객체를 준비한다.
