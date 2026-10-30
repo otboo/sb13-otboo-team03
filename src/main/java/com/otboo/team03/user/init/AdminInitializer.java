@@ -11,6 +11,7 @@ public class AdminInitializer implements ApplicationRunner {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+
     private final String email;
     private final String password;
     private final String name;

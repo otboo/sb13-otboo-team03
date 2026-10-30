@@ -28,8 +28,8 @@ class AdminInitializerTest {
 
     @BeforeEach
     void setUp() {
-        adminInitializer = new AdminInitializer(
-                userRepository, passwordEncoder, "admin@example.com", "adminPassword123!", "관리자");
+        AdminProperties properties = new AdminProperties("admin@example.com", "adminPassword123!", "관리자");
+        adminInitializer = new AdminInitializer(userRepository, passwordEncoder, properties);
     }
 
     @Test
