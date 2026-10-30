@@ -23,6 +23,8 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -135,6 +137,32 @@ class UserControllerTest {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.exceptionName").exists())
                     .andExpect(jsonPath("$.message").exists());
+        }
+    }
+
+    @Nested
+    @DisplayName("사용자 권한 변경")
+    class UpdateRoleTest {
+
+        @Test
+        @DisplayName("성공 - 사용자 권한 변경 시 204 No Content")
+        void updateRole_success() throws Exception {
+            // given
+            UUID userId = UUID.randomUUID();
+
+            MockMvc mockMvc = MockMvcBuilders.standaloneSetup(userController).build();
+
+            // when & then
+            mockMvc.perform(patch("/api/users/{userId}/role", userId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                {
+                                  "role": "ADMIN"
+                                }
+                                """))
+                    .andExpect(status().isNoContent());
+
+            verify(userService).updateRole(userId, UserRole.ADMIN);
         }
     }
 }
