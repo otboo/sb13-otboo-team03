@@ -292,6 +292,23 @@ class ClothesCreateIntegrationTest {
         assertThat(service.findById(created.id())).isEqualTo(created);
     }
 
+    @Test
+    @DisplayName("인증 사용자는 정의를 조회하고 관리자의 CSRF 없는 등록은 거부한다")
+    void definitionListAndCsrfProtection() throws Exception {
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/clothes/attribute-defs")
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER")))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$[0].id").value(color.getId().toString()))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$[0].selectableValues[0]").value("파랑"));
+        long before = definitions.count();
+        mvc.perform(post("/api/clothes/attribute-defs")
+                .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"소재\",\"selectableValues\":[\"면\"]}"))
+                .andExpect(status().isForbidden());
+        assertThat(definitions.count()).isEqualTo(before);
+    }
+
     private ClothesCreateRequest request() {
         return new ClothesCreateRequest(owner.getId(), "반팔", ClothesType.TOP,
                 List.of(new ClothesAttributeDto(color.getId(), "파랑")));

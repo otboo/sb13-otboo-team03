@@ -123,6 +123,65 @@ class ClothesControllerTest {
         verify(service).findAll(ownerId, 20, null, null, null);
     }
 
+    // 필터 없이 Controller를 호출하여 각 인증 거부 분기가 서비스를 호출하지 않는지 검증한다.
+    @Test
+    void rejectsInvalidAuthenticationForCreateAndUpdate() throws Exception {
+        var invalid = java.util.Arrays.<org.springframework.security.core.Authentication>asList(
+                null,
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("user", "password"),
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("wrong principal", null, List.of()));
+        for (var authentication : invalid) {
+            var createRequest = post("/api/clothes")
+                    .contentType(MediaType.APPLICATION_JSON).content(createBody());
+            var updateRequest = patch("/api/clothes/{clothesId}", clothesId)
+                    .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"새 이름\"}");
+            if (authentication != null) {
+                createRequest.principal(authentication);
+                updateRequest.principal(authentication);
+            }
+            mvc.perform(createRequest)
+                    .andExpect(status().isUnauthorized());
+            mvc.perform(updateRequest)
+                    .andExpect(status().isUnauthorized());
+        }
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void rejectsOtherOwnerOnCreate() throws Exception {
+        mvc.perform(post("/api/clothes").principal(auth(UUID.randomUUID()))
+                .contentType(MediaType.APPLICATION_JSON).content(createBody()))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void updatePassesAuthenticatedUserAndReturnsAttributes() throws Exception {
+        var request = new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest("새 이름", null, null);
+        var attribute = new com.otboo.team03.clothes.dto.response.ClothesAttributeWithDefDto(
+                definitionId, "색상", List.of("파랑"), "파랑");
+        when(service.update(clothesId, request, ownerId)).thenReturn(
+                new ClothesDto(clothesId, ownerId, "새 이름", null, ClothesType.TOP, List.of(attribute)));
+        mvc.perform(patch("/api/clothes/{clothesId}", clothesId).principal(auth(ownerId))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"새 이름\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attributes[0].value").value("파랑"));
+        verify(service).update(clothesId, request, ownerId);
+    }
+
+    private org.springframework.security.core.Authentication auth(UUID userId) {
+        var user = new com.otboo.team03.user.dto.response.UserDto(userId, java.time.Instant.now(),
+                "test@example.com", "사용자", com.otboo.team03.user.entity.UserRole.USER, false);
+        var details = new com.otboo.team03.global.security.OtbooUserDetails(user, "encoded");
+        return new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                details, null, details.getAuthorities());
+    }
+
+    private String createBody() {
+        return "{\"ownerId\":\"%s\",\"name\":\"반팔\",\"type\":\"TOP\",\"attributes\":[{\"definitionId\":\"%s\",\"value\":\"파랑\"}]}"
+                .formatted(ownerId, definitionId);
+    }
+
     private ClothesDto response() {
         return new ClothesDto(clothesId, ownerId, "반팔", null, ClothesType.TOP, List.of());
     }
