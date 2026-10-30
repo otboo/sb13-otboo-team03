@@ -6,6 +6,7 @@ import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.entity.UserRole;
 import com.otboo.team03.user.exception.DuplicateEmailException;
+import com.otboo.team03.user.exception.LastAdminException;
 import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +41,10 @@ public class UserService {
     public void updateRole(UUID userId, UserRole role) {
         User user = userRepository.findById(userId)
                 .orElseThrow(UserNotFoundException::new);
+
+        if (user.getRole() == UserRole.ADMIN && role == UserRole.USER && userRepository.countByRole(UserRole.ADMIN) <= 1) {
+            throw new LastAdminException();
+        }
 
         user.changeRole(role);
     }
