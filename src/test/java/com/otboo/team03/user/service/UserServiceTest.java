@@ -15,13 +15,16 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.Optional;
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
-import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
@@ -90,5 +93,21 @@ class UserServiceTest {
             then(userRepository).should(never()).save(any(User.class));
             then(passwordEncoder).should(never()).encode(anyString());
         }
+    }
+
+    @Test
+    void updateRole_userToAdmin_success() {
+        // given
+        UUID userId = UUID.randomUUID();
+        User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        // when
+        userService.updateRole(userId, UserRole.ADMIN);
+
+        // then
+        assertThat(user.getRole()).isEqualTo(UserRole.ADMIN);
+        verify(userRepository).findById(userId);
     }
 }
