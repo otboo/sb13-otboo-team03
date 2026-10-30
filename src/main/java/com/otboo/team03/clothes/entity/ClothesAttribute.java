@@ -48,6 +48,11 @@ public class ClothesAttribute {
         this.value = value;
     }
 
+    /** Service에서 정의의 허용값 검증을 마친 뒤 선택값만 변경한다. */
+    public void updateValue(String value) {
+        this.value = value;
+    }
+
     @NoArgsConstructor
     @AllArgsConstructor
     @EqualsAndHashCode
