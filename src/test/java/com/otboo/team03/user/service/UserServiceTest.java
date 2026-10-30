@@ -124,4 +124,21 @@ class UserServiceTest {
 
         verify(userRepository).findById(userId);
     }
+
+    @Test
+    void updateRole_sameRole_doesNotChangeRole() {
+        // given
+        UUID userId = UUID.randomUUID();
+        User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        // when
+        userService.updateRole(userId, UserRole.USER);
+
+        // then
+        assertThat(user.getRole()).isEqualTo(UserRole.USER);
+        verify(userRepository).findById(userId);
+        verify(userRepository, never()).save(any(User.class));
+    }
 }
