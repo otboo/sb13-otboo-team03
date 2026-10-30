@@ -11,6 +11,7 @@ import com.otboo.team03.user.exception.LastAdminException;
 import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,6 +41,7 @@ public class UserService {
     }
 
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public void updateRole(UUID userId, UserRole role) {
         User user = userRepository.findById(userId)
                 .orElseThrow(UserNotFoundException::new);
