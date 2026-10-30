@@ -4,9 +4,10 @@ import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.entity.UserRole;
 import com.otboo.team03.user.repository.UserRepository;
 import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-public class AdminInitializer {
+public class AdminInitializer implements ApplicationRunner {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -24,7 +25,7 @@ public class AdminInitializer {
     }
 
     public void initialize() {
-        if (userRepository.existsByEmail(email)) {
+        if (userRepository.existsByRole(UserRole.ADMIN)) {
             return;
         }
 
@@ -35,6 +36,6 @@ public class AdminInitializer {
     }
 
     public void run(ApplicationArguments args) {
-        // TODO: GREEN 단계에서 initialize() 호출
+        initialize();
     }
 }

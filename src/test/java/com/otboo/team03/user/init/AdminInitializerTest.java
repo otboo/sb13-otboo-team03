@@ -35,7 +35,7 @@ class AdminInitializerTest {
     @Test
     void initialize_adminNotExists_createsAdmin() {
         // given
-        when(userRepository.existsByEmail("admin@example.com")).thenReturn(false);
+        when(userRepository.existsByRole(UserRole.ADMIN)).thenReturn(false);
         when(passwordEncoder.encode("adminPassword123!")).thenReturn("encodedPassword");
 
         // when
@@ -56,13 +56,13 @@ class AdminInitializerTest {
     @Test
     void initialize_adminAlreadyExists_doesNotCreateAdmin() {
         // given
-        when(userRepository.existsByEmail("admin@example.com")).thenReturn(true);
+        when(userRepository.existsByRole(UserRole.ADMIN)).thenReturn(true);
 
         // when
         adminInitializer.initialize();
 
         // then
-        verify(userRepository).existsByEmail("admin@example.com");
+        verify(userRepository).existsByRole(UserRole.ADMIN);
         verify(userRepository, never()).save(any(User.class));
         verifyNoInteractions(passwordEncoder);
     }
@@ -70,7 +70,7 @@ class AdminInitializerTest {
     @Test
     void run_onApplicationStartup_initializesAdmin() throws Exception {
         // given
-        when(userRepository.existsByEmail("admin@example.com")).thenReturn(false);
+        when(userRepository.existsByRole(UserRole.ADMIN)).thenReturn(false);
         when(passwordEncoder.encode("adminPassword123!")).thenReturn("encodedPassword");
 
         // when
