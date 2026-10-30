@@ -36,4 +36,8 @@ public class User extends UpdateEntity {
         this.role = UserRole.USER;
         this.locked = false;
     }
+
+    public void changeRole(UserRole role) {
+        this.role = role;
+    }
 }
