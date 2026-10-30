@@ -1,6 +1,7 @@
 package com.otboo.team03.user.service;
 
 import com.otboo.team03.global.exception.ErrorCode;
+import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.User;
@@ -22,6 +23,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtRegistry jwtRegistry;
 
     @Transactional
     public UserDto createUser(UserCreateRequest request) {
@@ -42,11 +44,16 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(UserNotFoundException::new);
 
+        if (user.getRole() == role) {
+            return;
+        }
+
         if (user.getRole() == UserRole.ADMIN && role == UserRole.USER && userRepository.countByRole(UserRole.ADMIN) <= 1) {
             throw new LastAdminException();
         }
 
         user.changeRole(role);
+        jwtRegistry.invalidateJwtInformationByUserId(userId);
     }
 
 }
