@@ -5,24 +5,27 @@ import com.otboo.team03.user.entity.UserRole;
 import com.otboo.team03.user.repository.UserRepository;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Component;
 
+@Component
+@EnableConfigurationProperties(AdminProperties.class)
 public class AdminInitializer implements ApplicationRunner {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AdminProperties adminProperties;
 
-    private final String email;
-    private final String password;
-    private final String name;
-
-    public AdminInitializer(UserRepository userRepository, PasswordEncoder passwordEncoder,
-                            String email, String password, String name) {
+    public AdminInitializer(UserRepository userRepository, PasswordEncoder passwordEncoder, AdminProperties adminProperties) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.email = email;
-        this.password = password;
-        this.name = name;
+        this.adminProperties = adminProperties;
+    }
+
+    @Override
+    public void run(ApplicationArguments args) {
+        initialize();
     }
 
     public void initialize() {
@@ -30,13 +33,15 @@ public class AdminInitializer implements ApplicationRunner {
             return;
         }
 
-        User admin = new User(email, passwordEncoder.encode(password), name);
+        User admin = new User(
+                adminProperties.email(),
+                passwordEncoder.encode(adminProperties.password()),
+                adminProperties.name()
+        );
         admin.changeRole(UserRole.ADMIN);
 
         userRepository.save(admin);
     }
 
-    public void run(ApplicationArguments args) {
-        initialize();
-    }
+
 }

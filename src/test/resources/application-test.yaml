@@ -1,3 +1,8 @@
 otboo:
+  admin:
+    email: admin@test.example
+    password: test-admin-password-123
+    name: 테스트 관리자
+
   jwt:
     secret: otboo-test-only-secret-key-12345678901234567890

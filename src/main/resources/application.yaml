@@ -15,6 +15,11 @@ spring:
       port: ${REDIS_PORT:6379}
 
 otboo:
+  admin:
+    email: ${ADMIN_EMAIL}
+    password: ${ADMIN_PASSWORD}
+    name: ${ADMIN_NAME:관리자}
+
   jwt:
     secret: ${JWT_SECRET}
     access-token-validity: 30m
