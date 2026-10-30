@@ -4,6 +4,8 @@ import com.otboo.team03.clothes.dto.request.ClothesCreateRequest;
 import com.otboo.team03.clothes.dto.request.ClothesUpdateRequest;
 import com.otboo.team03.clothes.dto.response.ClothesDto;
 import com.otboo.team03.clothes.service.ClothesService;
+import com.otboo.team03.clothes.entity.ClothesType;
+import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.global.security.OtbooUserDetails;
@@ -15,7 +17,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
-import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
@@ -43,12 +44,15 @@ public class ClothesController {
                 .body(clothesDto);
     }
 
+    /** 소유자·타입 조건으로 의상을 조회하고 다음 페이지 정보를 함께 반환한다. */
     @GetMapping
-    public ResponseEntity<List<ClothesDto>> findAllByOwnerId(@RequestParam UUID ownerId) {
-        // /api/clothes?ownerId=... 의 쿼리 파라미터를 받아 사용자별 목록을 조회한다.
-        List<ClothesDto> clothesResponses = clothesService.findAllByOwnerId(ownerId);
-        // 결과가 없으면 200 OK와 빈 JSON 배열([])을 반환한다.
-        return ResponseEntity.ok(clothesResponses);
+    public ResponseEntity<CursorResponse<ClothesDto>> findAll(
+            @RequestParam UUID ownerId,
+            @RequestParam int limit,
+            @RequestParam(required = false) ClothesType typeEqual,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) UUID idAfter) {
+        return ResponseEntity.ok(clothesService.findAll(ownerId, limit, typeEqual, cursor, idAfter));
     }
 
     @GetMapping("/{clothesId}")
@@ -58,18 +62,35 @@ public class ClothesController {
     }
 
     @PatchMapping("/{clothesId}")
-    public ResponseEntity<ClothesDto> update(@PathVariable UUID clothesId,
-                                            @RequestBody @Valid ClothesUpdateRequest request) {
-        // URL의 ID와 JSON 수정 요청을 Service에 전달한다.
-        ClothesDto clothesDto = clothesService.update(clothesId, request);
+    public ResponseEntity<ClothesDto> update(
+            @PathVariable UUID clothesId,
+            @RequestBody @Valid ClothesUpdateRequest request,
+            Authentication authentication
+    ) {
+        // 요청에 입력된 ID가 아니라 서버가 인증한 사용자 정보를 사용한다.
+        if (authentication == null
+                || !authentication.isAuthenticated()
+                || !(authentication.getPrincipal()
+                instanceof OtbooUserDetails userDetails)) {
+            throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
+
+        UUID requesterId = userDetails.getUserDto().id();
+
+        ClothesDto clothesDto = clothesService.update(
+                clothesId,
+                request,
+                requesterId
+        );
+
         return ResponseEntity.ok(clothesDto);
     }
-
-    @DeleteMapping("/{clothesId}")
-    public ResponseEntity<Void> delete(@PathVariable UUID clothesId) {
-        clothesService.delete(clothesId);
-
-        return ResponseEntity
-                .noContent().build();
-    }
+//
+//    @DeleteMapping("/{clothesId}")
+//    public ResponseEntity<Void> delete(@PathVariable UUID clothesId) {
+//        clothesService.delete(clothesId);
+//
+//        return ResponseEntity
+//                .noContent().build();
+//    }
 }

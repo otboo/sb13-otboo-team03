@@ -42,11 +42,18 @@ class ClothesControllerTest {
     @Test
     @DisplayName("생성 요청에 201과 생성된 의상 JSON을 반환한다")
     void create() throws Exception {
+        // Controller의 소유자 검사를 통과하도록 서버가 인증한 사용자 정보를 전달한다.
+        var details = org.mockito.Mockito.mock(
+                com.otboo.team03.global.security.OtbooUserDetails.class,
+                org.mockito.Mockito.RETURNS_DEEP_STUBS);
+        when(details.getUserDto().id()).thenReturn(ownerId);
+        var authentication = new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                details, null, java.util.List.of());
         // given: Service가 성공했을 때 반환할 결과를 지정한다.
         when(service.create(any())).thenReturn(response());
 
         // when + then: 프론트처럼 JSON 요청을 보내 상태 코드와 응답 필드를 확인한다.
-        mvc.perform(post("/api/clothes").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/api/clothes").principal(authentication).contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"ownerId":"%s","name":"반팔","type":"TOP","attributes":[{"definitionId":"%s","value":"파랑"}]}
                                 """.formatted(ownerId, definitionId)))
@@ -95,25 +102,25 @@ class ClothesControllerTest {
     @Test
     @DisplayName("ownerId 쿼리 파라미터를 전달하고 의상 목록을 반환한다")
     void findAllByOwnerId() throws Exception {
-        when(service.findAllByOwnerId(ownerId)).thenReturn(List.of(response()));
+        when(service.findAll(ownerId, 20, null, null, null)).thenReturn(new com.otboo.team03.global.dto.CursorResponse<>(List.of(response()), null, null, false, 1, "name", "ASCENDING"));
 
-        mvc.perform(get("/api/clothes").param("ownerId", ownerId.toString()))
+        mvc.perform(get("/api/clothes").param("ownerId", ownerId.toString()).param("limit", "20"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value(clothesId.toString()))
-                .andExpect(jsonPath("$[0].ownerId").value(ownerId.toString()));
-        verify(service).findAllByOwnerId(ownerId);
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].id").value(clothesId.toString()))
+                .andExpect(jsonPath("$.data[0].ownerId").value(ownerId.toString()));
+        verify(service).findAll(ownerId, 20, null, null, null);
     }
 
     @Test
     @DisplayName("조회된 의상이 없으면 200과 빈 배열을 반환한다")
     void findAllByOwnerIdWhenEmpty() throws Exception {
-        when(service.findAllByOwnerId(ownerId)).thenReturn(List.of());
+        when(service.findAll(ownerId, 20, null, null, null)).thenReturn(new com.otboo.team03.global.dto.CursorResponse<>(List.of(), null, null, false, 0, "name", "ASCENDING"));
 
-        mvc.perform(get("/api/clothes").param("ownerId", ownerId.toString()))
+        mvc.perform(get("/api/clothes").param("ownerId", ownerId.toString()).param("limit", "20"))
                 .andExpect(status().isOk())
-                .andExpect(content().json("[]"));
-        verify(service).findAllByOwnerId(ownerId);
+                .andExpect(jsonPath("$.data").isEmpty());
+        verify(service).findAll(ownerId, 20, null, null, null);
     }
 
     private ClothesDto response() {

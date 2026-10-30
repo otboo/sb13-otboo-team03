@@ -151,7 +151,7 @@ class ClothesServiceTest {
         when(clothesRepository.findById(id)).thenReturn(Optional.of(clothes));
 
         ClothesDto result = clothesService.update(id,
-                new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest("새 이름", null, null));
+                new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest("새 이름", null, null), ownerId);
 
         assertThat(clothes.getName()).isEqualTo("새 이름");
         assertThat(result).isEqualTo(new ClothesDto(id, ownerId, "새 이름", "image.png", ClothesType.TOP, List.of()));
@@ -165,7 +165,7 @@ class ClothesServiceTest {
         when(clothesRepository.findById(id)).thenReturn(Optional.of(clothes));
 
         ClothesDto result = clothesService.update(id,
-                new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest(null, ClothesType.OUTER, null));
+                new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest(null, ClothesType.OUTER, null), clothes.getOwner().getId());
 
         assertThat(result.name()).isEqualTo("기존 이름");
         assertThat(result.type()).isEqualTo(ClothesType.OUTER);
@@ -177,10 +177,43 @@ class ClothesServiceTest {
         UUID id = UUID.randomUUID();
         when(clothesRepository.findById(id)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> clothesService.update(id,
-                new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest("새 이름", null, null)))
+                new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest("새 이름", null, null), UUID.randomUUID()))
                 .isInstanceOfSatisfying(OtbooException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND_CLOTHES));
     }
+    @Test
+    @DisplayName("타인의 의상은 변경하거나 속성을 조회하지 않는다")
+    void updateDeniedForOtherUser() {
+        UUID id = UUID.randomUUID();
+        Clothes clothes = new Clothes("원래 이름", ClothesType.TOP, null, owner(UUID.randomUUID()));
+        when(clothesRepository.findById(id)).thenReturn(Optional.of(clothes));
+        assertThatThrownBy(() -> clothesService.update(id,
+                new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest("변경", null, null), UUID.randomUUID()))
+                .isInstanceOfSatisfying(OtbooException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ACCESS_DENIED));
+        assertThat(clothes.getName()).isEqualTo("원래 이름");
+        org.mockito.Mockito.verifyNoInteractions(clothesAttributeRepository);
+    }
+
+    @Test
+    @DisplayName("이름 수정 응답에도 기존 속성의 정의와 선택값이 포함된다")
+    void updateReturnsExistingAttributes() {
+        UUID id = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        Clothes clothes = new Clothes("반팔", ClothesType.TOP, null, owner(ownerId));
+        ReflectionTestUtils.setField(clothes, "id", id);
+        ClothesAttributeDefinition definition = new ClothesAttributeDefinition("색상", List.of("파랑", "빨강"));
+        UUID definitionId = UUID.randomUUID();
+        ReflectionTestUtils.setField(definition, "id", definitionId);
+        when(clothesRepository.findById(id)).thenReturn(Optional.of(clothes));
+        when(clothesAttributeRepository.findAllByClothes_Id(id)).thenReturn(
+                List.of(new ClothesAttribute(clothes, definition, "파랑")));
+        ClothesDto result = clothesService.update(id,
+                new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest("새 이름", null, null), ownerId);
+        assertThat(result.attributes()).containsExactly(new ClothesAttributeWithDefDto(
+                definitionId, "색상", List.of("파랑", "빨강"), "파랑"));
+    }
+
     @Test
     @DisplayName("없는 속성 정의는 의상 저장 전에 거절한다")
     void createWithMissingDefinition() {

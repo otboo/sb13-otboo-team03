@@ -8,6 +8,7 @@ import com.otboo.team03.clothes.dto.response.ClothesDto;
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesAttribute;
 import com.otboo.team03.clothes.entity.ClothesAttributeDefinition;
+import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.clothes.exception.ClothesAttributeDefinitionNotFoundException;
 import com.otboo.team03.clothes.exception.ClothesNotFoundException;
 import com.otboo.team03.clothes.exception.DuplicateAttributeException;
@@ -15,6 +16,7 @@ import com.otboo.team03.clothes.exception.InvalidClothesAttributeValueException;
 import com.otboo.team03.clothes.repository.ClothesAttributeDefinitionRepository;
 import com.otboo.team03.clothes.repository.ClothesAttributeRepository;
 import com.otboo.team03.clothes.repository.ClothesRepository;
+import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.exception.UserNotFoundException;
@@ -158,7 +160,135 @@ public class ClothesService {
 
     @Transactional(readOnly = true)
     public List<ClothesDto> findAllByOwnerId(UUID ownerId) {
-        List<Clothes> clothesList = clothesRepository.findAllByOwner_Id(ownerId);
+        return toClothesDtos(clothesRepository.findAllByOwner_Id(ownerId));
+    }
+    /**
+     * 본인 의상을 수정한다. attributes 생략/null은 유지, 빈 목록은 전체 제거,
+     * 목록 전달은 전체 교체로 처리한다. 의상이나 공유 속성 정의 자체는 삭제하지 않는다.
+     */
+    @Transactional
+    public ClothesDto update(UUID clothesId, ClothesUpdateRequest request, UUID requesterId) {
+        Clothes clothes = clothesRepository.findById(clothesId)
+                .orElseThrow(ClothesNotFoundException::new);
+        if (!clothes.getOwner().getId().equals(requesterId)) {
+            throw new OtbooException(ErrorCode.ACCESS_DENIED);
+        }
+        if (request == null || (request.name() != null
+                && (request.name().isBlank() || request.name().length() > 255))) {
+            throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+
+        // 모든 입력 검증을 끝낸 뒤에만 엔티티를 변경한다.
+        Map<UUID, ClothesAttributeDefinition> definitions = request.attributes() == null
+                ? null : validateAttributes(request.attributes());
+        List<ClothesAttribute> existing = clothesAttributeRepository.findAllByClothes_Id(clothesId);
+        List<ClothesAttribute> resultAttributes = new ArrayList<>(existing);
+        if (definitions != null) {
+            Map<UUID, ClothesAttribute> remaining = new HashMap<>();
+            for (ClothesAttribute attribute : existing) {
+                remaining.put(attribute.getDefinition().getId(), attribute);
+            }
+            resultAttributes.clear();
+            for (ClothesAttributeDto attribute : request.attributes()) {
+                UUID definitionId = attribute.definitionId();
+                // 기존 복합 키는 유지하고 선택값만 변경한다. 같은 키를 삭제 후 재등록하지 않는다.
+                ClothesAttribute current = remaining.remove(definitionId);
+                if (current != null) {
+                    current.updateValue(attribute.value());
+                    resultAttributes.add(current);
+                } else {
+                    resultAttributes.add(clothesAttributeRepository.save(new ClothesAttribute(
+                            clothes, definitions.get(definitionId), attribute.value())));
+                }
+            }
+            // 새 목록에 빠진 의상별 속성값만 제거한다. 피드 연결은 건드리지 않는다.
+            clothesAttributeRepository.deleteAll(remaining.values());
+        }
+        clothes.update(request.name(), request.type());
+        return ClothesDto.from(clothes, toAttributeDtos(resultAttributes));
+    }
+
+    @Transactional
+    public void delete(UUID uuid){
+        if(clothesRepository.existsById(uuid)) {
+            clothesRepository.deleteById(uuid);
+        }else{
+            throw new ClothesNotFoundException();
+        }
+    }
+    /**
+     * 소유자와 타입 조건에 맞는 의상을 커서 방식으로 조회한다.
+     *
+     * 정렬: name ASC, id ASC.
+     * cursor에는 마지막 의상 이름, idAfter에는 마지막 의상 ID를 전달한다.
+     * totalCount는 커서 이후 개수가 아니라 소유자·타입 조건에 맞는 전체 개수다.
+     */
+    @Transactional(readOnly = true)
+    public CursorResponse<ClothesDto> findAll(
+            UUID ownerId,
+            int limit,
+            ClothesType typeEqual,
+            String cursor,
+            UUID idAfter
+    ) {
+        // 서비스 직접 호출에서도 기본 요청 조건을 보장한다.
+        if (ownerId == null || limit <= 0 || limit == Integer.MAX_VALUE) {
+            throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+
+        // 이 구현은 이름과 ID를 한 쌍으로 사용한다.
+        // 첫 페이지는 둘 다 없고, 다음 페이지는 둘 다 있어야 한다.
+        if ((cursor == null) != (idAfter == null)) {
+            throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+
+        // 한 개 더 조회하면 다음 페이지가 있는지 알 수 있다.
+        List<Clothes> fetched = clothesRepository.findPage(
+                ownerId,
+                typeEqual,
+                cursor,
+                idAfter,
+                limit + 1
+        );
+
+        boolean hasNext = fetched.size() > limit;
+
+        // 확인용으로 더 가져온 한 개는 응답에 포함하지 않는다.
+        List<Clothes> page = hasNext
+                ? fetched.subList(0, limit)
+                : fetched;
+
+        // 커서 조건을 제외한 전체 개수를 센다.
+        long totalCount = clothesRepository.countByFilter(
+                ownerId,
+                typeEqual
+        );
+
+        List<ClothesDto> data = toClothesDtos(page);
+
+        String nextCursor = null;
+        UUID nextIdAfter = null;
+
+        if (hasNext) {
+            // 더 가져온 의상이 아니라 실제 반환한 마지막 의상을 기준으로 한다.
+            Clothes last = page.get(page.size() - 1);
+            nextCursor = last.getName();
+            nextIdAfter = last.getId();
+        }
+
+        return new CursorResponse<>(
+                data,
+                nextCursor,
+                nextIdAfter,
+                hasNext,
+                totalCount,
+                "name",
+                "ASCENDING"
+        );
+    }
+
+    /** 현재 페이지의 속성·정의를 일괄 조회하고 의상의 정렬 순서를 유지해 응답을 만든다. */
+    private List<ClothesDto> toClothesDtos(List<Clothes> clothesList) {
         // 의상이 없으면 불필요한 속성 조회와 빈 IN 조건을 피한다.
         if (clothesList.isEmpty()) {
             return List.of();
@@ -180,32 +310,46 @@ public class ClothesService {
         // 각 의상의 기본 정보와 속성을 담은 목록을 반환한다. 의상이 없으면 빈 목록이다.
         return clothesResponses;
     }
-    @Transactional
-    public ClothesDto update(UUID clothesId, ClothesUpdateRequest request) {
-        Optional<Clothes> clothesOptional = clothesRepository.findById(clothesId);
-        if (clothesOptional.isEmpty()) {
-            throw new ClothesNotFoundException();
+
+    /**
+     * 교체할 속성 목록을 검증하고, 저장에 사용할 정의를 반환한다.
+     * 이 메서드에서는 기존 속성을 삭제하거나 변경하지 않는다.
+     */
+    private Map<UUID, ClothesAttributeDefinition> validateAttributes(
+            List<ClothesAttributeDto> attributes
+    ) {
+        Map<UUID, ClothesAttributeDefinition> definitions = new HashMap<>();
+
+        for (ClothesAttributeDto attribute : attributes) {
+            if (attribute == null
+                    || attribute.definitionId() == null
+                    || attribute.value() == null
+                    || attribute.value().isBlank()
+                    || attribute.value().length() > 255) {
+                throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+            }
+
+            UUID definitionId = attribute.definitionId();
+
+            // 한 의상에 같은 정의를 두 번 지정할 수 없다.
+            if (definitions.containsKey(definitionId)) {
+                throw new DuplicateAttributeException();
+            }
+
+            ClothesAttributeDefinition definition =
+                    clothesAttributeDefinitionRepository.findById(definitionId)
+                            .orElseThrow(
+                                    ClothesAttributeDefinitionNotFoundException::new
+                            );
+
+            // 정의가 존재하더라도 허용된 선택값인지 별도로 확인한다.
+            if (!definition.getSelectableValues().contains(attribute.value())) {
+                throw new InvalidClothesAttributeValueException();
+            }
+
+            definitions.put(definitionId, definition);
         }
 
-        Clothes clothes = clothesOptional.get();
-        // 트랜잭션 안에서 조회한 엔티티는 변경 감지로 수정 내용이 DB에 반영된다.
-        clothes.update(request.name(), request.type());
-
-        // 속성 수정은 아직 구현하지 않았으므로 기본 정보만 반환한다.
-        return new ClothesDto(clothes.getId(), clothes.getOwner().getId(), clothes.getName(),
-                clothes.getImageUrl(), clothes.getType(), List.of());
+        return definitions;
     }
-
-    @Transactional
-    public void delete(UUID uuid){
-        if(clothesRepository.existsById(uuid)) {
-            clothesRepository.deleteById(uuid);
-        }else{
-            throw new ClothesNotFoundException();
-        }
-    }
-
-
-
-
 }

@@ -32,7 +32,8 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+// 실제 운영 키 대신 테스트 전용 키를 사용한다. HS256은 최소 32바이트가 필요하다.
+@SpringBootTest(properties = "otboo.jwt.secret=otboo-clothes-test-secret-12345678901234567890")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
@@ -160,6 +161,135 @@ class ClothesCreateIntegrationTest {
         } finally {
             statistics.setStatisticsEnabled(false);
         }
+    }
+
+    @Test
+    @DisplayName("같은 이름의 의상도 커서로 중복 없이 이어 조회하고 타입 필터를 적용한다")
+    void cursorPagesWithSameNameAndFilter() {
+        ClothesDto first = service.create(request());
+        ClothesDto second = service.create(request());
+        service.create(new ClothesCreateRequest(owner.getId(), "바지", ClothesType.BOTTOM,
+                List.of(new ClothesAttributeDto(color.getId(), "파랑"))));
+        var page1 = service.findAll(owner.getId(), 1, ClothesType.TOP, null, null);
+        assertThat(page1.hasNext()).isTrue();
+        assertThat(page1.totalCount()).isEqualTo(2);
+        assertThat(page1.data().get(0).attributes()).isNotEmpty();
+        var page2 = service.findAll(owner.getId(), 1, ClothesType.TOP,
+                page1.nextCursor(), page1.nextIdAfter());
+        assertThat(page2.hasNext()).isFalse();
+        assertThat(page2.nextCursor()).isNull();
+        assertThat(page2.nextIdAfter()).isNull();
+        assertThat(page2.totalCount()).isEqualTo(2);
+        assertThat(java.util.stream.Stream.concat(page1.data().stream(), page2.data().stream())
+                .map(ClothesDto::id).toList()).containsExactlyInAnyOrder(first.id(), second.id());
+        assertThat(service.findAll(UUID.randomUUID(), 10, null, null, null).data()).isEmpty();
+        assertThatThrownBy(() -> service.findAll(owner.getId(), 0, null, null, null))
+                .isInstanceOf(com.otboo.team03.global.exception.OtbooException.class);
+        assertThatThrownBy(() -> service.findAll(owner.getId(), 1, null, "반팔", null))
+                .isInstanceOf(com.otboo.team03.global.exception.OtbooException.class);
+    }
+
+    @Test
+    @DisplayName("관리자는 속성 정의를 등록하고 저장된 생성 시각을 받는다")
+    void adminCreatesDefinition() throws Exception {
+        long before = definitions.count();
+        String response = mvc.perform(post("/api/clothes/attribute-defs").with(csrf()).with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"소재\",\"selectableValues\":[\"면\",\"울\"]}"))
+                .andExpect(status().isCreated())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.id").isNotEmpty())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.createdAt").isNotEmpty())
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(definitions.count()).isEqualTo(before + 1);
+        var saved = definitions.findAll().stream().filter(d -> d.getName().equals("소재")).findFirst().orElseThrow();
+        assertThat(saved.getSelectableValues()).containsExactly("면", "울");
+        assertThat(saved.getCreatedAt()).isNotNull();
+        assertThat(response).contains(saved.getId().toString());
+    }
+
+    @Test
+    @DisplayName("일반 사용자는 속성 정의를 등록할 수 없다")
+    void userCannotCreateDefinition() throws Exception {
+        long before = definitions.count();
+        mvc.perform(post("/api/clothes/attribute-defs").with(csrf()).with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("user").roles("USER"))
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"소재\",\"selectableValues\":[\"면\"]}"))
+                .andExpect(status().isForbidden());
+        assertThat(definitions.count()).isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("비로그인 사용자는 속성 정의를 등록할 수 없다")
+    void anonymousCannotCreateDefinition() throws Exception {
+        long before = definitions.count();
+        mvc.perform(post("/api/clothes/attribute-defs").with(csrf())
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"소재\",\"selectableValues\":[\"면\"]}"))
+                .andExpect(status().isUnauthorized());
+        assertThat(definitions.count()).isEqualTo(before);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "{\"name\":\" \",\"selectableValues\":[\"면\"]}",
+            "{\"name\":\"소재\",\"selectableValues\":[]}",
+            "{\"name\":\"소재\",\"selectableValues\":[null]}",
+            "{\"name\":\"소재\",\"selectableValues\":[\" \"]}"
+    })
+    @DisplayName("관리자라도 잘못된 정의 입력은 저장하지 않는다")
+    void invalidDefinitionIsRejected(String body) throws Exception {
+        long before = definitions.count();
+        mvc.perform(post("/api/clothes/attribute-defs").with(csrf()).with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest());
+        assertThat(definitions.count()).isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("속성 교체는 값 변경·추가·제거를 DB와 응답에 반영하고 생략하면 유지한다")
+    void replaceClothesAttributes() {
+        ClothesDto created = service.create(request());
+        var material = definitions.saveAndFlush(new ClothesAttributeDefinition("소재", List.of("면")));
+        var response = service.update(created.id(), new ClothesUpdateRequest("새 이름", null,
+                List.of(new ClothesAttributeDto(color.getId(), "빨강"),
+                        new ClothesAttributeDto(material.getId(), "면"))), owner.getId());
+        assertThat(response.attributes()).extracting(a -> a.value()).containsExactly("빨강", "면");
+        assertThat(service.findById(created.id()).attributes()).hasSize(2);
+
+        service.update(created.id(), new ClothesUpdateRequest(null, null,
+                List.of(new ClothesAttributeDto(material.getId(), "면"))), owner.getId());
+        assertThat(service.findById(created.id()).attributes()).extracting(a -> a.definitionId())
+                .containsExactly(material.getId());
+        var unchanged = service.update(created.id(), new ClothesUpdateRequest("이름만 변경", null, null), owner.getId());
+        assertThat(unchanged.attributes()).hasSize(1);
+
+        var cleared = service.update(created.id(), new ClothesUpdateRequest(null, null, List.of()), owner.getId());
+        assertThat(cleared.attributes()).isEmpty();
+        assertThat(service.findById(created.id()).attributes()).isEmpty();
+        assertThat(clothesRepository.existsById(created.id())).isTrue();
+        assertThat(definitions.existsById(color.getId())).isTrue();
+        assertThat(definitions.existsById(material.getId())).isTrue();
+    }
+
+    @Test
+    @DisplayName("잘못된 선택값·중복·없는 정의·타인 수정은 기존 이름과 속성을 유지한다")
+    void invalidAttributeUpdateDoesNotChangeStoredData() {
+        ClothesDto created = service.create(request());
+        List<List<ClothesAttributeDto>> invalidLists = List.of(
+                List.of(new ClothesAttributeDto(color.getId(), "허용되지않음")),
+                List.of(new ClothesAttributeDto(color.getId(), "빨강"), new ClothesAttributeDto(color.getId(), "파랑")),
+                List.of(new ClothesAttributeDto(UUID.randomUUID(), "파랑")),
+                java.util.Arrays.asList((ClothesAttributeDto) null));
+        for (var invalid : invalidLists) {
+            assertThatThrownBy(() -> service.update(created.id(),
+                    new ClothesUpdateRequest("바뀌면안됨", null, invalid), owner.getId()))
+                    .isInstanceOf(com.otboo.team03.global.exception.OtbooException.class);
+            assertThat(service.findById(created.id())).isEqualTo(created);
+        }
+        assertThatThrownBy(() -> service.update(created.id(),
+                new ClothesUpdateRequest("타인수정", null, List.of()), UUID.randomUUID()))
+                .isInstanceOf(com.otboo.team03.global.exception.OtbooException.class);
+        assertThat(service.findById(created.id())).isEqualTo(created);
     }
 
     private ClothesCreateRequest request() {
