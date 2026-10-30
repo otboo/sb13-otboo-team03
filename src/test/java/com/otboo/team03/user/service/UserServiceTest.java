@@ -1,10 +1,13 @@
 package com.otboo.team03.user.service;
 
+import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.entity.UserRole;
 import com.otboo.team03.user.exception.DuplicateEmailException;
+import com.otboo.team03.user.exception.LastAdminException;
+import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -15,13 +18,16 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.Optional;
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
-import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
@@ -31,6 +37,9 @@ class UserServiceTest {
 
     @Mock
     private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private JwtRegistry jwtRegistry;
 
     @InjectMocks
     private UserService userService;
@@ -90,5 +99,85 @@ class UserServiceTest {
             then(userRepository).should(never()).save(any(User.class));
             then(passwordEncoder).should(never()).encode(anyString());
         }
+    }
+
+    @Test
+    void updateRole_userToAdmin_success() {
+        // given
+        UUID userId = UUID.randomUUID();
+        User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        // when
+        userService.updateRole(userId, UserRole.ADMIN);
+
+        // then
+        assertThat(user.getRole()).isEqualTo(UserRole.ADMIN);
+        verify(userRepository).findById(userId);
+    }
+
+    @Test
+    void updateRole_userNotFound_throwsException() {
+        // given
+        UUID userId = UUID.randomUUID();
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> userService.updateRole(userId, UserRole.ADMIN))
+                .isInstanceOf(UserNotFoundException.class);
+
+        verify(userRepository).findById(userId);
+    }
+
+    @Test
+    void updateRole_sameRole_doesNotChangeRole() {
+        // given
+        UUID userId = UUID.randomUUID();
+        User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        // when
+        userService.updateRole(userId, UserRole.USER);
+
+        // then
+        assertThat(user.getRole()).isEqualTo(UserRole.USER);
+        verify(userRepository).findById(userId);
+        verify(userRepository, never()).save(any(User.class));
+        verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+    }
+
+    @Test
+    void updateRole_lastAdmin_throwsException() {
+        // given
+        UUID userId = UUID.randomUUID();
+        User admin = new User("admin@example.com", "encodedPassword", "관리자");
+        admin.changeRole(UserRole.ADMIN);
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(admin));
+        when(userRepository.countByRole(UserRole.ADMIN)).thenReturn(1L);
+
+        // when & then
+        assertThatThrownBy(() -> userService.updateRole(userId, UserRole.USER))
+                .isInstanceOf(LastAdminException.class);
+
+        assertThat(admin.getRole()).isEqualTo(UserRole.ADMIN);
+    }
+
+    @Test
+    void updateRole_roleChanged_invalidatesJwtSession() {
+        // given
+        UUID userId = UUID.randomUUID();
+        User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        // when
+        userService.updateRole(userId, UserRole.ADMIN);
+
+        // then
+        assertThat(user.getRole()).isEqualTo(UserRole.ADMIN);
+        verify(jwtRegistry).invalidateJwtInformationByUserId(userId);
     }
 }
