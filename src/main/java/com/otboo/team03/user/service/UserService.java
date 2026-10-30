@@ -6,6 +6,7 @@ import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.entity.UserRole;
 import com.otboo.team03.user.exception.DuplicateEmailException;
+import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -35,8 +36,12 @@ public class UserService {
         return UserDto.from(savedUser);
     }
 
+    @Transactional
     public void updateRole(UUID userId, UserRole role) {
-        // TODO: GREEN 단계에서 구현
+        User user = userRepository.findById(userId)
+                .orElseThrow(UserNotFoundException::new);
+
+        user.changeRole(role);
     }
 
 }
