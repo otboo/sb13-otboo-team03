@@ -1,5 +1,6 @@
 package com.otboo.team03.user.service;
 
+import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.User;
@@ -36,6 +37,9 @@ class UserServiceTest {
 
     @Mock
     private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private JwtRegistry jwtRegistry;
 
     @InjectMocks
     private UserService userService;
@@ -141,6 +145,7 @@ class UserServiceTest {
         assertThat(user.getRole()).isEqualTo(UserRole.USER);
         verify(userRepository).findById(userId);
         verify(userRepository, never()).save(any(User.class));
+        verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
     }
 
     @Test
@@ -158,5 +163,21 @@ class UserServiceTest {
                 .isInstanceOf(LastAdminException.class);
 
         assertThat(admin.getRole()).isEqualTo(UserRole.ADMIN);
+    }
+
+    @Test
+    void updateRole_roleChanged_invalidatesJwtSession() {
+        // given
+        UUID userId = UUID.randomUUID();
+        User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        // when
+        userService.updateRole(userId, UserRole.ADMIN);
+
+        // then
+        assertThat(user.getRole()).isEqualTo(UserRole.ADMIN);
+        verify(jwtRegistry).invalidateJwtInformationByUserId(userId);
     }
 }
