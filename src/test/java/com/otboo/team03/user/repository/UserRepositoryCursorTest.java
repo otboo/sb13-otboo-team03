@@ -2,9 +2,15 @@ package com.otboo.team03.user.repository;
 
 import com.otboo.team03.user.dto.request.UserListRequest;
 import com.otboo.team03.user.entity.User;
+
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 import com.otboo.team03.user.init.AdminInitializer;
+import jakarta.persistence.EntityManager;
+import org.flywaydb.core.internal.jdbc.JdbcTemplate;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -43,6 +49,9 @@ class UserRepositoryCursorTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     @MockitoBean
     private AdminInitializer adminInitializer;
@@ -93,6 +102,63 @@ class UserRepositoryCursorTest {
                         "a-bob@example.com",
                         "a-alice@example.com"
                 );
+    }
+
+    @Test
+    void shouldFindUsersSortedByCreatedAtAscending() {
+        // given
+        User first = userRepository.saveAndFlush(new User("z-first@example.com", "encodedPassword", "First"));
+        User second = userRepository.saveAndFlush(new User("x-second@example.com", "encodedPassword", "Second"));
+        User third = userRepository.saveAndFlush(new User("y-third@example.com", "encodedPassword", "Third"));
+
+        updateCreatedAt(first.getId(), Instant.parse("2026-01-01T00:00:00Z"));
+        updateCreatedAt(second.getId(), Instant.parse("2026-02-01T00:00:00Z"));
+        updateCreatedAt(third.getId(), Instant.parse("2026-03-01T00:00:00Z"));
+        entityManager.clear();
+
+        UserListRequest request = new UserListRequest(
+                null, null, 2, "createdAt", "ASCENDING", null, null, null
+        );
+
+        // when
+        List<User> users = userRepository.findUsersByCursor(request);
+
+        // then
+        assertThat(users)
+                .extracting(User::getId)
+                .containsExactly(first.getId(), second.getId(), third.getId());
+    }
+
+    @Test
+    void shouldFindUsersSortedByCreatedAtDescending() {
+        // given
+        User first = userRepository.saveAndFlush(new User("z-first@example.com", "encodedPassword", "First"));
+        User second = userRepository.saveAndFlush(new User("x-second@example.com", "encodedPassword", "Second"));
+        User third = userRepository.saveAndFlush(new User("y-third@example.com", "encodedPassword", "Third"));
+
+        updateCreatedAt(first.getId(), Instant.parse("2026-01-01T00:00:00Z"));
+        updateCreatedAt(second.getId(), Instant.parse("2026-02-01T00:00:00Z"));
+        updateCreatedAt(third.getId(), Instant.parse("2026-03-01T00:00:00Z"));
+        entityManager.clear();
+
+        UserListRequest request = new UserListRequest(
+                null, null, 2, "createdAt", "DESCENDING", null, null, null
+        );
+
+        // when
+        List<User> users = userRepository.findUsersByCursor(request);
+
+        // then
+        assertThat(users)
+                .extracting(User::getId)
+                .containsExactly(third.getId(), second.getId(), first.getId());
+    }
+
+    private void updateCreatedAt(UUID userId, Instant createdAt) {
+        entityManager.createQuery("UPDATE User u SET u.createdAt = :createdAt WHERE u.id = :userId")
+                .setParameter("createdAt", createdAt)
+                .setParameter("userId", userId)
+                .executeUpdate();
     }
 
 
