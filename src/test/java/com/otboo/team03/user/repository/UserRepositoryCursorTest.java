@@ -228,6 +228,58 @@ class UserRepositoryCursorTest {
                 .containsExactly("locked@filter-test.com");
     }
 
+    @Test
+    void shouldFindNextPageByEmailAscendingCursor() {
+        // given
+        userRepository.save(new User("a-alice@example.com", "encodedPassword", "Alice"));
+        User bob = userRepository.save(new User("a-bob@example.com", "encodedPassword", "Bob"));
+        userRepository.save(new User("a-charlie@example.com", "encodedPassword", "Charlie"));
+        userRepository.save(new User("a-david@example.com", "encodedPassword", "David"));
+        userRepository.save(new User("a-eric@example.com", "encodedPassword", "Eric"));
+
+        UserListRequest request = new UserListRequest(
+                bob.getEmail(), bob.getId(), 2, "email", "ASCENDING", null, null, null
+        );
+
+        // when
+        List<User> users = userRepository.findUsersByCursor(request);
+
+        // then
+        assertThat(users)
+                .extracting(User::getEmail)
+                .containsExactly(
+                        "a-charlie@example.com",
+                        "a-david@example.com",
+                        "a-eric@example.com"
+                );
+    }
+
+    @Test
+    void shouldFindNextPageByEmailDescendingCursor() {
+        // given
+        userRepository.save(new User("a-alice@example.com", "encodedPassword", "Alice"));
+        userRepository.save(new User("a-bob@example.com", "encodedPassword", "Bob"));
+        userRepository.save(new User("a-charlie@example.com", "encodedPassword", "Charlie"));
+        User david = userRepository.save(new User("a-david@example.com", "encodedPassword", "David"));
+        userRepository.save(new User("a-eric@example.com", "encodedPassword", "Eric"));
+
+        UserListRequest request = new UserListRequest(
+                david.getEmail(), david.getId(), 2, "email", "DESCENDING", null, null, null
+        );
+
+        // when
+        List<User> users = userRepository.findUsersByCursor(request);
+
+        // then
+        assertThat(users)
+                .extracting(User::getEmail)
+                .containsExactly(
+                        "a-charlie@example.com",
+                        "a-bob@example.com",
+                        "a-alice@example.com"
+                );
+    }
+
     private void updateCreatedAt(UUID userId, Instant createdAt) {
         entityManager.createQuery("UPDATE User u SET u.createdAt = :createdAt WHERE u.id = :userId")
                 .setParameter("createdAt", createdAt)
