@@ -64,4 +64,30 @@ class UserRepositoryCursorTest {
                         "a-charlie@example.com"
                 );
     }
+
+    @Test
+    void shouldFindUsersSortedByEmailDescending() {
+        // given
+        userRepository.save(new User("a-charlie@example.com", "encodedPassword", "Charlie"));
+        userRepository.save(new User("a-alice@example.com", "encodedPassword", "Alice"));
+        userRepository.save(new User("a-bob@example.com", "encodedPassword", "Bob"));
+
+        UserListRequest request = new UserListRequest(
+                null, null, 2, "email", "DESCENDING", null, null, null
+        );
+
+        // when
+        List<User> users = userRepository.findUsersByCursor(request);
+
+        // then
+        assertThat(users)
+                .extracting(User::getEmail)
+                .containsExactly(
+                        "a-charlie@example.com",
+                        "a-bob@example.com",
+                        "a-alice@example.com"
+                );
+    }
+
+
 }
