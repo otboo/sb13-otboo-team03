@@ -4,6 +4,7 @@ import com.otboo.team03.user.entity.UserRole;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 import java.util.UUID;
 
@@ -18,9 +19,11 @@ public record UserListRequest(
         Integer limit,
 
         @NotNull
+        @Pattern(regexp = "email|createdAt")
         String sortBy,
 
         @NotNull
+        @Pattern(regexp = "ASCENDING|DESCENDING")
         String sortDirection,
 
         String emailLike,
