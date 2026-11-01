@@ -1,5 +1,4 @@
 package com.otboo.team03.profile.entity;
-
 import com.otboo.team03.profile.converter.StringListJsonConverter;
 import com.otboo.team03.profile.dto.Gender;
 import com.otboo.team03.user.entity.User;
@@ -9,6 +8,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.domain.Persistable;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -21,12 +21,12 @@ import java.util.UUID;
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Profile {
+public class Profile implements Persistable<UUID> {
+
   @Id
   @Column(name = "user_id")
   private UUID userId;
 
-  // User의 PK를 Profile의 PK로 사용하는 1:1 식별 관계 (@MapsId)
   @MapsId
   @OneToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "user_id")
@@ -41,13 +41,15 @@ public class Profile {
 
   @Column(name = "birth_date")
   private LocalDate birthDate;
-
   private Double latitude;
-
   private Double longitude;
 
   @Column(name = "temperature_sensitivity")
   private Integer temperatureSensitivity;
+
+  @Convert(converter = StringListJsonConverter.class)
+  @Column(name = "location_names", columnDefinition = "jsonb")
+  private List<String> locationNames = new ArrayList<>();
 
   @CreatedDate
   @Column(name = "created_at", nullable = false, updatable = false)
@@ -57,9 +59,8 @@ public class Profile {
   @Column(name = "updated_at", nullable = false)
   private Instant updatedAt;
 
-  @Convert(converter = StringListJsonConverter.class)
-  @Column(name = "location_names", columnDefinition = "jsonb")
-  private List<String> locationNames = new ArrayList<>();
+  @Transient
+  private boolean isNew = true;
 
   public Profile(
       User user,
@@ -81,13 +82,29 @@ public class Profile {
     this.longitude = longitude;
     this.temperatureSensitivity = temperatureSensitivity;
     this.locationNames = locationNames != null ? locationNames : new ArrayList<>();
+    this.isNew = true;
   }
 
-  // 온도 민감도(1~5) 유효성 검증 규칙
+  @Override
+  public UUID getId() {
+    return this.userId;
+  }
+
+  @Override
+  public boolean isNew() {
+    return this.isNew || this.createdAt == null;
+  }
+
+  @PostPersist
+  @PostLoad
+  void markNotNew() {
+    this.isNew = false;
+  }
+
   private void validateTemperatureSensitivity(Integer sensitivity) {
     if (sensitivity != null && (sensitivity < 1 || sensitivity > 5)) {
       throw new IllegalArgumentException("온도 민감도는 1에서 5 사이여야 합니다.");
     }
-
   }
+
 }
