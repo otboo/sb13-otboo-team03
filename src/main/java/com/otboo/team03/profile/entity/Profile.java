@@ -1,5 +1,6 @@
 package com.otboo.team03.profile.entity;
 
+import com.otboo.team03.profile.converter.StringListJsonConverter;
 import com.otboo.team03.profile.dto.Gender;
 import com.otboo.team03.user.entity.User;
 import jakarta.persistence.*;
@@ -56,8 +57,8 @@ public class Profile {
   @Column(name = "updated_at", nullable = false)
   private Instant updatedAt;
 
-  // DB JSONB 매핑 전, 도메인 단위 테스트용 리스트
-  @Transient
+  @Convert(converter = StringListJsonConverter.class)
+  @Column(name = "location_names", columnDefinition = "jsonb")
   private List<String> locationNames = new ArrayList<>();
 
   public Profile(
