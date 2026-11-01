@@ -350,13 +350,20 @@ class UserRepositoryCursorTest {
         updateCreatedAt(third.getId(), sameCreatedAt);
         entityManager.clear();
 
-        List<UUID> sortedIds = List.of(first.getId(), second.getId(), third.getId())
-                .stream()
-                .sorted()
-                .toList();
+        UserListRequest firstRequest = new UserListRequest(
+                null, null, 2, "createdAt", "ASCENDING", null, null, null
+        );
+
+        // DB에서 실제 UUID 정렬 순서 확인
+        List<User> sortedUsers = userRepository.findUsersByCursor(firstRequest);
+
+        assertThat(sortedUsers).hasSize(3);
+
+        // 첫 번째 사용자를 커서로 지정
+        User cursorUser = sortedUsers.get(0);
 
         UserListRequest request = new UserListRequest(
-                sameCreatedAt.toString(), sortedIds.get(0), 2,
+                sameCreatedAt.toString(), cursorUser.getId(), 2,
                 "createdAt", "ASCENDING", null, null, null
         );
 
@@ -366,7 +373,10 @@ class UserRepositoryCursorTest {
         // then
         assertThat(users)
                 .extracting(User::getId)
-                .containsExactly(sortedIds.get(1), sortedIds.get(2));
+                .containsExactly(
+                        sortedUsers.get(1).getId(),
+                        sortedUsers.get(2).getId()
+                );
     }
 
     private void updateCreatedAt(UUID userId, Instant createdAt) {

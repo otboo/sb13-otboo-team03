@@ -9,6 +9,7 @@ import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -36,7 +37,8 @@ public class UserRepositoryImpl implements UserRepositoryCustom {
                         emailLike(request.emailLike()),
                         roleEqual(request.roleEqual()),
                         lockedEqual(request.locked()),
-                        emailCursor(request)
+                        emailCursor(request),
+                        createdAtCursor(request)
                 )
                 .orderBy(primaryOrder, idOrder)
                 .limit(request.limit() + 1L)
@@ -78,6 +80,32 @@ public class UserRepositoryImpl implements UserRepositoryCustom {
 
         return primaryCondition.or(
                 user.email.eq(cursor).and(secondaryCondition)
+        );
+    }
+
+    private BooleanExpression createdAtCursor(UserListRequest request) {
+        if (!"createdAt".equals(request.sortBy()) || request.cursor() == null) {
+            return null;
+        }
+
+        boolean ascending = "ASCENDING".equals(request.sortDirection());
+        Instant cursor = Instant.parse(request.cursor());
+        UUID idAfter = request.idAfter();
+
+        BooleanExpression primaryCondition = ascending
+                ? user.createdAt.gt(cursor)
+                : user.createdAt.lt(cursor);
+
+        if (idAfter == null) {
+            return primaryCondition;
+        }
+
+        BooleanExpression secondaryCondition = ascending
+                ? user.id.gt(idAfter)
+                : user.id.lt(idAfter);
+
+        return primaryCondition.or(
+                user.createdAt.eq(cursor).and(secondaryCondition)
         );
     }
 }
