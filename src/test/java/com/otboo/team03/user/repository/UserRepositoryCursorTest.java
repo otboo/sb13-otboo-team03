@@ -280,6 +280,95 @@ class UserRepositoryCursorTest {
                 );
     }
 
+    @Test
+    void shouldFindNextPageByCreatedAtAscendingCursor() {
+        // given
+        User first = userRepository.saveAndFlush(new User("first@cursor-test.com", "encodedPassword", "First"));
+        User second = userRepository.saveAndFlush(new User("second@cursor-test.com", "encodedPassword", "Second"));
+        User third = userRepository.saveAndFlush(new User("third@cursor-test.com", "encodedPassword", "Third"));
+        User fourth = userRepository.saveAndFlush(new User("fourth@cursor-test.com", "encodedPassword", "Fourth"));
+
+        updateCreatedAt(first.getId(), Instant.parse("2026-01-01T00:00:00Z"));
+        updateCreatedAt(second.getId(), Instant.parse("2026-02-01T00:00:00Z"));
+        updateCreatedAt(third.getId(), Instant.parse("2026-03-01T00:00:00Z"));
+        updateCreatedAt(fourth.getId(), Instant.parse("2026-04-01T00:00:00Z"));
+        entityManager.clear();
+
+        UserListRequest request = new UserListRequest(
+                "2026-02-01T00:00:00Z", second.getId(), 2,
+                "createdAt", "ASCENDING", null, null, null
+        );
+
+        // when
+        List<User> users = userRepository.findUsersByCursor(request);
+
+        // then
+        assertThat(users)
+                .extracting(User::getId)
+                .containsExactly(third.getId(), fourth.getId());
+    }
+
+    @Test
+    void shouldFindNextPageByCreatedAtDescendingCursor() {
+        // given
+        User first = userRepository.saveAndFlush(new User("first-desc@cursor-test.com", "encodedPassword", "First"));
+        User second = userRepository.saveAndFlush(new User("second-desc@cursor-test.com", "encodedPassword", "Second"));
+        User third = userRepository.saveAndFlush(new User("third-desc@cursor-test.com", "encodedPassword", "Third"));
+        User fourth = userRepository.saveAndFlush(new User("fourth-desc@cursor-test.com", "encodedPassword", "Fourth"));
+
+        updateCreatedAt(first.getId(), Instant.parse("2026-01-01T00:00:00Z"));
+        updateCreatedAt(second.getId(), Instant.parse("2026-02-01T00:00:00Z"));
+        updateCreatedAt(third.getId(), Instant.parse("2026-03-01T00:00:00Z"));
+        updateCreatedAt(fourth.getId(), Instant.parse("2026-04-01T00:00:00Z"));
+        entityManager.clear();
+
+        UserListRequest request = new UserListRequest(
+                "2026-03-01T00:00:00Z", third.getId(), 2,
+                "createdAt", "DESCENDING", null, null, null
+        );
+
+        // when
+        List<User> users = userRepository.findUsersByCursor(request);
+
+        // then
+        assertThat(users)
+                .extracting(User::getId)
+                .containsExactly(second.getId(), first.getId());
+    }
+
+    @Test
+    void shouldFindNextPageUsingIdAfterWhenCreatedAtIsSame() {
+        // given
+        User first = userRepository.saveAndFlush(new User("first-tie@cursor-test.com", "encodedPassword", "First"));
+        User second = userRepository.saveAndFlush(new User("second-tie@cursor-test.com", "encodedPassword", "Second"));
+        User third = userRepository.saveAndFlush(new User("third-tie@cursor-test.com", "encodedPassword", "Third"));
+
+        Instant sameCreatedAt = Instant.parse("2026-02-01T00:00:00Z");
+
+        updateCreatedAt(first.getId(), sameCreatedAt);
+        updateCreatedAt(second.getId(), sameCreatedAt);
+        updateCreatedAt(third.getId(), sameCreatedAt);
+        entityManager.clear();
+
+        List<UUID> sortedIds = List.of(first.getId(), second.getId(), third.getId())
+                .stream()
+                .sorted()
+                .toList();
+
+        UserListRequest request = new UserListRequest(
+                sameCreatedAt.toString(), sortedIds.get(0), 2,
+                "createdAt", "ASCENDING", null, null, null
+        );
+
+        // when
+        List<User> users = userRepository.findUsersByCursor(request);
+
+        // then
+        assertThat(users)
+                .extracting(User::getId)
+                .containsExactly(sortedIds.get(1), sortedIds.get(2));
+    }
+
     private void updateCreatedAt(UUID userId, Instant createdAt) {
         entityManager.createQuery("UPDATE User u SET u.createdAt = :createdAt WHERE u.id = :userId")
                 .setParameter("createdAt", createdAt)
