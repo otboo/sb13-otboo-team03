@@ -45,6 +45,11 @@ public class UserRepositoryImpl implements UserRepositoryCustom {
                 .fetch();
     }
 
+    @Override
+    public long countUsers(UserListRequest request) {
+        throw new UnsupportedOperationException("Not implemented yet");
+    }
+
     private BooleanExpression emailLike(String emailLike) {
         return emailLike == null || emailLike.isBlank() ? null : user.email.containsIgnoreCase(emailLike);
     }

@@ -1,6 +1,8 @@
 package com.otboo.team03.user.service;
 
+import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
+import com.otboo.team03.user.dto.request.UserListRequest;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.entity.UserRole;
@@ -15,6 +17,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -22,6 +28,9 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
@@ -90,5 +99,54 @@ class UserServiceTest {
             then(userRepository).should(never()).save(any(User.class));
             then(passwordEncoder).should(never()).encode(anyString());
         }
+    }
+
+    @Test
+    void shouldReturnUserListWithCursorPaginationMetadata() {
+        // given
+        UserListRequest request = new UserListRequest(
+                null, null, 2, "email", "ASCENDING", null, null, null
+        );
+
+        User alice = mock(User.class);
+        User bob = mock(User.class);
+        User charlie = mock(User.class);
+
+        UUID aliceId = UUID.randomUUID();
+        UUID bobId = UUID.randomUUID();
+
+        when(alice.getId()).thenReturn(aliceId);
+        when(alice.getEmail()).thenReturn("alice@example.com");
+        when(alice.getName()).thenReturn("Alice");
+        when(alice.getRole()).thenReturn(UserRole.USER);
+        when(alice.getCreatedAt()).thenReturn(Instant.parse("2026-01-01T00:00:00Z"));
+
+        when(bob.getId()).thenReturn(bobId);
+        when(bob.getEmail()).thenReturn("bob@example.com");
+        when(bob.getName()).thenReturn("Bob");
+        when(bob.getRole()).thenReturn(UserRole.USER);
+        when(bob.getCreatedAt()).thenReturn(Instant.parse("2026-01-02T00:00:00Z"));
+
+        when(userRepository.findUsersByCursor(request)).thenReturn(List.of(alice, bob, charlie));
+        when(userRepository.countUsers(request)).thenReturn(5L);
+
+        // when
+        CursorResponse<UserDto> response = userService.getUsers(request);
+
+        // then
+        assertThat(response.data())
+                .hasSize(2)
+                .extracting(UserDto::email)
+                .containsExactly("alice@example.com", "bob@example.com");
+
+        assertThat(response.hasNext()).isTrue();
+        assertThat(response.nextCursor()).isEqualTo("bob@example.com");
+        assertThat(response.nextIdAfter()).isEqualTo(bobId);
+        assertThat(response.totalCount()).isEqualTo(5L);
+        assertThat(response.sortBy()).isEqualTo("email");
+        assertThat(response.sortDirection()).isEqualTo("ASCENDING");
+
+        verify(userRepository).findUsersByCursor(request);
+        verify(userRepository).countUsers(request);
     }
 }

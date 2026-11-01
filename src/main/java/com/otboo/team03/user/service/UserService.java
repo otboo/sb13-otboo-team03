@@ -1,7 +1,9 @@
 package com.otboo.team03.user.service;
 
+import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
+import com.otboo.team03.user.dto.request.UserListRequest;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.exception.DuplicateEmailException;
@@ -30,5 +32,9 @@ public class UserService {
         User savedUser = userRepository.save(user);
 
         return UserDto.from(savedUser);
+    }
+
+    public CursorResponse<UserDto> getUsers(UserListRequest request) {
+        throw new UnsupportedOperationException("아직 구현 안함");
     }
 }
