@@ -21,12 +21,15 @@ public class UserRepositoryImpl implements UserRepositoryCustom {
     public List<User> findUsersByCursor(UserListRequest request) {
         boolean ascending = "ASCENDING".equals(request.sortDirection());
 
-        OrderSpecifier<String> emailOrder = ascending ? user.email.asc() : user.email.desc();
+        OrderSpecifier<?> primaryOrder = "createdAt".equals(request.sortBy())
+                ? (ascending ? user.createdAt.asc() : user.createdAt.desc())
+                : (ascending ? user.email.asc() : user.email.desc());
+
         OrderSpecifier<?> idOrder = ascending ? user.id.asc() : user.id.desc();
 
         return queryFactory
                 .selectFrom(user)
-                .orderBy(emailOrder, idOrder)
+                .orderBy(primaryOrder, idOrder)
                 .limit(request.limit() + 1L)
                 .fetch();
     }
