@@ -2,7 +2,9 @@ package com.otboo.team03.user.repository;
 
 import com.otboo.team03.user.dto.request.UserListRequest;
 import com.otboo.team03.user.entity.User;
+import com.otboo.team03.user.entity.UserRole;
 import com.querydsl.core.types.OrderSpecifier;
+import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -29,8 +31,25 @@ public class UserRepositoryImpl implements UserRepositoryCustom {
 
         return queryFactory
                 .selectFrom(user)
+                .where(
+                        emailLike(request.emailLike()),
+                        roleEqual(request.roleEqual()),
+                        lockedEqual(request.locked())
+                )
                 .orderBy(primaryOrder, idOrder)
                 .limit(request.limit() + 1L)
                 .fetch();
+    }
+
+    private BooleanExpression emailLike(String emailLike) {
+        return emailLike == null || emailLike.isBlank() ? null : user.email.containsIgnoreCase(emailLike);
+    }
+
+    private BooleanExpression roleEqual(UserRole role) {
+        return role == null ? null : user.role.eq(role);
+    }
+
+    private BooleanExpression lockedEqual(Boolean locked) {
+        return locked == null ? null : user.locked.eq(locked);
     }
 }
