@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.UUID;
 
 import static com.otboo.team03.user.entity.QUser.user;
 
@@ -34,7 +35,8 @@ public class UserRepositoryImpl implements UserRepositoryCustom {
                 .where(
                         emailLike(request.emailLike()),
                         roleEqual(request.roleEqual()),
-                        lockedEqual(request.locked())
+                        lockedEqual(request.locked()),
+                        emailCursor(request)
                 )
                 .orderBy(primaryOrder, idOrder)
                 .limit(request.limit() + 1L)
@@ -51,5 +53,31 @@ public class UserRepositoryImpl implements UserRepositoryCustom {
 
     private BooleanExpression lockedEqual(Boolean locked) {
         return locked == null ? null : user.locked.eq(locked);
+    }
+
+    private BooleanExpression emailCursor(UserListRequest request) {
+        if (!"email".equals(request.sortBy()) || request.cursor() == null) {
+            return null;
+        }
+
+        boolean ascending = "ASCENDING".equals(request.sortDirection());
+        String cursor = request.cursor();
+        UUID idAfter = request.idAfter();
+
+        BooleanExpression primaryCondition = ascending
+                ? user.email.gt(cursor)
+                : user.email.lt(cursor);
+
+        if (idAfter == null) {
+            return primaryCondition;
+        }
+
+        BooleanExpression secondaryCondition = ascending
+                ? user.id.gt(idAfter)
+                : user.id.lt(idAfter);
+
+        return primaryCondition.or(
+                user.email.eq(cursor).and(secondaryCondition)
+        );
     }
 }
