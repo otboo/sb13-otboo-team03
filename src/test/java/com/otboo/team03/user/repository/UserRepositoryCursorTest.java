@@ -44,9 +44,9 @@ class UserRepositoryCursorTest {
     @Test
     void shouldFindUsersSortedByEmailAscendingWithLimitPlusOne() {
         // given
-        userRepository.save(new User("charlie@example.com", "encodedPassword", "Charlie"));
-        userRepository.save(new User("alice@example.com", "encodedPassword", "Alice"));
-        userRepository.save(new User("bob@example.com", "encodedPassword", "Bob"));
+        userRepository.save(new User("a-charlie@example.com", "encodedPassword", "Charlie"));
+        userRepository.save(new User("a-alice@example.com", "encodedPassword", "Alice"));
+        userRepository.save(new User("a-bob@example.com", "encodedPassword", "Bob"));
 
         UserListRequest request = new UserListRequest(
                 null, null, 2, "email", "ASCENDING", null, null, null
@@ -59,9 +59,9 @@ class UserRepositoryCursorTest {
         assertThat(users)
                 .extracting(User::getEmail)
                 .containsExactly(
-                        "alice@example.com",
-                        "bob@example.com",
-                        "charlie@example.com"
+                        "a-alice@example.com",
+                        "a-bob@example.com",
+                        "a-charlie@example.com"
                 );
     }
 }

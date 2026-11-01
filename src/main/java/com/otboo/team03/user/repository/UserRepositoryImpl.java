@@ -8,6 +8,8 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+import static com.otboo.team03.user.entity.QUser.user;
+
 @Repository
 @RequiredArgsConstructor
 public class UserRepositoryImpl implements UserRepositoryCustom {
@@ -16,6 +18,10 @@ public class UserRepositoryImpl implements UserRepositoryCustom {
 
     @Override
     public List<User> findUsersByCursor(UserListRequest request) {
-        throw new UnsupportedOperationException("아직 구현 안함");
+        return queryFactory
+                .selectFrom(user)
+                .orderBy(user.email.asc(), user.id.asc())
+                .limit(request.limit() + 1L)
+                .fetch();
     }
 }
