@@ -2,6 +2,7 @@ package com.otboo.team03.user.repository;
 
 import com.otboo.team03.user.dto.request.UserListRequest;
 import com.otboo.team03.user.entity.User;
+import com.querydsl.core.types.OrderSpecifier;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -18,9 +19,14 @@ public class UserRepositoryImpl implements UserRepositoryCustom {
 
     @Override
     public List<User> findUsersByCursor(UserListRequest request) {
+        boolean ascending = "ASCENDING".equals(request.sortDirection());
+
+        OrderSpecifier<String> emailOrder = ascending ? user.email.asc() : user.email.desc();
+        OrderSpecifier<?> idOrder = ascending ? user.id.asc() : user.id.desc();
+
         return queryFactory
                 .selectFrom(user)
-                .orderBy(user.email.asc(), user.id.asc())
+                .orderBy(emailOrder, idOrder)
                 .limit(request.limit() + 1L)
                 .fetch();
     }

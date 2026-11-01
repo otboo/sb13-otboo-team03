@@ -3,12 +3,15 @@ package com.otboo.team03.user.repository;
 import com.otboo.team03.user.dto.request.UserListRequest;
 import com.otboo.team03.user.entity.User;
 import java.util.List;
+
+import com.otboo.team03.user.init.AdminInitializer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -40,6 +43,9 @@ class UserRepositoryCursorTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @MockitoBean
+    private AdminInitializer adminInitializer;
 
     @Test
     void shouldFindUsersSortedByEmailAscendingWithLimitPlusOne() {
