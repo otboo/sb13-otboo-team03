@@ -9,9 +9,13 @@ import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.exception.DuplicateEmailException;
 import com.otboo.team03.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -34,7 +38,47 @@ public class UserService {
         return UserDto.from(savedUser);
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
     public CursorResponse<UserDto> getUsers(UserListRequest request) {
-        throw new UnsupportedOperationException("아직 구현 안함");
+        List<User> users = userRepository.findUsersByCursor(request);
+        boolean hasNext = users.size() > request.limit();
+
+        List<User> page = users.stream()
+                .limit(request.limit())
+                .toList();
+
+        List<UserDto> data = page.stream()
+                .map(user -> new UserDto(
+                        user.getId(),
+                        user.getCreatedAt(),
+                        user.getEmail(),
+                        user.getName(),
+                        user.getRole(),
+                        user.isLocked()
+                ))
+                .toList();
+
+        User lastUser = page.isEmpty() ? null : page.get(page.size() - 1);
+
+        String nextCursor = hasNext
+                ? "createdAt".equals(request.sortBy())
+                  ? lastUser.getCreatedAt().toString()
+                  : lastUser.getEmail()
+                : null;
+
+        UUID nextIdAfter = hasNext ? lastUser.getId() : null;
+
+        long totalCount = userRepository.countUsers(request);
+
+        return new CursorResponse<>(
+                data,
+                nextCursor,
+                nextIdAfter,
+                hasNext,
+                totalCount,
+                request.sortBy(),
+                request.sortDirection()
+        );
     }
 }

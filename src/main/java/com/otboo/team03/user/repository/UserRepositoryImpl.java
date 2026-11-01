@@ -47,7 +47,17 @@ public class UserRepositoryImpl implements UserRepositoryCustom {
 
     @Override
     public long countUsers(UserListRequest request) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        Long count = queryFactory
+                .select(user.count())
+                .from(user)
+                .where(
+                        emailLike(request.emailLike()),
+                        roleEqual(request.roleEqual()),
+                        lockedEqual(request.locked())
+                )
+                .fetchOne();
+
+        return count == null ? 0L : count;
     }
 
     private BooleanExpression emailLike(String emailLike) {
