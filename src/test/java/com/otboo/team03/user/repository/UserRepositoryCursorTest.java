@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.otboo.team03.user.entity.UserRole;
 import com.otboo.team03.user.init.AdminInitializer;
 import jakarta.persistence.EntityManager;
 import org.flywaydb.core.internal.jdbc.JdbcTemplate;
@@ -152,6 +153,79 @@ class UserRepositoryCursorTest {
         assertThat(users)
                 .extracting(User::getId)
                 .containsExactly(third.getId(), second.getId(), first.getId());
+    }
+
+    @Test
+    void shouldFilterUsersByEmailLike() {
+        // given
+        userRepository.save(new User("alice@filter-test.com", "encodedPassword", "Alice"));
+        userRepository.save(new User("bob@filter-test.com", "encodedPassword", "Bob"));
+        userRepository.save(new User("charlie@other-test.com", "encodedPassword", "Charlie"));
+
+        UserListRequest request = new UserListRequest(
+                null, null, 10, "email", "ASCENDING", "filter-test.com", null, null
+        );
+
+        // when
+        List<User> users = userRepository.findUsersByCursor(request);
+
+        // then
+        assertThat(users)
+                .extracting(User::getEmail)
+                .containsExactly(
+                        "alice@filter-test.com",
+                        "bob@filter-test.com"
+                );
+    }
+
+    @Test
+    void shouldFilterUsersByRole() {
+        // given
+        User admin = new User("admin@filter-test.com", "encodedPassword", "Admin");
+        admin.changeRole(UserRole.ADMIN);
+
+        userRepository.save(admin);
+        userRepository.save(new User("user@filter-test.com", "encodedPassword", "User"));
+
+        UserListRequest request = new UserListRequest(
+                null, null, 10, "email", "ASCENDING", null, UserRole.ADMIN, null
+        );
+
+        // when
+        List<User> users = userRepository.findUsersByCursor(request);
+
+        // then
+        assertThat(users)
+                .extracting(User::getEmail)
+                .containsExactly("admin@filter-test.com");
+    }
+
+    @Test
+    void shouldFilterUsersByLockedStatus() {
+        // given
+        User lockedUser = userRepository.saveAndFlush(
+                new User("locked@filter-test.com", "encodedPassword", "Locked")
+        );
+
+        userRepository.save(new User("unlocked@filter-test.com", "encodedPassword", "Unlocked"));
+
+        entityManager.createQuery("UPDATE User u SET u.locked = true WHERE u.id = :userId")
+                .setParameter("userId", lockedUser.getId())
+                .executeUpdate();
+
+        entityManager.clear();
+
+        UserListRequest request = new UserListRequest(
+                null, null, 10, "email", "ASCENDING", null, null, true
+        );
+
+        // when
+        List<User> users = userRepository.findUsersByCursor(request);
+
+        // then
+        assertThat(users)
+                .extracting(User::getEmail)
+                .containsExactly("locked@filter-test.com");
     }
 
     private void updateCreatedAt(UUID userId, Instant createdAt) {
