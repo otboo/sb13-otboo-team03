@@ -101,52 +101,58 @@ class UserServiceTest {
         }
     }
 
-    @Test
-    void shouldReturnUserListWithCursorPaginationMetadata() {
-        // given
-        UserListRequest request = new UserListRequest(
-                null, null, 2, "email", "ASCENDING", null, null, null
-        );
+    @Nested
+    @DisplayName("사용자 목록 조회")
+    class GetUserListTest {
 
-        User alice = mock(User.class);
-        User bob = mock(User.class);
-        User charlie = mock(User.class);
+        @Test
+        @DisplayName("커서 페이지네이션 결과 및 메타데이터 반환")
+        void shouldReturnUserListWithCursorPaginationMetadata() {
+            // given
+            UserListRequest request = new UserListRequest(
+                    null, null, 2, "email", "ASCENDING", null, null, null
+            );
 
-        UUID aliceId = UUID.randomUUID();
-        UUID bobId = UUID.randomUUID();
+            User alice = mock(User.class);
+            User bob = mock(User.class);
+            User charlie = mock(User.class);
 
-        when(alice.getId()).thenReturn(aliceId);
-        when(alice.getEmail()).thenReturn("alice@example.com");
-        when(alice.getName()).thenReturn("Alice");
-        when(alice.getRole()).thenReturn(UserRole.USER);
-        when(alice.getCreatedAt()).thenReturn(Instant.parse("2026-01-01T00:00:00Z"));
+            UUID aliceId = UUID.randomUUID();
+            UUID bobId = UUID.randomUUID();
 
-        when(bob.getId()).thenReturn(bobId);
-        when(bob.getEmail()).thenReturn("bob@example.com");
-        when(bob.getName()).thenReturn("Bob");
-        when(bob.getRole()).thenReturn(UserRole.USER);
-        when(bob.getCreatedAt()).thenReturn(Instant.parse("2026-01-02T00:00:00Z"));
+            when(alice.getId()).thenReturn(aliceId);
+            when(alice.getEmail()).thenReturn("alice@example.com");
+            when(alice.getName()).thenReturn("Alice");
+            when(alice.getRole()).thenReturn(UserRole.USER);
+            when(alice.getCreatedAt()).thenReturn(Instant.parse("2026-01-01T00:00:00Z"));
 
-        when(userRepository.findUsersByCursor(request)).thenReturn(List.of(alice, bob, charlie));
-        when(userRepository.countUsers(request)).thenReturn(5L);
+            when(bob.getId()).thenReturn(bobId);
+            when(bob.getEmail()).thenReturn("bob@example.com");
+            when(bob.getName()).thenReturn("Bob");
+            when(bob.getRole()).thenReturn(UserRole.USER);
+            when(bob.getCreatedAt()).thenReturn(Instant.parse("2026-01-02T00:00:00Z"));
 
-        // when
-        CursorResponse<UserDto> response = userService.getUsers(request);
+            when(userRepository.findUsersByCursor(request)).thenReturn(List.of(alice, bob, charlie));
+            when(userRepository.countUsers(request)).thenReturn(5L);
 
-        // then
-        assertThat(response.data())
-                .hasSize(2)
-                .extracting(UserDto::email)
-                .containsExactly("alice@example.com", "bob@example.com");
+            // when
+            CursorResponse<UserDto> response = userService.getUsers(request);
 
-        assertThat(response.hasNext()).isTrue();
-        assertThat(response.nextCursor()).isEqualTo("bob@example.com");
-        assertThat(response.nextIdAfter()).isEqualTo(bobId);
-        assertThat(response.totalCount()).isEqualTo(5L);
-        assertThat(response.sortBy()).isEqualTo("email");
-        assertThat(response.sortDirection()).isEqualTo("ASCENDING");
+            // then
+            assertThat(response.data())
+                    .hasSize(2)
+                    .extracting(UserDto::email)
+                    .containsExactly("alice@example.com", "bob@example.com");
 
-        verify(userRepository).findUsersByCursor(request);
-        verify(userRepository).countUsers(request);
+            assertThat(response.hasNext()).isTrue();
+            assertThat(response.nextCursor()).isEqualTo("bob@example.com");
+            assertThat(response.nextIdAfter()).isEqualTo(bobId);
+            assertThat(response.totalCount()).isEqualTo(5L);
+            assertThat(response.sortBy()).isEqualTo("email");
+            assertThat(response.sortDirection()).isEqualTo("ASCENDING");
+
+            verify(userRepository).findUsersByCursor(request);
+            verify(userRepository).countUsers(request);
+        }
     }
 }
