@@ -40,4 +40,8 @@ public class User extends UpdateEntity {
     public void changeRole(UserRole role) {
         this.role = role;
     }
+
+    public void changePassword(String encodedPassword) {
+        this.password = encodedPassword;
+    }
 }
