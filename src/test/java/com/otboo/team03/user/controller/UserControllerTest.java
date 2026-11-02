@@ -5,6 +5,7 @@ import com.otboo.team03.user.dto.request.UserCreateRequest;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.UserRole;
 import com.otboo.team03.user.exception.DuplicateEmailException;
+import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.service.UserService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -23,8 +24,12 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 
 @ExtendWith(MockitoExtension.class)
 class UserControllerTest {
@@ -137,4 +142,86 @@ class UserControllerTest {
                     .andExpect(jsonPath("$.message").exists());
         }
     }
+
+    @Nested
+    @DisplayName("비밀번호 변경")
+    class ChangePasswordTest {
+
+        @Test
+        @DisplayName("성공 - 새 비밀번호로 변경하면 204 No Content 반환")
+        void changePassword_success_returns204() throws Exception {
+            // given
+            UUID userId = UUID.randomUUID();
+            String newPassword = "newPassword123!";
+
+            MockMvc mockMvc = MockMvcBuilders.standaloneSetup(userController).build();
+
+            // when & then
+            mockMvc.perform(patch("/api/users/{userId}/password", userId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                {
+                                    "password": "newPassword123!"
+                                }
+                                """))
+                    .andExpect(status().isNoContent());
+
+            verify(userService).changePassword(userId, newPassword);
+        }
+
+        @Test
+        @DisplayName("실패 - 존재하지 않는 사용자면 404 Not Found 반환")
+        void changePassword_userNotFound_returns404() throws Exception {
+            // given
+            UUID userId = UUID.randomUUID();
+
+            doThrow(new UserNotFoundException())
+                    .when(userService).changePassword(eq(userId), any(String.class));
+
+            MockMvc mockMvc = MockMvcBuilders.standaloneSetup(userController)
+                    .setControllerAdvice(new GlobalExceptionHandler())
+                    .build();
+
+            // when & then
+            mockMvc.perform(patch("/api/users/{userId}/password", userId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                {
+                                    "password": "newPassword123!"
+                                }
+                                """))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.exceptionName").exists());
+
+            verify(userService).changePassword(userId, "newPassword123!");
+        }
+
+        @Test
+        @DisplayName("실패 - 빈 비밀번호 요청 시 400 Bad Request 반환")
+        void changePassword_blankPassword_returns400() throws Exception {
+            // given
+            LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
+            validator.afterPropertiesSet();
+
+            try {
+                MockMvc mockMvc = MockMvcBuilders.standaloneSetup(userController)
+                        .setValidator(validator)
+                        .build();
+
+                // when & then
+                mockMvc.perform(patch("/api/users/{userId}/password", UUID.randomUUID())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {
+                                        "password": ""
+                                    }
+                                    """))
+                        .andExpect(status().isBadRequest());
+
+            } finally {
+                validator.close();
+            }
+        }
+    }
+
 }
