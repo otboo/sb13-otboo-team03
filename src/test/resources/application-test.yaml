@@ -1,3 +1,8 @@
+spring:
+  mail:
+    host: localhost
+    port: 1025
+
 otboo:
   admin:
     email: admin@test.example

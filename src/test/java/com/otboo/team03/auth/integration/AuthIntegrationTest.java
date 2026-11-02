@@ -2,6 +2,7 @@
 package com.otboo.team03.auth.integration;
 
 import com.otboo.team03.user.entity.User;
+import com.otboo.team03.user.repository.RedisTemporaryPasswordRepository;
 import com.otboo.team03.user.repository.UserRepository;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.DisplayName;
@@ -57,6 +58,9 @@ class AuthIntegrationTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private RedisTemporaryPasswordRepository temporaryPasswordRepository;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -130,6 +134,95 @@ class AuthIntegrationTest {
                         .andExpect(cookie().path("REFRESH_TOKEN", "/"));
 
             } finally {
+                userRepository.deleteById(user.getId());
+            }
+        }
+
+
+        @Test
+        @DisplayName("임시 비밀번호 활성화 중 기존 비밀번호는 거부하고 임시 비밀번호로 로그인할 수 있다")
+        void login_withTemporaryPassword_acceptsOnlyTemporaryPassword() throws Exception {
+            // given
+            String email = UUID.randomUUID() + "@example.com";
+            String originalPassword = "password123!";
+            String temporaryPassword = "temporary1!!";
+
+            User user = userRepository.saveAndFlush(new User(email, passwordEncoder.encode(originalPassword), "테스트 사용자"));
+
+            try {
+                temporaryPasswordRepository.save(email, passwordEncoder.encode(temporaryPassword));
+
+                Cookie csrfCookie = mvc.perform(get("/api/auth/csrf-token"))
+                        .andExpect(status().isNoContent())
+                        .andReturn().getResponse().getCookie("XSRF-TOKEN");
+
+                assertThat(csrfCookie).isNotNull();
+
+                // 기존 비밀번호 로그인 실패
+                mvc.perform(post("/api/auth/sign-in")
+                                .cookie(csrfCookie)
+                                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                                .param("username", email)
+                                .param("password", originalPassword))
+                        .andExpect(status().isUnauthorized());
+
+                // 임시 비밀번호 로그인 성공
+                mvc.perform(post("/api/auth/sign-in")
+                                .cookie(csrfCookie)
+                                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                                .param("username", email)
+                                .param("password", temporaryPassword))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                        .andExpect(cookie().exists("REFRESH_TOKEN"));
+
+            } finally {
+                temporaryPasswordRepository.delete(email);
+                userRepository.deleteById(user.getId());
+            }
+        }
+
+        @Test
+        @DisplayName("임시 비밀번호 만료 후 기존 비밀번호로 다시 로그인할 수 있다")
+        void login_afterTemporaryPasswordExpiration_acceptsOriginalPassword() throws Exception {
+            // given
+            String email = UUID.randomUUID() + "@example.com";
+            String originalPassword = "password123!";
+            String temporaryPassword = "temporary1!!";
+
+            User user = userRepository.saveAndFlush(new User(email, passwordEncoder.encode(originalPassword), "테스트 사용자"));
+
+            try {
+                temporaryPasswordRepository.save(email, passwordEncoder.encode(temporaryPassword));
+
+                // Redis TTL 만료 상태 재현
+                temporaryPasswordRepository.delete(email);
+
+                Cookie csrfCookie = mvc.perform(get("/api/auth/csrf-token"))
+                        .andExpect(status().isNoContent())
+                        .andReturn().getResponse().getCookie("XSRF-TOKEN");
+
+                assertThat(csrfCookie).isNotNull();
+
+                // 기존 비밀번호 로그인 성공
+                mvc.perform(post("/api/auth/sign-in")
+                                .cookie(csrfCookie)
+                                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                                .param("username", email)
+                                .param("password", originalPassword))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.accessToken").isNotEmpty());
+
+                // 만료된 임시 비밀번호 로그인 실패
+                mvc.perform(post("/api/auth/sign-in")
+                                .cookie(csrfCookie)
+                                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                                .param("username", email)
+                                .param("password", temporaryPassword))
+                        .andExpect(status().isUnauthorized());
+
+            } finally {
+                temporaryPasswordRepository.delete(email);
                 userRepository.deleteById(user.getId());
             }
         }
