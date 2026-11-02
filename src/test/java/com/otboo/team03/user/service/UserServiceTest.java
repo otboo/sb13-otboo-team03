@@ -1,3 +1,4 @@
+
 package com.otboo.team03.user.service;
 
 import com.otboo.team03.global.security.jwt.JwtRegistry;
@@ -9,6 +10,8 @@ import com.otboo.team03.user.exception.DuplicateEmailException;
 import com.otboo.team03.user.exception.LastAdminException;
 import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.UserRepository;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -17,6 +20,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -105,6 +110,16 @@ class UserServiceTest {
     @DisplayName("사용자 권한 변경")
     class UpdateRoleTest {
 
+        @BeforeEach
+        void setUp() {
+            TransactionSynchronizationManager.initSynchronization();
+        }
+
+        @AfterEach
+        void tearDown() {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+
         @Test
         @DisplayName("성공 - USER 권한을 ADMIN으로 변경하고 UserDto 반환")
         void updateRole_userToAdmin_success() {
@@ -123,6 +138,7 @@ class UserServiceTest {
             assertThat(result.email()).isEqualTo(user.getEmail());
             assertThat(result.name()).isEqualTo(user.getName());
             verify(userRepository).findById(userId);
+            verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
         }
 
         @Test
@@ -158,6 +174,7 @@ class UserServiceTest {
             verify(userRepository).findById(userId);
             verify(userRepository, never()).save(any(User.class));
             verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
         }
 
         @Test
@@ -176,10 +193,11 @@ class UserServiceTest {
                     .isInstanceOf(LastAdminException.class);
 
             assertThat(admin.getRole()).isEqualTo(UserRole.ADMIN);
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
         }
 
         @Test
-        @DisplayName("성공 - 권한 변경 시 기존 JWT 세션 무효화")
+        @DisplayName("성공 - DB 커밋 후 기존 JWT 세션 무효화")
         void updateRole_roleChanged_invalidatesJwtSession() {
             // given
             UUID userId = UUID.randomUUID();
@@ -190,11 +208,42 @@ class UserServiceTest {
             // when
             UserDto result = userService.updateRole(userId, UserRole.ADMIN);
 
-            // then
+            // then: 권한 변경 직후 Redis 무효화 미실행
             assertThat(user.getRole()).isEqualTo(UserRole.ADMIN);
             assertThat(result.role()).isEqualTo(UserRole.ADMIN);
+            verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+
+            // when: DB 커밋 콜백 실행
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+
+            // then: 커밋 후 Redis 무효화 실행
             verify(jwtRegistry).invalidateJwtInformationByUserId(userId);
         }
-    }
 
+        @Test
+        @DisplayName("성공 - DB 롤백 시 기존 JWT 세션 유지")
+        void updateRole_roleChanged_rollbackKeepsJwtSession() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+            // when
+            userService.updateRole(userId, UserRole.ADMIN);
+
+            // then: 커밋 전 Redis 무효화 미실행
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+            verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+
+            // when: DB 롤백 콜백 실행
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(synchronization -> synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
+
+            // then: Redis 세션 유지
+            verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+        }
+    }
 }

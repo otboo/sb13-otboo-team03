@@ -14,6 +14,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.UUID;
 
@@ -54,7 +56,14 @@ public class UserService {
         }
 
         user.changeRole(role);
-        jwtRegistry.invalidateJwtInformationByUserId(userId);
+
+        // db 트랜잭션이 커밋된 이후에 Redis 세션 무효화되도록
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                jwtRegistry.invalidateJwtInformationByUserId(userId);
+            }
+        });
 
         return UserDto.from(user);
     }
