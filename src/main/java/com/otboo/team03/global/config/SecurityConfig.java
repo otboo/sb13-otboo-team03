@@ -44,7 +44,8 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/auth/csrf-token",
                                 "/api/auth/sign-in",
-                                "/api/auth/refresh"
+                                "/api/auth/refresh",
+                                "/api/auth/reset-password"
                         ).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
                         .requestMatchers(
