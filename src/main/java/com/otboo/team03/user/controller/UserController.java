@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -29,6 +30,7 @@ public class UserController {
     }
 
     @PatchMapping("/{userId}/password")
+    @PreAuthorize("#userId == authentication.principal.userDto.id")
     public ResponseEntity<Void> changePassword(
             @PathVariable UUID userId,
             @Valid @RequestBody ChangePasswordRequest request
