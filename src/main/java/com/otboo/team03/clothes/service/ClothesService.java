@@ -53,7 +53,7 @@ public class ClothesService {
             throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
         }
         // 존재 여부 확인은 권한 검사가 아니다.
-        //인증 사용자 ID를 제공하는 구조가 구현되면 ownerId와 비교하거나 소유자로 사용한다.
+        // 생성 Controller에서 인증 사용자 ID와 ownerId를 비교하고, 여기서는 DB 사용자 존재를 확인한다.
         // 존재 여부만 확인하는 대신 실제 User를 조회해 의상의 소유자로 연결한다.
         User owner = userRepository.findById(request.ownerId())
                 .orElseThrow(UserNotFoundException::new);
@@ -208,13 +208,19 @@ public class ClothesService {
         return ClothesDto.from(clothes, toAttributeDtos(resultAttributes));
     }
 
+    /**
+     * 본인 의상만 삭제한다. 사용자·피드 본문·공유 속성 정의·다른 의상은 유지한다.
+     * V3 마이그레이션의 ON DELETE CASCADE가 해당 속성값과 모든 피드 연결을 정리한다.
+     * DB가 직접 정리하므로 같은 영속성 컨텍스트에서 이미 읽은 연결 객체는 자동 갱신되지 않는다.
+     */
     @Transactional
-    public void delete(UUID uuid){
-        if(clothesRepository.existsById(uuid)) {
-            clothesRepository.deleteById(uuid);
-        }else{
-            throw new ClothesNotFoundException();
+    public void delete(UUID clothesId, UUID requesterId) {
+        Clothes clothes = clothesRepository.findById(clothesId)
+                .orElseThrow(ClothesNotFoundException::new);
+        if (!clothes.getOwner().getId().equals(requesterId)) {
+            throw new OtbooException(ErrorCode.ACCESS_DENIED);
         }
+        clothesRepository.delete(clothes);
     }
     /**
      * 소유자와 타입 조건에 맞는 의상을 커서 방식으로 조회한다.
