@@ -4,6 +4,7 @@ package com.otboo.team03.auth.integration;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.RedisTemporaryPasswordRepository;
 import com.otboo.team03.user.repository.UserRepository;
+import com.otboo.team03.user.service.MailService;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -11,10 +12,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.GenericContainer;
@@ -29,6 +32,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -70,6 +76,9 @@ class AuthIntegrationTest {
 
     @Autowired
     private MockMvc mvc;
+
+    @MockitoBean
+    private MailService mailService;
 
     @Nested
     @DisplayName("인증 및 CSRF 보안")
@@ -350,4 +359,108 @@ class AuthIntegrationTest {
             }
         }
     }
+
+    @Nested
+    @DisplayName("비밀번호 초기화")
+    class ResetPasswordTest {
+
+        @Test
+        @DisplayName("성공 - 비인증 사용자가 초기화 요청 시 204 반환 및 임시 비밀번호 발급")
+        void resetPassword_success_returns204() throws Exception {
+            // given
+            String email = UUID.randomUUID() + "@example.com";
+            User user = userRepository.saveAndFlush(new User(email, passwordEncoder.encode("password123!"), "테스트 사용자"));
+
+            try {
+                Cookie csrfCookie = getCsrfCookie();
+
+                // when & then
+                mvc.perform(post("/api/auth/reset-password")
+                                .cookie(csrfCookie)
+                                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                    {
+                                        "email": "%s"
+                                    }
+                                    """.formatted(email)))
+                        .andExpect(status().isNoContent());
+
+                assertThat(temporaryPasswordRepository.findByEmail(email)).isPresent();
+                verify(mailService).sendTemporaryPassword(eq(email), anyString());
+
+            } finally {
+                temporaryPasswordRepository.delete(email);
+                userRepository.deleteById(user.getId());
+            }
+        }
+
+        @Test
+        @DisplayName("실패 - 존재하지 않는 이메일이면 404 반환")
+        void resetPassword_userNotFound_returns404() throws Exception {
+            // given
+            String email = UUID.randomUUID() + "@example.com";
+            Cookie csrfCookie = getCsrfCookie();
+
+            // when & then
+            mvc.perform(post("/api/auth/reset-password")
+                            .cookie(csrfCookie)
+                            .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                {
+                                    "email": "%s"
+                                }
+                                """.formatted(email)))
+                    .andExpect(status().isNotFound());
+
+            assertThat(temporaryPasswordRepository.findByEmail(email)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("실패 - CSRF 토큰 없이 초기화 요청 시 403 반환")
+        void resetPassword_withoutCsrf_returns403() throws Exception {
+            // given
+            String email = "user@example.com";
+
+            // when & then
+            mvc.perform(post("/api/auth/reset-password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                {
+                                    "email": "%s"
+                                }
+                                """.formatted(email)))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("실패 - 잘못된 이메일 형식이면 400 반환")
+        void resetPassword_invalidEmail_returns400() throws Exception {
+            // given
+            Cookie csrfCookie = getCsrfCookie();
+
+            // when & then
+            mvc.perform(post("/api/auth/reset-password")
+                            .cookie(csrfCookie)
+                            .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                {
+                                    "email": "invalid-email"
+                                }
+                                """))
+                    .andExpect(status().isBadRequest());
+        }
+
+        private Cookie getCsrfCookie() throws Exception {
+            Cookie csrfCookie = mvc.perform(get("/api/auth/csrf-token"))
+                    .andExpect(status().isNoContent())
+                    .andReturn().getResponse().getCookie("XSRF-TOKEN");
+
+            assertThat(csrfCookie).isNotNull();
+            return csrfCookie;
+        }
+    }
+
 }
