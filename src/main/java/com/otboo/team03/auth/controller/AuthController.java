@@ -5,7 +5,10 @@ import com.otboo.team03.global.config.JwtProperties;
 import com.otboo.team03.global.dto.JwtDto;
 import com.otboo.team03.global.dto.JwtRefreshResult;
 import com.otboo.team03.global.security.jwt.RefreshTokenCookieProvider;
+import com.otboo.team03.user.dto.request.ResetPasswordRequest;
+import com.otboo.team03.user.service.PasswordResetService;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -22,6 +25,7 @@ public class AuthController {
     private final AuthService authService;
     private final RefreshTokenCookieProvider refreshTokenCookieProvider;
     private final JwtProperties jwtProperties;
+    private final PasswordResetService passwordResetService;
 
     // CSRF 토큰 발급
     @GetMapping("/csrf-token")
@@ -51,6 +55,14 @@ public class AuthController {
         response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie.toString());
 
         return ResponseEntity.ok(result.jwtDto());
+    }
+
+    // 비밀번호 초기화
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        passwordResetService.resetPassword(request.email());
+
+        return ResponseEntity.noContent().build();
     }
 }
 
