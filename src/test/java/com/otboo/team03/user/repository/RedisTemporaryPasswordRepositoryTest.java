@@ -1,4 +1,3 @@
-
 package com.otboo.team03.user.repository;
 
 import org.junit.jupiter.api.DisplayName;
