@@ -30,9 +30,9 @@ public class UserController {
     }
 
     @PatchMapping("/{userId}/role")
-    public ResponseEntity<Void> updateRole(@PathVariable UUID userId,
-                                           @Valid @RequestBody UserRoleUpdateRequest request) {
-        userService.updateRole(userId, request.role());
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<UserDto> updateRole(@PathVariable UUID userId,
+                                              @Valid @RequestBody UserRoleUpdateRequest request) {
+        UserDto response = userService.updateRole(userId, request.role());
+        return ResponseEntity.ok(response);
     }
 }

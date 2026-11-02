@@ -1,6 +1,5 @@
 package com.otboo.team03.user.service;
 
-import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
 import com.otboo.team03.user.dto.response.UserDto;
@@ -42,12 +41,12 @@ public class UserService {
 
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
-    public void updateRole(UUID userId, UserRole role) {
+    public UserDto updateRole(UUID userId, UserRole role) {
         User user = userRepository.findById(userId)
                 .orElseThrow(UserNotFoundException::new);
 
         if (user.getRole() == role) {
-            return;
+            return UserDto.from(user);
         }
 
         if (user.getRole() == UserRole.ADMIN && role == UserRole.USER && userRepository.countByRole(UserRole.ADMIN) <= 1) {
@@ -56,6 +55,8 @@ public class UserService {
 
         user.changeRole(role);
         jwtRegistry.invalidateJwtInformationByUserId(userId);
+
+        return UserDto.from(user);
     }
 
 }

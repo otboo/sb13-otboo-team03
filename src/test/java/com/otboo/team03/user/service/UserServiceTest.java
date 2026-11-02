@@ -101,83 +101,100 @@ class UserServiceTest {
         }
     }
 
-    @Test
-    void updateRole_userToAdmin_success() {
-        // given
-        UUID userId = UUID.randomUUID();
-        User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+    @Nested
+    @DisplayName("사용자 권한 변경")
+    class UpdateRoleTest {
 
-        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        @Test
+        @DisplayName("성공 - USER 권한을 ADMIN으로 변경하고 UserDto 반환")
+        void updateRole_userToAdmin_success() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedPassword", "일반 사용자");
 
-        // when
-        userService.updateRole(userId, UserRole.ADMIN);
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 
-        // then
-        assertThat(user.getRole()).isEqualTo(UserRole.ADMIN);
-        verify(userRepository).findById(userId);
+            // when
+            UserDto result = userService.updateRole(userId, UserRole.ADMIN);
+
+            // then
+            assertThat(user.getRole()).isEqualTo(UserRole.ADMIN);
+            assertThat(result.role()).isEqualTo(UserRole.ADMIN);
+            assertThat(result.email()).isEqualTo(user.getEmail());
+            assertThat(result.name()).isEqualTo(user.getName());
+            verify(userRepository).findById(userId);
+        }
+
+        @Test
+        @DisplayName("실패 - 존재하지 않는 사용자 권한 변경 시 예외 발생")
+        void updateRole_userNotFound_throwsException() {
+            // given
+            UUID userId = UUID.randomUUID();
+
+            when(userRepository.findById(userId)).thenReturn(Optional.empty());
+
+            // when & then
+            assertThatThrownBy(() -> userService.updateRole(userId, UserRole.ADMIN))
+                    .isInstanceOf(UserNotFoundException.class);
+
+            verify(userRepository).findById(userId);
+        }
+
+        @Test
+        @DisplayName("성공 - 동일한 권한 요청 시 기존 권한과 JWT 세션 유지")
+        void updateRole_sameRole_doesNotChangeRole() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+            // when
+            UserDto result = userService.updateRole(userId, UserRole.USER);
+
+            // then
+            assertThat(user.getRole()).isEqualTo(UserRole.USER);
+            assertThat(result.role()).isEqualTo(UserRole.USER);
+            verify(userRepository).findById(userId);
+            verify(userRepository, never()).save(any(User.class));
+            verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+        }
+
+        @Test
+        @DisplayName("실패 - 마지막 ADMIN을 USER로 변경하면 예외 발생")
+        void updateRole_lastAdmin_throwsException() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User admin = new User("admin@example.com", "encodedPassword", "관리자");
+            admin.changeRole(UserRole.ADMIN);
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(admin));
+            when(userRepository.countByRole(UserRole.ADMIN)).thenReturn(1L);
+
+            // when & then
+            assertThatThrownBy(() -> userService.updateRole(userId, UserRole.USER))
+                    .isInstanceOf(LastAdminException.class);
+
+            assertThat(admin.getRole()).isEqualTo(UserRole.ADMIN);
+        }
+
+        @Test
+        @DisplayName("성공 - 권한 변경 시 기존 JWT 세션 무효화")
+        void updateRole_roleChanged_invalidatesJwtSession() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+            // when
+            UserDto result = userService.updateRole(userId, UserRole.ADMIN);
+
+            // then
+            assertThat(user.getRole()).isEqualTo(UserRole.ADMIN);
+            assertThat(result.role()).isEqualTo(UserRole.ADMIN);
+            verify(jwtRegistry).invalidateJwtInformationByUserId(userId);
+        }
     }
 
-    @Test
-    void updateRole_userNotFound_throwsException() {
-        // given
-        UUID userId = UUID.randomUUID();
-        when(userRepository.findById(userId)).thenReturn(Optional.empty());
-
-        // when & then
-        assertThatThrownBy(() -> userService.updateRole(userId, UserRole.ADMIN))
-                .isInstanceOf(UserNotFoundException.class);
-
-        verify(userRepository).findById(userId);
-    }
-
-    @Test
-    void updateRole_sameRole_doesNotChangeRole() {
-        // given
-        UUID userId = UUID.randomUUID();
-        User user = new User("user@example.com", "encodedPassword", "일반 사용자");
-
-        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
-
-        // when
-        userService.updateRole(userId, UserRole.USER);
-
-        // then
-        assertThat(user.getRole()).isEqualTo(UserRole.USER);
-        verify(userRepository).findById(userId);
-        verify(userRepository, never()).save(any(User.class));
-        verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
-    }
-
-    @Test
-    void updateRole_lastAdmin_throwsException() {
-        // given
-        UUID userId = UUID.randomUUID();
-        User admin = new User("admin@example.com", "encodedPassword", "관리자");
-        admin.changeRole(UserRole.ADMIN);
-
-        when(userRepository.findById(userId)).thenReturn(Optional.of(admin));
-        when(userRepository.countByRole(UserRole.ADMIN)).thenReturn(1L);
-
-        // when & then
-        assertThatThrownBy(() -> userService.updateRole(userId, UserRole.USER))
-                .isInstanceOf(LastAdminException.class);
-
-        assertThat(admin.getRole()).isEqualTo(UserRole.ADMIN);
-    }
-
-    @Test
-    void updateRole_roleChanged_invalidatesJwtSession() {
-        // given
-        UUID userId = UUID.randomUUID();
-        User user = new User("user@example.com", "encodedPassword", "일반 사용자");
-
-        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
-
-        // when
-        userService.updateRole(userId, UserRole.ADMIN);
-
-        // then
-        assertThat(user.getRole()).isEqualTo(UserRole.ADMIN);
-        verify(jwtRegistry).invalidateJwtInformationByUserId(userId);
-    }
 }

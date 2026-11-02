@@ -94,10 +94,12 @@ class UserRoleIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
-                                          "role": "ADMIN"
+                                           "role": "ADMIN"
                                         }
                                         """))
-                        .andExpect(status().isNoContent());
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.id").value(user.getId().toString()))
+                        .andExpect(jsonPath("$.role").value("ADMIN"));
 
                 assertThat(userRepository.findById(user.getId()).orElseThrow().getRole())
                         .isEqualTo(UserRole.ADMIN);
@@ -127,7 +129,7 @@ class UserRoleIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
-                                          "role": "ADMIN"
+                                           "role": "ADMIN"
                                         }
                                         """))
                         .andExpect(status().isForbidden());
@@ -154,7 +156,7 @@ class UserRoleIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {
-                                      "role": "ADMIN"
+                                       "role": "ADMIN"
                                     }
                                     """))
                     .andExpect(status().isUnauthorized());
@@ -191,10 +193,12 @@ class UserRoleIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
-                                          "role": "ADMIN"
+                                           "role": "ADMIN"
                                         }
                                         """))
-                        .andExpect(status().isNoContent());
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.id").value(user.getId().toString()))
+                        .andExpect(jsonPath("$.role").value("ADMIN"));
 
                 // then: 기존 Access Token 사용 불가
                 mockMvc.perform(get("/api/clothes")
@@ -239,11 +243,13 @@ class UserRoleIntegrationTest {
                                 .header("X-XSRF-TOKEN", csrfCookie.getValue())
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
-                                {
-                                  "role": "USER"
-                                }
-                                """))
-                        .andExpect(status().isNoContent());
+                                        {
+                                           "role": "USER"
+                                        }
+                                        """))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.id").value(user.getId().toString()))
+                        .andExpect(jsonPath("$.role").value("USER"));
 
                 // then: 기존 권한 및 JWT 세션 유지
                 assertThat(userRepository.findById(user.getId()).orElseThrow().getRole()).isEqualTo(UserRole.USER);
