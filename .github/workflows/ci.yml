@@ -40,6 +40,9 @@ jobs:
       SPRING_DATASOURCE_USERNAME: otboo_test
       SPRING_DATASOURCE_PASSWORD: ci_test_password
 
+      # JWT 테스트 환경 설정
+      JWT_SECRET: otboo-ci-test-secret-key-12345678901234567890
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6
