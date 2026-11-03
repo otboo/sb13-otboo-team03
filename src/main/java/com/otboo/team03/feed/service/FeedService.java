@@ -92,111 +92,143 @@ public class FeedService {
       UUID idAfter,
       UUID viewerId
   ) {
-    if (limit <= 0
-        || limit == Integer.MAX_VALUE
-        || (!"createdAt".equals(sortBy)
-        && !"likeCount".equals(sortBy))
-        || (!"ASCENDING".equals(sortDirection)
-        && !"DESCENDING".equals(sortDirection))) {
+    FeedListQuery query = new FeedListQuery(
+        limit,
+        sortBy,
+        sortDirection,
+        cursor,
+        idAfter,
+        viewerId
+    );
+
+    validateFeedListQuery(query);
+
+    List<Feed> feeds = findFeeds(query);
+
+    return createCursorResponse(query, feeds);
+  }
+
+  private void validateFeedListQuery(FeedListQuery query) {
+    if (query.limit() <= 0
+        || query.limit() == Integer.MAX_VALUE
+        || (!"createdAt".equals(query.sortBy())
+        && !"likeCount".equals(query.sortBy()))
+        || (!"ASCENDING".equals(query.sortDirection())
+        && !"DESCENDING".equals(query.sortDirection()))) {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
     }
 
-    if ((cursor == null) != (idAfter == null)) {
+    if ((query.cursor() == null) != (query.idAfter() == null)) {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
     }
+  }
 
-    boolean ascending = "ASCENDING".equals(sortDirection);
-    boolean sortByLikeCount = "likeCount".equals(sortBy);
+  private List<Feed> findFeeds(FeedListQuery query) {
+    if (query.isLikeCountSort()) {
+      return findFeedsByLikeCount(query);
+    }
 
-    List<Feed> fetched;
+    return findFeedsByCreatedAt(query);
+  }
 
-    if (sortByLikeCount) {
-      if (cursor == null) {
-        fetched = ascending
-            ? feedRepository.findFirstPageByLikeCountAsc(limit + 1)
-            : feedRepository.findFirstPageByLikeCountDesc(limit + 1);
-      } else {
-        long cursorCount;
+  private List<Feed> findFeedsByLikeCount(FeedListQuery query) {
+    int pageSize = query.limit() + 1;
 
-        try {
-          cursorCount = Long.parseLong(cursor);
-        } catch (NumberFormatException ex) {
-          throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
-        }
+    if (query.cursor() == null) {
+      return query.isAscending()
+          ? feedRepository.findFirstPageByLikeCountAsc(pageSize)
+          : feedRepository.findFirstPageByLikeCountDesc(pageSize);
+    }
 
-        if (cursorCount < 0) {
-          throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
-        }
+    long cursorCount = parseLikeCountCursor(query.cursor());
 
-        fetched = ascending
-            ? feedRepository.findNextPageByLikeCountAsc(
+    return query.isAscending()
+        ? feedRepository.findNextPageByLikeCountAsc(
+        cursorCount,
+        query.idAfter(),
+        pageSize
+    )
+        : feedRepository.findNextPageByLikeCountDesc(
             cursorCount,
-            idAfter,
-            limit + 1
-        )
-            : feedRepository.findNextPageByLikeCountDesc(
-                cursorCount,
-                idAfter,
-                limit + 1
-            );
-      }
-    } else if (cursor == null) {
-      fetched = ascending
-          ? feedRepository.findAllByOrderByCreatedAtAscIdAsc(
-          PageRequest.of(0, limit + 1)
-      )
-          : feedRepository.findAllByOrderByCreatedAtDescIdDesc(
-              PageRequest.of(0, limit + 1)
-          );
-    } else {
-      Instant cursorTime;
+            query.idAfter(),
+            pageSize
+        );
+  }
 
-      try {
-        cursorTime = Instant.parse(cursor);
-      } catch (java.time.format.DateTimeParseException ex) {
-        throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
-      }
+  private List<Feed> findFeedsByCreatedAt(FeedListQuery query) {
+    int pageSize = query.limit() + 1;
 
-      fetched = ascending
-          ? feedRepository.findNextPageAscending(
-          cursorTime,
-          idAfter,
-          limit + 1
-      )
-          : feedRepository.findNextPage(
-              cursorTime,
-              idAfter,
-              limit + 1
-          );
+    if (query.cursor() == null) {
+      PageRequest pageable = PageRequest.of(0, pageSize);
+
+      return query.isAscending()
+          ? feedRepository.findAllByOrderByCreatedAtAscIdAsc(pageable)
+          : feedRepository.findAllByOrderByCreatedAtDescIdDesc(pageable);
     }
 
-    boolean hasNext = fetched.size() > limit;
+    Instant cursorTime = parseCreatedAtCursor(query.cursor());
+
+    return query.isAscending()
+        ? feedRepository.findNextPageAscending(
+        cursorTime,
+        query.idAfter(),
+        pageSize
+    )
+        : feedRepository.findNextPage(
+            cursorTime,
+            query.idAfter(),
+            pageSize
+        );
+  }
+
+  private long parseLikeCountCursor(String cursor) {
+    long cursorCount;
+
+    try {
+      cursorCount = Long.parseLong(cursor);
+    } catch (NumberFormatException ex) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if (cursorCount < 0) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    return cursorCount;
+  }
+
+  private Instant parseCreatedAtCursor(String cursor) {
+    try {
+      return Instant.parse(cursor);
+    } catch (java.time.format.DateTimeParseException ex) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+  }
+
+  private CursorResponse<FeedDto> createCursorResponse(
+      FeedListQuery query,
+      List<Feed> fetched
+  ) {
+    boolean hasNext = fetched.size() > query.limit();
 
     List<Feed> page = hasNext
-        ? fetched.subList(0, limit)
+        ? fetched.subList(0, query.limit())
         : fetched;
 
     List<FeedDto> data = page.stream()
-        .map(feed -> feedDtoAssembler.toDto(feed, viewerId))
+        .map(feed -> feedDtoAssembler.toDto(feed, query.viewerId()))
         .toList();
-
-    Feed lastFeed = page.isEmpty()
-        ? null
-        : page.get(page.size() - 1);
 
     String nextCursor = null;
     UUID nextIdAfter = null;
 
-    if (hasNext && lastFeed != null) {
+    if (hasNext) {
+      Feed lastFeed = page.get(page.size() - 1);
       nextIdAfter = lastFeed.getId();
 
-      if (sortByLikeCount) {
-        nextCursor = Long.toString(
-            data.get(data.size() - 1).likeCount()
-        );
-      } else {
-        nextCursor = lastFeed.getCreatedAt().toString();
-      }
+      nextCursor = query.isLikeCountSort()
+          ? Long.toString(data.get(data.size() - 1).likeCount())
+          : lastFeed.getCreatedAt().toString();
     }
 
     return new CursorResponse<>(
@@ -205,9 +237,26 @@ public class FeedService {
         nextIdAfter,
         hasNext,
         feedRepository.count(),
-        sortBy,
-        sortDirection
+        query.sortBy(),
+        query.sortDirection()
     );
+  }
+
+  private record FeedListQuery(
+      int limit,
+      String sortBy,
+      String sortDirection,
+      String cursor,
+      UUID idAfter,
+      UUID viewerId
+  ) {
+    boolean isAscending() {
+      return "ASCENDING".equals(sortDirection);
+    }
+
+    boolean isLikeCountSort() {
+      return "likeCount".equals(sortBy);
+    }
   }
 
   private void validateRequest(FeedCreateRequest request) {
