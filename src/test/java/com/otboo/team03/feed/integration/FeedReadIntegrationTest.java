@@ -355,6 +355,181 @@ class FeedReadIntegrationTest {
         .andExpect(jsonPath("$.nextIdAfter").isEmpty());
   }
 
+  @Test
+  void 생성일시_내림차순에서_같은시간의_피드를_누락없이_조회한다()
+      throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "내림차순 커서 테스트"
+        )
+    );
+
+    UUID weatherId = UUID.randomUUID();
+    insertWeather(weatherId);
+
+    Instant olderTime = Instant.parse("2026-10-29T10:00:00Z");
+    Instant sameTime = Instant.parse("2026-10-29T10:01:00Z");
+
+    UUID olderFeedId = insertFeed(
+        author.getId(),
+        weatherId,
+        "오래된 피드",
+        olderTime
+    );
+
+    UUID firstId = UUID.fromString(
+        "00000000-0000-0000-0000-000000000001"
+    );
+    UUID secondId = UUID.fromString(
+        "00000000-0000-0000-0000-000000000002"
+    );
+    UUID thirdId = UUID.fromString(
+        "00000000-0000-0000-0000-000000000003"
+    );
+
+    insertFeedWithId(
+        firstId, author.getId(), weatherId, "동일 시각 A", sameTime
+    );
+    insertFeedWithId(
+        secondId, author.getId(), weatherId, "동일 시각 B", sameTime
+    );
+    insertFeedWithId(
+        thirdId, author.getId(), weatherId, "동일 시각 C", sameTime
+    );
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var firstPage = mockMvc.perform(
+            get("/api/feeds")
+                .header("Authorization", "Bearer " + accessToken)
+                .param("limit", "2")
+                .param("sortBy", "createdAt")
+                .param("sortDirection", "DESCENDING")
+        )
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[0].id")
+            .value(thirdId.toString()))
+        .andExpect(jsonPath("$.data[1].id")
+            .value(secondId.toString()))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andExpect(jsonPath("$.nextCursor")
+            .value(sameTime.toString()))
+        .andExpect(jsonPath("$.nextIdAfter")
+            .value(secondId.toString()))
+        .andReturn();
+
+    String responseBody =
+        firstPage.getResponse().getContentAsString();
+
+    String nextCursor =
+        JsonPath.read(responseBody, "$.nextCursor");
+
+    String nextIdAfter =
+        JsonPath.read(responseBody, "$.nextIdAfter");
+
+    var secondPage = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "2")
+            .param("sortBy", "createdAt")
+            .param("sortDirection", "DESCENDING")
+            .param("cursor", nextCursor)
+            .param("idAfter", nextIdAfter)
+    );
+
+    var emptyPage = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "2")
+            .param("sortBy", "createdAt")
+            .param("sortDirection", "DESCENDING")
+            .param("cursor", olderTime.toString())
+            .param("idAfter", olderFeedId.toString())
+    );
+
+    // then
+    secondPage
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(firstId.toString()))
+        .andExpect(jsonPath("$.data[1].id")
+            .value(olderFeedId.toString()))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.totalCount").value(4))
+        .andExpect(jsonPath("$.nextCursor").isEmpty())
+        .andExpect(jsonPath("$.nextIdAfter").isEmpty());
+
+    emptyPage
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(0))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.totalCount").value(4));
+  }
+
+  @Test
+  void 잘못된_커서_요청은_400을_반환한다() throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "커서 검증 테스트"
+        )
+    );
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    String validCursor = "2026-10-29T10:00:00Z";
+    String validIdAfter = UUID.randomUUID().toString();
+
+    // when
+    var cursorOnly = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "2")
+            .param("sortBy", "createdAt")
+            .param("sortDirection", "DESCENDING")
+            .param("cursor", validCursor)
+    );
+
+    var idAfterOnly = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "2")
+            .param("sortBy", "createdAt")
+            .param("sortDirection", "DESCENDING")
+            .param("idAfter", validIdAfter)
+    );
+
+    var invalidCursor = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "2")
+            .param("sortBy", "createdAt")
+            .param("sortDirection", "DESCENDING")
+            .param("cursor", "invalid-cursor")
+            .param("idAfter", validIdAfter)
+    );
+
+    // then
+    cursorOnly.andExpect(status().isBadRequest());
+    idAfterOnly.andExpect(status().isBadRequest());
+    invalidCursor.andExpect(status().isBadRequest());
+  }
+
   private void insertWeather(UUID weatherId) {
     Timestamp now = Timestamp.from(Instant.now());
 
