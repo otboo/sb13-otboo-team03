@@ -558,6 +558,11 @@ class ClothesCreateIntegrationTest {
     /** 두 독립 트랜잭션을 실제로 경합시킨다. 시간 지연 추측 대신 PostgreSQL의 Lock 대기를 확인한다. */
     private void runContendingTransactions(Runnable first, Runnable second,
             com.otboo.team03.global.exception.ErrorCode expected) throws Exception {
+        runContendingTransactions(first, second, expected, "clothes_attribute_definitions");
+    }
+
+    private void runContendingTransactions(Runnable first, Runnable second,
+            com.otboo.team03.global.exception.ErrorCode expected, String table) throws Exception {
         var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
         var ready = new java.util.concurrent.CountDownLatch(1);
         var release = new java.util.concurrent.CountDownLatch(1);
@@ -582,14 +587,18 @@ class ClothesCreateIntegrationTest {
                 blocked = Boolean.TRUE.equals(jdbc.queryForObject("""
                         SELECT EXISTS (SELECT 1 FROM pg_stat_activity
                         WHERE datname = current_database() AND wait_event_type = 'Lock'
-                        AND query LIKE '%clothes_attribute_definitions%')
-                        """, Boolean.class));
+                        AND query LIKE ?)
+                        """, Boolean.class, "%" + table + "%"));
                 if (blocked) break;
                 Thread.sleep(20);
             }
             assertThat(blocked).as("두 번째 요청이 실제 DB 잠금을 기다리는지").isTrue();
             release.countDown();
             holder.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            if (expected == null) {
+                contender.get(10, java.util.concurrent.TimeUnit.SECONDS);
+                return;
+            }
             assertThatThrownBy(() -> contender.get(10, java.util.concurrent.TimeUnit.SECONDS))
                     .isInstanceOfSatisfying(java.util.concurrent.ExecutionException.class, ex -> {
                         assertThat(ex.getCause()).isInstanceOfSatisfying(
@@ -704,6 +713,52 @@ class ClothesCreateIntegrationTest {
         request.with(csrf()).with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(
                 new com.otboo.team03.global.security.OtbooUserDetails(dto, "encoded")));
         return request;
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "image-name", "name-image", "image-image", "image-delete", "delete-image"
+    })
+    @DisplayName("동시 이미지 교체·이름 수정·삭제는 최신 key를 유지하고 삭제된 key를 복원하지 않는다")
+    void concurrentImageChangesPreserveLiveKey(String scenario) throws Exception {
+        var created = service.create(request());
+        var clothes = clothesRepository.findById(created.id()).orElseThrow();
+        clothes.updateImageKey("clothes/old.png");
+        clothesRepository.saveAndFlush(clothes);
+        // S3는 대체하되 파일 생성·삭제 상태를 추적하여 DB key가 살아 있는 파일을 가리키는지 확인한다.
+        var files = java.util.concurrent.ConcurrentHashMap.<String>newKeySet();
+        files.add("clothes/old.png");
+        var sequence = new java.util.concurrent.atomic.AtomicInteger();
+        org.mockito.Mockito.when(imageStorage.upload(any())).thenAnswer(invocation -> {
+            String key = "clothes/new-" + sequence.incrementAndGet() + ".png";
+            files.add(key);
+            return key;
+        });
+        org.mockito.Mockito.when(imageStorage.getAccessUrl(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(invocation -> "https://example.com/" + invocation.getArgument(0));
+        doAnswer(invocation -> { files.remove((String) invocation.getArgument(0)); return null; })
+                .when(imageStorage).delete(org.mockito.ArgumentMatchers.anyString());
+        Runnable image = () -> service.update(created.id(), new ClothesUpdateRequest(null, null, null), owner.getId(),
+                new org.springframework.mock.web.MockMultipartFile("image", new byte[]{1}));
+        Runnable name = () -> service.update(created.id(), new ClothesUpdateRequest("변경된 이름", null, null), owner.getId());
+        Runnable delete = () -> service.delete(created.id(), owner.getId());
+        String[] operations = scenario.split("-");
+        var actions = java.util.Map.of("image", image, "name", name, "delete", delete);
+        var expected = operations[0].equals("delete")
+                ? com.otboo.team03.global.exception.ErrorCode.NOT_FOUND_CLOTHES : null;
+        runContendingTransactions(actions.get(operations[0]), actions.get(operations[1]), expected, "clothes");
+
+        var result = clothesRepository.findById(created.id());
+        if (scenario.contains("delete")) {
+            assertThat(result).isEmpty();
+            assertThat(files).isEmpty();
+        } else {
+            var saved = result.orElseThrow();
+            assertThat(saved.getImageKey()).startsWith("clothes/new-");
+            assertThat(files).containsExactly(saved.getImageKey());
+            if (scenario.contains("name")) assertThat(saved.getName()).isEqualTo("변경된 이름");
+            if (scenario.equals("image-image")) assertThat(saved.getImageKey()).isEqualTo("clothes/new-2.png");
+        }
     }
 
     private ClothesCreateRequest request() {

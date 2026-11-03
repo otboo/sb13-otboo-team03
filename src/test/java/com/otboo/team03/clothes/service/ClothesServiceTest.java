@@ -89,7 +89,7 @@ class ClothesServiceTest {
         UUID id = UUID.randomUUID();
         UUID ownerId = UUID.randomUUID();
         Clothes clothes = new Clothes("원래 이름", ClothesType.TOP, null, owner(ownerId));
-        when(clothesRepository.findById(id)).thenReturn(Optional.of(clothes));
+        when(clothesRepository.findForChange(id)).thenReturn(Optional.of(clothes));
         var requests = new java.util.ArrayList<com.otboo.team03.clothes.dto.request.ClothesUpdateRequest>();
         requests.add(null);
         requests.add(new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest(" ", null, null));
@@ -229,7 +229,7 @@ class ClothesServiceTest {
         UUID ownerId = UUID.randomUUID();
         Clothes clothes = new Clothes("기존 이름", ClothesType.TOP, "image.png", owner(ownerId));
         ReflectionTestUtils.setField(clothes, "id", id);
-        when(clothesRepository.findById(id)).thenReturn(Optional.of(clothes));
+        when(clothesRepository.findForChange(id)).thenReturn(Optional.of(clothes));
 
         ClothesDto result = clothesService.update(id,
                 new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest("새 이름", null, null), ownerId);
@@ -243,7 +243,7 @@ class ClothesServiceTest {
     void updateTypeOnly() {
         UUID id = UUID.randomUUID();
         Clothes clothes = new Clothes("기존 이름", ClothesType.TOP, null, owner(UUID.randomUUID()));
-        when(clothesRepository.findById(id)).thenReturn(Optional.of(clothes));
+        when(clothesRepository.findForChange(id)).thenReturn(Optional.of(clothes));
 
         ClothesDto result = clothesService.update(id,
                 new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest(null, ClothesType.OUTER, null), clothes.getOwner().getId());
@@ -256,7 +256,7 @@ class ClothesServiceTest {
     @DisplayName("없는 의상을 수정하면 예외를 발생시킨다")
     void updateWhenMissing() {
         UUID id = UUID.randomUUID();
-        when(clothesRepository.findById(id)).thenReturn(Optional.empty());
+        when(clothesRepository.findForChange(id)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> clothesService.update(id,
                 new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest("새 이름", null, null), UUID.randomUUID()))
                 .isInstanceOfSatisfying(OtbooException.class,
@@ -267,7 +267,7 @@ class ClothesServiceTest {
     void updateDeniedForOtherUser() {
         UUID id = UUID.randomUUID();
         Clothes clothes = new Clothes("원래 이름", ClothesType.TOP, null, owner(UUID.randomUUID()));
-        when(clothesRepository.findById(id)).thenReturn(Optional.of(clothes));
+        when(clothesRepository.findForChange(id)).thenReturn(Optional.of(clothes));
         assertThatThrownBy(() -> clothesService.update(id,
                 new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest("변경", null, null), UUID.randomUUID()))
                 .isInstanceOfSatisfying(OtbooException.class,
@@ -286,7 +286,7 @@ class ClothesServiceTest {
         ClothesAttributeDefinition definition = new ClothesAttributeDefinition("색상", List.of("파랑", "빨강"));
         UUID definitionId = UUID.randomUUID();
         ReflectionTestUtils.setField(definition, "id", definitionId);
-        when(clothesRepository.findById(id)).thenReturn(Optional.of(clothes));
+        when(clothesRepository.findForChange(id)).thenReturn(Optional.of(clothes));
         when(clothesAttributeRepository.findAllByClothes_Id(id)).thenReturn(
                 List.of(new ClothesAttribute(clothes, definition, "파랑")));
         ClothesDto result = clothesService.update(id,

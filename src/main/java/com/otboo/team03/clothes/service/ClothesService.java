@@ -188,7 +188,9 @@ public class ClothesService {
 
     @Transactional
     public ClothesDto update(UUID clothesId, ClothesUpdateRequest request, UUID requesterId, MultipartFile image) {
-        Clothes clothes = clothesRepository.findById(clothesId)
+        // 이미지 교체·기본 정보 수정·삭제를 같은 행 잠금으로 직렬화한다.
+        // 반드시 조회 시점에 잠가야 검증과 S3 정리 기준 key도 최신 상태가 된다.
+        Clothes clothes = clothesRepository.findForChange(clothesId)
                 .orElseThrow(ClothesNotFoundException::new);
         if (!clothes.getOwner().getId().equals(requesterId)) {
             throw new OtbooException(ErrorCode.ACCESS_DENIED);
@@ -241,7 +243,9 @@ public class ClothesService {
      */
     @Transactional
     public void delete(UUID clothesId, UUID requesterId) {
-        Clothes clothes = clothesRepository.findById(clothesId)
+        // 이미지 교체·기본 정보 수정·삭제를 같은 행 잠금으로 직렬화한다.
+        // 반드시 조회 시점에 잠가야 검증과 S3 정리 기준 key도 최신 상태가 된다.
+        Clothes clothes = clothesRepository.findForChange(clothesId)
                 .orElseThrow(ClothesNotFoundException::new);
         if (!clothes.getOwner().getId().equals(requesterId)) {
             throw new OtbooException(ErrorCode.ACCESS_DENIED);
