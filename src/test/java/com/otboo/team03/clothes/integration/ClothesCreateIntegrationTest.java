@@ -603,6 +603,30 @@ class ClothesCreateIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("V4 이후 기존 URL은 유지하고 이미지 key를 별도로 저장·교체·제거한다")
+    void persistImageKeySeparatelyFromLegacyUrl() {
+        var clothes = clothesRepository.saveAndFlush(new Clothes("이미지 의상", ClothesType.TOP,
+                "https://example.com/legacy.png", owner));
+        var id = clothes.getId();
+        assertThat(clothesRepository.findById(id).orElseThrow().getImageKey()).isNull();
+
+        clothes.updateImageKey("clothes/first.png");
+        clothesRepository.saveAndFlush(clothes);
+        var reloaded = clothesRepository.findById(id).orElseThrow();
+        assertThat(reloaded.getImageKey()).isEqualTo("clothes/first.png");
+        assertThat(reloaded.getImageUrl()).isEqualTo("https://example.com/legacy.png");
+        assertThat(jdbc.queryForObject("SELECT image_key FROM clothes WHERE id = ?", String.class, id))
+                .isEqualTo("clothes/first.png");
+
+        reloaded.updateImageKey("clothes/replacement.png");
+        clothesRepository.saveAndFlush(reloaded);
+        assertThat(clothesRepository.findById(id).orElseThrow().getImageKey()).isEqualTo("clothes/replacement.png");
+        reloaded.updateImageKey(null);
+        clothesRepository.saveAndFlush(reloaded);
+        assertThat(clothesRepository.findById(id).orElseThrow().getImageKey()).isNull();
+    }
+
     private ClothesCreateRequest request() {
         return new ClothesCreateRequest(owner.getId(), "반팔", ClothesType.TOP,
                 List.of(new ClothesAttributeDto(color.getId(), "파랑")));
