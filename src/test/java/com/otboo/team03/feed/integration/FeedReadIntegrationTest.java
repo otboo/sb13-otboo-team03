@@ -530,6 +530,96 @@ class FeedReadIntegrationTest {
     invalidCursor.andExpect(status().isBadRequest());
   }
 
+  @Test
+  void 좋아요수_내림차순으로_첫_페이지를_조회한다() throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "피드 작성자"
+        )
+    );
+
+    User liker1 = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "좋아요 사용자 1"
+        )
+    );
+
+    User liker2 = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "좋아요 사용자 2"
+        )
+    );
+
+    UUID weatherId = UUID.randomUUID();
+    insertWeather(weatherId);
+
+    UUID mostLikedFeedId = insertFeed(
+        author.getId(),
+        weatherId,
+        "좋아요 2개 피드",
+        Instant.parse("2026-10-29T10:00:00Z")
+    );
+
+    UUID mediumLikedFeedId = insertFeed(
+        author.getId(),
+        weatherId,
+        "좋아요 1개 피드",
+        Instant.parse("2026-10-29T10:01:00Z")
+    );
+
+    UUID leastLikedFeedId = insertFeed(
+        author.getId(),
+        weatherId,
+        "좋아요 0개 피드",
+        Instant.parse("2026-10-29T10:02:00Z")
+    );
+
+    insertFeedLike(mostLikedFeedId, liker1.getId());
+    insertFeedLike(mostLikedFeedId, liker2.getId());
+    insertFeedLike(mediumLikedFeedId, liker1.getId());
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "2")
+            .param("sortBy", "likeCount")
+            .param("sortDirection", "DESCENDING")
+            .accept(MediaType.APPLICATION_JSON)
+    );
+
+    // then
+    result
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(mostLikedFeedId.toString()))
+        .andExpect(jsonPath("$.data[0].likeCount").value(2))
+        .andExpect(jsonPath("$.data[1].id")
+            .value(mediumLikedFeedId.toString()))
+        .andExpect(jsonPath("$.data[1].likeCount").value(1))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andExpect(jsonPath("$.totalCount").value(3))
+        .andExpect(jsonPath("$.nextCursor").value("1"))
+        .andExpect(jsonPath("$.nextIdAfter")
+            .value(mediumLikedFeedId.toString()))
+        .andExpect(jsonPath("$.sortBy").value("likeCount"))
+        .andExpect(jsonPath("$.sortDirection").value("DESCENDING"));
+  }
+
   private void insertWeather(UUID weatherId) {
     Timestamp now = Timestamp.from(Instant.now());
 
@@ -608,5 +698,21 @@ class FeedReadIntegrationTest {
     );
 
     return feedId;
+  }
+
+  private void insertFeedLike(UUID feedId, UUID userId) {
+    jdbcTemplate.update("""
+      INSERT INTO feed_likes (
+          id,
+          feed_id,
+          user_id,
+          created_at
+      ) VALUES (?, ?, ?, ?)
+      """,
+        UUID.randomUUID(),
+        feedId,
+        userId,
+        Timestamp.from(Instant.now())
+    );
   }
 }
