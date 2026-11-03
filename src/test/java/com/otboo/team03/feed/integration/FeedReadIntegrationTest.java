@@ -758,6 +758,148 @@ class FeedReadIntegrationTest {
         .andExpect(jsonPath("$.nextIdAfter").isEmpty());
   }
 
+  @Test
+  void 좋아요수_오름차순에서_같은좋아요수의_피드도_페이지를_이동한다()
+      throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "피드 작성자"
+        )
+    );
+
+    User liker1 = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "좋아요 사용자 1"
+        )
+    );
+
+    User liker2 = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "좋아요 사용자 2"
+        )
+    );
+
+    UUID weatherId = UUID.randomUUID();
+    insertWeather(weatherId);
+
+    Instant createdAt =
+        Instant.parse("2026-10-29T10:00:00Z");
+
+    UUID zeroLikedFeedId = insertFeed(
+        author.getId(),
+        weatherId,
+        "좋아요 0개",
+        createdAt
+    );
+
+    UUID lowerId = UUID.fromString(
+        "00000000-0000-0000-0000-000000000001"
+    );
+
+    UUID higherId = UUID.fromString(
+        "00000000-0000-0000-0000-000000000002"
+    );
+
+    insertFeedWithId(
+        lowerId,
+        author.getId(),
+        weatherId,
+        "좋아요 1개 A",
+        createdAt
+    );
+
+    insertFeedWithId(
+        higherId,
+        author.getId(),
+        weatherId,
+        "좋아요 1개 B",
+        createdAt
+    );
+
+    UUID mostLikedFeedId = insertFeed(
+        author.getId(),
+        weatherId,
+        "좋아요 2개",
+        createdAt
+    );
+
+    insertFeedLike(lowerId, liker1.getId());
+    insertFeedLike(higherId, liker2.getId());
+    insertFeedLike(mostLikedFeedId, liker1.getId());
+    insertFeedLike(mostLikedFeedId, liker2.getId());
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var firstPage = mockMvc.perform(
+            get("/api/feeds")
+                .header("Authorization", "Bearer " + accessToken)
+                .param("limit", "2")
+                .param("sortBy", "likeCount")
+                .param("sortDirection", "ASCENDING")
+        )
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(zeroLikedFeedId.toString()))
+        .andExpect(jsonPath("$.data[0].likeCount").value(0))
+        .andExpect(jsonPath("$.data[1].id")
+            .value(lowerId.toString()))
+        .andExpect(jsonPath("$.data[1].likeCount").value(1))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andExpect(jsonPath("$.nextCursor").value("1"))
+        .andExpect(jsonPath("$.nextIdAfter")
+            .value(lowerId.toString()))
+        .andReturn();
+
+    String responseBody =
+        firstPage.getResponse().getContentAsString();
+
+    String nextCursor =
+        JsonPath.read(responseBody, "$.nextCursor");
+
+    String nextIdAfter =
+        JsonPath.read(responseBody, "$.nextIdAfter");
+
+    var secondPage = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "2")
+            .param("sortBy", "likeCount")
+            .param("sortDirection", "ASCENDING")
+            .param("cursor", nextCursor)
+            .param("idAfter", nextIdAfter)
+    );
+
+    // then
+    secondPage
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(higherId.toString()))
+        .andExpect(jsonPath("$.data[0].likeCount").value(1))
+        .andExpect(jsonPath("$.data[1].id")
+            .value(mostLikedFeedId.toString()))
+        .andExpect(jsonPath("$.data[1].likeCount").value(2))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.totalCount").value(4))
+        .andExpect(jsonPath("$.sortBy").value("likeCount"))
+        .andExpect(jsonPath("$.sortDirection").value("ASCENDING"))
+        .andExpect(jsonPath("$.nextCursor").isEmpty())
+        .andExpect(jsonPath("$.nextIdAfter").isEmpty());
+  }
+
   private void insertWeather(UUID weatherId) {
     Timestamp now = Timestamp.from(Instant.now());
 
