@@ -1002,6 +1002,109 @@ class FeedReadIntegrationTest {
         .andExpect(jsonPath("$.nextIdAfter").isEmpty());
   }
 
+  @Test
+  void 작성자별_피드를_커서로_조회한다() throws Exception {
+    // given
+    User authorA = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "작성자 A"
+        )
+    );
+
+    User authorB = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "작성자 B"
+        )
+    );
+
+    UUID weatherId = UUID.randomUUID();
+    insertWeather(weatherId);
+
+    UUID firstFeedId = insertFeed(
+        authorA.getId(),
+        weatherId,
+        "작성자 A의 첫 번째 피드",
+        Instant.parse("2026-10-29T10:00:00Z")
+    );
+
+    insertFeed(
+        authorB.getId(),
+        weatherId,
+        "작성자 B의 첫 번째 피드",
+        Instant.parse("2026-10-29T10:01:00Z")
+    );
+
+    UUID secondFeedId = insertFeed(
+        authorA.getId(),
+        weatherId,
+        "작성자 A의 두 번째 피드",
+        Instant.parse("2026-10-29T10:02:00Z")
+    );
+
+    insertFeed(
+        authorB.getId(),
+        weatherId,
+        "작성자 B의 두 번째 피드",
+        Instant.parse("2026-10-29T10:03:00Z")
+    );
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(authorA.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var firstPage = mockMvc.perform(
+            get("/api/feeds")
+                .header("Authorization", "Bearer " + accessToken)
+                .param("limit", "1")
+                .param("sortBy", "createdAt")
+                .param("sortDirection", "DESCENDING")
+                .param("authorIdEqual", authorA.getId().toString())
+        )
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(secondFeedId.toString()))
+        .andExpect(jsonPath("$.totalCount").value(2))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andReturn();
+
+    String responseBody =
+        firstPage.getResponse().getContentAsString();
+
+    String nextCursor =
+        JsonPath.read(responseBody, "$.nextCursor");
+
+    String nextIdAfter =
+        JsonPath.read(responseBody, "$.nextIdAfter");
+
+    var secondPage = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "1")
+            .param("sortBy", "createdAt")
+            .param("sortDirection", "DESCENDING")
+            .param("authorIdEqual", authorA.getId().toString())
+            .param("cursor", nextCursor)
+            .param("idAfter", nextIdAfter)
+    );
+
+    // then
+    secondPage
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(firstFeedId.toString()))
+        .andExpect(jsonPath("$.totalCount").value(2))
+        .andExpect(jsonPath("$.hasNext").value(false));
+  }
+
   private void insertWeather(UUID weatherId) {
     Timestamp now = Timestamp.from(Instant.now());
 
