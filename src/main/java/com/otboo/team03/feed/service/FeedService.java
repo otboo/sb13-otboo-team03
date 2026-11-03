@@ -9,6 +9,7 @@ import com.otboo.team03.feed.entity.FeedClothes;
 import com.otboo.team03.feed.mapper.FeedDtoAssembler;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
+import com.otboo.team03.feed.repository.FeedSearchQueryRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
@@ -35,6 +36,7 @@ public class FeedService {
   private final ClothesRepository clothesRepository;
   private final FeedWeatherLookupRepository weatherRepository;
   private final FeedDtoAssembler feedDtoAssembler;
+  private final FeedSearchQueryRepository feedSearchQueryRepository;
 
   @Transactional
   public FeedDto create(FeedCreateRequest request) {
@@ -90,6 +92,7 @@ public class FeedService {
       String sortDirection,
       String cursor,
       UUID idAfter,
+      String keywordLike,
       UUID viewerId
   ) {
     FeedListQuery query = new FeedListQuery(
@@ -98,6 +101,7 @@ public class FeedService {
         sortDirection,
         cursor,
         idAfter,
+        keywordLike,
         viewerId
     );
 
@@ -124,11 +128,38 @@ public class FeedService {
   }
 
   private List<Feed> findFeeds(FeedListQuery query) {
+    if (query.hasKeyword()) {
+      return findFeedsByKeyword(query);
+    }
+
     if (query.isLikeCountSort()) {
       return findFeedsByLikeCount(query);
     }
 
     return findFeedsByCreatedAt(query);
+  }
+
+  private List<Feed> findFeedsByKeyword(FeedListQuery query) {
+    Instant createdAtCursor = null;
+    Long likeCountCursor = null;
+
+    if (query.cursor() != null) {
+      if (query.isLikeCountSort()) {
+        likeCountCursor = parseLikeCountCursor(query.cursor());
+      } else {
+        createdAtCursor = parseCreatedAtCursor(query.cursor());
+      }
+    }
+
+    return feedSearchQueryRepository.findByKeyword(
+        query.keywordLike().trim(),
+        query.sortBy(),
+        query.sortDirection(),
+        createdAtCursor,
+        likeCountCursor,
+        query.idAfter(),
+        query.limit() + 1
+    );
   }
 
   private List<Feed> findFeedsByLikeCount(FeedListQuery query) {
@@ -231,12 +262,18 @@ public class FeedService {
           : lastFeed.getCreatedAt().toString();
     }
 
+    long totalCount = query.hasKeyword()
+        ? feedSearchQueryRepository.countByKeyword(
+        query.keywordLike().trim()
+    )
+        : feedRepository.count();
+
     return new CursorResponse<>(
         data,
         nextCursor,
         nextIdAfter,
         hasNext,
-        feedRepository.count(),
+        totalCount,
         query.sortBy(),
         query.sortDirection()
     );
@@ -248,6 +285,7 @@ public class FeedService {
       String sortDirection,
       String cursor,
       UUID idAfter,
+      String keywordLike,
       UUID viewerId
   ) {
     boolean isAscending() {
@@ -256,6 +294,10 @@ public class FeedService {
 
     boolean isLikeCountSort() {
       return "likeCount".equals(sortBy);
+    }
+
+    boolean hasKeyword() {
+      return keywordLike != null && !keywordLike.isBlank();
     }
   }
 

@@ -60,6 +60,7 @@ public class FeedController {
       @RequestParam String sortDirection,
       @RequestParam(required = false) String cursor,
       @RequestParam(required = false) UUID idAfter,
+      @RequestParam(required = false) String keywordLike,
       Authentication authentication
   ) {
     if (authentication == null
@@ -77,6 +78,7 @@ public class FeedController {
         sortDirection,
         cursor,
         idAfter,
+        keywordLike,
         viewerId
     );
 
