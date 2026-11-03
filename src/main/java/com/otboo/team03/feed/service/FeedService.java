@@ -108,17 +108,13 @@ public class FeedService {
     boolean ascending = "ASCENDING".equals(sortDirection);
     boolean sortByLikeCount = "likeCount".equals(sortBy);
 
-    if (sortByLikeCount && ascending) {
-      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
-    }
-
     List<Feed> fetched;
 
     if (sortByLikeCount) {
       if (cursor == null) {
-        fetched = feedRepository.findFirstPageByLikeCountDesc(
-            limit + 1
-        );
+        fetched = ascending
+            ? feedRepository.findFirstPageByLikeCountAsc(limit + 1)
+            : feedRepository.findFirstPageByLikeCountDesc(limit + 1);
       } else {
         long cursorCount;
 
@@ -132,22 +128,26 @@ public class FeedService {
           throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
         }
 
-        fetched = feedRepository.findNextPageByLikeCountDesc(
+        fetched = ascending
+            ? feedRepository.findNextPageByLikeCountAsc(
             cursorCount,
             idAfter,
             limit + 1
-        );
+        )
+            : feedRepository.findNextPageByLikeCountDesc(
+                cursorCount,
+                idAfter,
+                limit + 1
+            );
       }
     } else if (cursor == null) {
-      if (ascending) {
-        fetched = feedRepository.findAllByOrderByCreatedAtAscIdAsc(
-            PageRequest.of(0, limit + 1)
-        );
-      } else {
-        fetched = feedRepository.findAllByOrderByCreatedAtDescIdDesc(
-            PageRequest.of(0, limit + 1)
-        );
-      }
+      fetched = ascending
+          ? feedRepository.findAllByOrderByCreatedAtAscIdAsc(
+          PageRequest.of(0, limit + 1)
+      )
+          : feedRepository.findAllByOrderByCreatedAtDescIdDesc(
+              PageRequest.of(0, limit + 1)
+          );
     } else {
       Instant cursorTime;
 
@@ -157,19 +157,17 @@ public class FeedService {
         throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
       }
 
-      if (ascending) {
-        fetched = feedRepository.findNextPageAscending(
-            cursorTime,
-            idAfter,
-            limit + 1
-        );
-      } else {
-        fetched = feedRepository.findNextPage(
-            cursorTime,
-            idAfter,
-            limit + 1
-        );
-      }
+      fetched = ascending
+          ? feedRepository.findNextPageAscending(
+          cursorTime,
+          idAfter,
+          limit + 1
+      )
+          : feedRepository.findNextPage(
+              cursorTime,
+              idAfter,
+              limit + 1
+          );
     }
 
     boolean hasNext = fetched.size() > limit;
