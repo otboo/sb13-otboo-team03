@@ -108,16 +108,36 @@ public class FeedService {
     boolean ascending = "ASCENDING".equals(sortDirection);
     boolean sortByLikeCount = "likeCount".equals(sortBy);
 
-    if (sortByLikeCount && (ascending || cursor != null)) {
+    if (sortByLikeCount && ascending) {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
     }
 
     List<Feed> fetched;
 
     if (sortByLikeCount) {
-      fetched = feedRepository.findFirstPageByLikeCountDesc(
-          limit + 1
-      );
+      if (cursor == null) {
+        fetched = feedRepository.findFirstPageByLikeCountDesc(
+            limit + 1
+        );
+      } else {
+        long cursorCount;
+
+        try {
+          cursorCount = Long.parseLong(cursor);
+        } catch (NumberFormatException ex) {
+          throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+
+        if (cursorCount < 0) {
+          throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+
+        fetched = feedRepository.findNextPageByLikeCountDesc(
+            cursorCount,
+            idAfter,
+            limit + 1
+        );
+      }
     } else if (cursor == null) {
       if (ascending) {
         fetched = feedRepository.findAllByOrderByCreatedAtAscIdAsc(
