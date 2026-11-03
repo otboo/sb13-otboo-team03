@@ -97,15 +97,29 @@ class ProfileControllerTest {
   }
 
   @Test
-  @DisplayName("인증 정보가 없으면 HTTP 401 UNAUTHORIZED를 반환한다")
+  @DisplayName("인증 정보가 없거나 유효하지 않으면 HTTP 401 UNAUTHORIZED를 반환한다")
   void getProfile_unauthenticated() throws Exception {
     // given
     UUID userId = UUID.randomUUID();
 
-    // when & then
+    // when & then: 1. authentication이 null인 경우
     mockMvc.perform(get("/api/users/{userId}/profiles", userId)
             .contentType(MediaType.APPLICATION_JSON))
         .andDo(print())
+        .andExpect(status().isUnauthorized());
+
+    // when & then: 2. isAuthenticated가 false인 경우
+    Authentication unauthenticated = new UsernamePasswordAuthenticationToken("user", "password");
+    mockMvc.perform(get("/api/users/{userId}/profiles", userId)
+            .principal(unauthenticated)
+            .contentType(MediaType.APPLICATION_JSON))
+        .andExpect(status().isUnauthorized());
+
+    // when & then: 3. principal이 OtbooUserDetails가 아닌 경우
+    Authentication wrongPrincipal = new UsernamePasswordAuthenticationToken("anonymousString", null, List.of());
+    mockMvc.perform(get("/api/users/{userId}/profiles", userId)
+            .principal(wrongPrincipal)
+            .contentType(MediaType.APPLICATION_JSON))
         .andExpect(status().isUnauthorized());
 
     verifyNoInteractions(profileService);

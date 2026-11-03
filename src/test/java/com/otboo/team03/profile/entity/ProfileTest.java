@@ -52,4 +52,19 @@ class ProfileTest {
     assertThatThrownBy(() -> new Profile(user, null, Gender.MALE, null, null, null, 6, null))
         .isInstanceOf(IllegalArgumentException.class);
   }
+
+  @Test
+  @DisplayName("Persistable 인터페이스 메서드가 정상 동작한다")
+  void persistableMethods() {
+    // given
+    User user = new User("user@otboo.io", "password123!", "우디");
+    Profile profile = new Profile(user, null, Gender.MALE, null, null, null, 3, null);
+
+    // then
+    assertThat(profile.getId()).isEqualTo(user.getId());
+    assertThat(profile.isNew()).isTrue();
+
+    profile.markNotNew();
+    assertThat(profile.isNew()).isTrue(); // createdAt이 아직 null이므로 isNew()는 true
+  }
 }
