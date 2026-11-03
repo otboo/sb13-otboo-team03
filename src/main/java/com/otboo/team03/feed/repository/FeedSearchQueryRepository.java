@@ -3,6 +3,7 @@ package com.otboo.team03.feed.repository;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.QFeed;
 import com.otboo.team03.feed.entity.QFeedLike;
+import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.NumberExpression;
 import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
@@ -22,8 +23,9 @@ public class FeedSearchQueryRepository {
     this.queryFactory = new JPAQueryFactory(entityManager);
   }
 
-  public List<Feed> findByKeyword(
+  public List<Feed> findByFilters(
       String keywordLike,
+      UUID authorIdEqual,
       String sortBy,
       String sortDirection,
       Instant createdAtCursor,
@@ -36,11 +38,13 @@ public class FeedSearchQueryRepository {
 
     JPAQuery<Feed> query = queryFactory
         .selectFrom(feed)
-        .where(feed.content.containsIgnoreCase(keywordLike));
+        .where(
+            keywordCondition(feed, keywordLike),
+            authorCondition(feed, authorIdEqual)
+        );
 
     if ("likeCount".equals(sortBy)) {
       QFeedLike feedLike = QFeedLike.feedLike;
-
       NumberExpression<Long> likeCount = feedLike.id.count();
 
       query.leftJoin(feedLike)
@@ -67,6 +71,7 @@ public class FeedSearchQueryRepository {
           ascending ? likeCount.asc() : likeCount.desc(),
           ascending ? feed.id.asc() : feed.id.desc()
       );
+
     } else {
       if (createdAtCursor != null) {
         query.where(
@@ -85,9 +90,7 @@ public class FeedSearchQueryRepository {
       }
 
       query.orderBy(
-          ascending
-              ? feed.createdAt.asc()
-              : feed.createdAt.desc(),
+          ascending ? feed.createdAt.asc() : feed.createdAt.desc(),
           ascending ? feed.id.asc() : feed.id.desc()
       );
     }
@@ -95,15 +98,43 @@ public class FeedSearchQueryRepository {
     return query.limit(pageSize).fetch();
   }
 
-  public long countByKeyword(String keywordLike) {
+  public long countByFilters(
+      String keywordLike,
+      UUID authorIdEqual
+  ) {
     QFeed feed = QFeed.feed;
 
     Long count = queryFactory
         .select(feed.count())
         .from(feed)
-        .where(feed.content.containsIgnoreCase(keywordLike))
+        .where(
+            keywordCondition(feed, keywordLike),
+            authorCondition(feed, authorIdEqual)
+        )
         .fetchOne();
 
     return count == null ? 0L : count;
+  }
+
+  private BooleanExpression keywordCondition(
+      QFeed feed,
+      String keywordLike
+  ) {
+    if (keywordLike == null || keywordLike.isBlank()) {
+      return null;
+    }
+
+    return feed.content.containsIgnoreCase(keywordLike.trim());
+  }
+
+  private BooleanExpression authorCondition(
+      QFeed feed,
+      UUID authorIdEqual
+  ) {
+    if (authorIdEqual == null) {
+      return null;
+    }
+
+    return feed.authorId.eq(authorIdEqual);
   }
 }

@@ -93,6 +93,7 @@ public class FeedService {
       String cursor,
       UUID idAfter,
       String keywordLike,
+      UUID authorIdEqual,
       UUID viewerId
   ) {
     FeedListQuery query = new FeedListQuery(
@@ -102,6 +103,7 @@ public class FeedService {
         cursor,
         idAfter,
         keywordLike,
+        authorIdEqual,
         viewerId
     );
 
@@ -128,8 +130,8 @@ public class FeedService {
   }
 
   private List<Feed> findFeeds(FeedListQuery query) {
-    if (query.hasKeyword()) {
-      return findFeedsByKeyword(query);
+    if (query.hasFilters()) {
+      return findFeedsByFilters(query);
     }
 
     if (query.isLikeCountSort()) {
@@ -139,7 +141,7 @@ public class FeedService {
     return findFeedsByCreatedAt(query);
   }
 
-  private List<Feed> findFeedsByKeyword(FeedListQuery query) {
+  private List<Feed> findFeedsByFilters(FeedListQuery query) {
     Instant createdAtCursor = null;
     Long likeCountCursor = null;
 
@@ -151,8 +153,9 @@ public class FeedService {
       }
     }
 
-    return feedSearchQueryRepository.findByKeyword(
-        query.keywordLike().trim(),
+    return feedSearchQueryRepository.findByFilters(
+        query.keywordLike(),
+        query.authorIdEqual(),
         query.sortBy(),
         query.sortDirection(),
         createdAtCursor,
@@ -262,9 +265,10 @@ public class FeedService {
           : lastFeed.getCreatedAt().toString();
     }
 
-    long totalCount = query.hasKeyword()
-        ? feedSearchQueryRepository.countByKeyword(
-        query.keywordLike().trim()
+    long totalCount = query.hasFilters()
+        ? feedSearchQueryRepository.countByFilters(
+        query.keywordLike(),
+        query.authorIdEqual()
     )
         : feedRepository.count();
 
@@ -286,6 +290,7 @@ public class FeedService {
       String cursor,
       UUID idAfter,
       String keywordLike,
+      UUID authorIdEqual,
       UUID viewerId
   ) {
     boolean isAscending() {
@@ -296,8 +301,9 @@ public class FeedService {
       return "likeCount".equals(sortBy);
     }
 
-    boolean hasKeyword() {
-      return keywordLike != null && !keywordLike.isBlank();
+    boolean hasFilters() {
+      return (keywordLike != null && !keywordLike.isBlank())
+          || authorIdEqual != null;
     }
   }
 
