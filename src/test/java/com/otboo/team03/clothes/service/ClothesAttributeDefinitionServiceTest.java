@@ -20,9 +20,53 @@ class ClothesAttributeDefinitionServiceTest {
     private final ClothesAttributeDefinitionService service = new ClothesAttributeDefinitionService(repository, attributes);
 
     @Test
+    void invalidUpdateRequestsPreserveDefinition() {
+        UUID id = UUID.randomUUID();
+        var definition = new ClothesAttributeDefinition("색상", List.of("파랑", "빨강"));
+        when(repository.findForChange(id)).thenReturn(Optional.of(definition));
+        var requests = Arrays.asList(
+                null,
+                new com.otboo.team03.clothes.dto.request.ClothesAttributeDefUpdateRequest(" ", null),
+                new com.otboo.team03.clothes.dto.request.ClothesAttributeDefUpdateRequest("a".repeat(256), null),
+                new com.otboo.team03.clothes.dto.request.ClothesAttributeDefUpdateRequest("변경", List.of()),
+                new com.otboo.team03.clothes.dto.request.ClothesAttributeDefUpdateRequest("변경", Arrays.asList((String) null)),
+                new com.otboo.team03.clothes.dto.request.ClothesAttributeDefUpdateRequest("변경", List.of(" ")),
+                new com.otboo.team03.clothes.dto.request.ClothesAttributeDefUpdateRequest("변경", List.of("a".repeat(256))));
+        for (var request : requests) {
+            assertThatThrownBy(() -> service.update(id, request)).isInstanceOfSatisfying(OtbooException.class,
+                    e -> assertThat(e.getErrorCode()).isEqualTo(com.otboo.team03.global.exception.ErrorCode.INVALID_INPUT_VALUE));
+            assertThat(definition.getName()).isEqualTo("색상");
+            assertThat(definition.getSelectableValues()).containsExactly("파랑", "빨강");
+        }
+        verifyNoInteractions(attributes);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void emptyKeywordQueriesAllDefinitionsWithSort() {
+        var sort = org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.ASC, "name")
+                .and(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.ASC, "id"));
+        when(repository.findAll(sort)).thenReturn(List.of());
+        assertThat(service.findAll("name", "ASCENDING", "")).isEmpty();
+        verify(repository).findAll(sort);
+        verify(repository, never()).findByNameContainingIgnoreCase(anyString(), any());
+    }
+
+    @Test
+    void otherForeignKeyViolationIsNotReportedAsDefinitionInUse() {
+        var id = UUID.randomUUID();
+        when(repository.findForChange(id)).thenReturn(Optional.of(new ClothesAttributeDefinition("색상", List.of("파랑"))));
+        var violation = new org.hibernate.exception.ConstraintViolationException(
+                "other constraint", new java.sql.SQLException("foreign key", "23503"), "unrelated_constraint");
+        var failure = new org.springframework.dao.DataIntegrityViolationException("unrelated", violation);
+        doThrow(failure).when(repository).flush();
+        assertThatThrownBy(() -> service.delete(id)).isSameAs(failure);
+    }
+
+    @Test
     void concurrentReferenceConstraintIsReportedAsInUse() {
         var id = UUID.randomUUID();
-        when(repository.findById(id)).thenReturn(Optional.of(new ClothesAttributeDefinition("색상", List.of("파랑"))));
+        when(repository.findForChange(id)).thenReturn(Optional.of(new ClothesAttributeDefinition("색상", List.of("파랑"))));
         var violation = new org.hibernate.exception.ConstraintViolationException(
                 "referenced", new java.sql.SQLException("foreign key", "23503"),
                 "fk_clothes_attribute_definitions_to_clothes_attribute");
@@ -35,7 +79,7 @@ class ClothesAttributeDefinitionServiceTest {
     @Test
     void unrelatedDatabaseFailureIsNotHidden() {
         var id = UUID.randomUUID();
-        when(repository.findById(id)).thenReturn(Optional.of(new ClothesAttributeDefinition("색상", List.of("파랑"))));
+        when(repository.findForChange(id)).thenReturn(Optional.of(new ClothesAttributeDefinition("색상", List.of("파랑"))));
         var failure = new org.springframework.dao.DataIntegrityViolationException("unrelated");
         doThrow(failure).when(repository).flush();
         assertThatThrownBy(() -> service.delete(id)).isSameAs(failure);

@@ -512,6 +512,97 @@ class ClothesCreateIntegrationTest {
         return request;
     }
 
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "create-update", "create-delete", "update-update", "update-delete", "change-update", "change-delete"
+    })
+    @DisplayName("동시 의상 등록·수정과 정의 변경은 DB 잠금으로 순서를 보장한다")
+    void concurrentDefinitionUsageAndChange(String scenario) throws Exception {
+        boolean delete = scenario.endsWith("delete");
+        boolean changeFirst = scenario.startsWith("change");
+        boolean updateClothes = scenario.startsWith("update");
+        var existing = updateClothes ? service.create(request()) : null;
+        String usedValue = updateClothes ? "빨강" : "파랑";
+        String retainedValue = updateClothes ? "파랑" : "빨강";
+        Runnable use = () -> {
+            if (updateClothes) {
+                service.update(existing.id(), new ClothesUpdateRequest(null, null,
+                        List.of(new ClothesAttributeDto(color.getId(), usedValue))), owner.getId());
+            } else {
+                service.create(request());
+            }
+        };
+        Runnable change = () -> {
+            if (delete) definitionService.delete(color.getId());
+            else definitionService.update(color.getId(),
+                    new ClothesAttributeDefUpdateRequest(null, List.of(retainedValue)));
+        };
+        var expected = changeFirst
+                ? (delete ? com.otboo.team03.global.exception.ErrorCode.NOT_FOUND_ATTRIBUTE_DEFINITION
+                          : com.otboo.team03.global.exception.ErrorCode.INVALID_CLOTHES_ATTRIBUTE_VALUE)
+                : (delete ? com.otboo.team03.global.exception.ErrorCode.ATTRIBUTE_DEFINITION_IN_USE
+                          : com.otboo.team03.global.exception.ErrorCode.ATTRIBUTE_VALUE_IN_USE);
+        runContendingTransactions(changeFirst ? change : use, changeFirst ? use : change, expected);
+        if (!changeFirst) {
+            assertThat(definitions.findById(color.getId()).orElseThrow().getSelectableValues())
+                    .contains(usedValue);
+            assertThat(attributes.existsByDefinition_Id(color.getId())).isTrue();
+        } else {
+            assertThat(attributes.existsByDefinition_Id(color.getId())).isFalse();
+            assertThat(clothesRepository.findAllByOwner_Id(owner.getId())).isEmpty();
+        }
+    }
+
+    /** 두 독립 트랜잭션을 실제로 경합시킨다. 시간 지연 추측 대신 PostgreSQL의 Lock 대기를 확인한다. */
+    private void runContendingTransactions(Runnable first, Runnable second,
+            com.otboo.team03.global.exception.ErrorCode expected) throws Exception {
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        var ready = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var transaction = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+        try {
+            var holder = pool.submit(() -> transaction.executeWithoutResult(status -> {
+                first.run();
+                ready.countDown();
+                try {
+                    if (!release.await(15, java.util.concurrent.TimeUnit.SECONDS))
+                        throw new IllegalStateException("잠금 해제 대기 시간 초과");
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(e);
+                }
+            }));
+            assertThat(ready.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            var contender = pool.submit(second);
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+            boolean blocked = false;
+            while (System.nanoTime() < deadline && !contender.isDone()) {
+                blocked = Boolean.TRUE.equals(jdbc.queryForObject("""
+                        SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+                        WHERE datname = current_database() AND wait_event_type = 'Lock'
+                        AND query LIKE '%clothes_attribute_definitions%')
+                        """, Boolean.class));
+                if (blocked) break;
+                Thread.sleep(20);
+            }
+            assertThat(blocked).as("두 번째 요청이 실제 DB 잠금을 기다리는지").isTrue();
+            release.countDown();
+            holder.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertThatThrownBy(() -> contender.get(10, java.util.concurrent.TimeUnit.SECONDS))
+                    .isInstanceOfSatisfying(java.util.concurrent.ExecutionException.class, ex -> {
+                        assertThat(ex.getCause()).isInstanceOfSatisfying(
+                                com.otboo.team03.global.exception.OtbooException.class,
+                                cause -> assertThat(cause.getErrorCode()).isEqualTo(expected));
+                    });
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+            assertThat(pool.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
     private ClothesCreateRequest request() {
         return new ClothesCreateRequest(owner.getId(), "반팔", ClothesType.TOP,
                 List.of(new ClothesAttributeDto(color.getId(), "파랑")));

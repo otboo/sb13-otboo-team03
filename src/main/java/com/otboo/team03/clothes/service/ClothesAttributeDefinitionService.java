@@ -67,7 +67,7 @@ public class ClothesAttributeDefinitionService {
     /** 공유 정의를 수정하되 기존 의상에 사용 중인 선택값은 보존한다. */
     @Transactional
     public ClothesAttributeDefDto update(UUID definitionId, ClothesAttributeDefUpdateRequest request) {
-        var definition = repository.findById(definitionId)
+        var definition = repository.findForChange(definitionId)
                 .orElseThrow(ClothesAttributeDefinitionNotFoundException::new);
         if (request == null || (request.name() != null
                 && (request.name().isBlank() || request.name().length() > 255))
@@ -87,7 +87,7 @@ public class ClothesAttributeDefinitionService {
         }
         // 검증이 끝난 뒤 변경한다. ID와 최초 생성 시각은 유지된다.
         // 정의와 함께 의상을 조립해 조회하는 다른 도메인에도 변경된 이름·선택지가 반영된다.
-        // 이 사용 여부 조회만으로 동시 의상 등록/수정과의 경합까지 직렬화하지는 않는다.
+        // 정의의 배타 잠금과 의상 등록·수정의 공유 잠금으로 사용 여부 검사와 저장 사이의 경합을 막는다.
         definition.update(request.name(), request.selectableValues());
         return ClothesAttributeDefDto.from(definition);
     }
@@ -98,7 +98,7 @@ public class ClothesAttributeDefinitionService {
      */
     @Transactional
     public void delete(UUID definitionId) {
-        ClothesAttributeDefinition definition = repository.findById(definitionId)
+        ClothesAttributeDefinition definition = repository.findForChange(definitionId)
                 .orElseThrow(ClothesAttributeDefinitionNotFoundException::new);
 
         // 사용 중이면 아무 데이터도 삭제하지 않는다.

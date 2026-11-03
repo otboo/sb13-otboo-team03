@@ -218,6 +218,28 @@ class ClothesControllerTest {
         verifyNoInteractions(service);
     }
 
+    @Test
+    @DisplayName("삭제 인증이 없거나 유효하지 않으면 서비스 호출 없이 401을 반환한다")
+    void deleteRejectsInvalidAuthentication() throws Exception {
+        var authentications = java.util.Arrays.<org.springframework.security.core.Authentication>asList(null,
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("user", "password"),
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("wrong principal", null, List.of()));
+        for (var authentication : authentications) {
+            var request = delete("/api/clothes/{clothesId}", clothesId);
+            if (authentication != null) request.principal(authentication);
+            mvc.perform(request).andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.exceptionName").value("AUTHENTICATION_REQUIRED"));
+        }
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void deletePassesAuthenticatedOwnerAndReturnsNoContent() throws Exception {
+        mvc.perform(delete("/api/clothes/{clothesId}", clothesId).principal(auth(ownerId)))
+                .andExpect(status().isNoContent()).andExpect(content().string(""));
+        verify(service).delete(clothesId, ownerId);
+    }
+
     private ClothesDto response() {
         return new ClothesDto(clothesId, ownerId, "반팔", null, ClothesType.TOP, List.of());
     }

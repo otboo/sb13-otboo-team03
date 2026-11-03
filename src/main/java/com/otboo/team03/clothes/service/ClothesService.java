@@ -73,9 +73,9 @@ public class ClothesService {
                 throw new DuplicateAttributeException();
             }
 
-            //속성 정의 조회와 선택값 검증
+            // 공유 잠금을 유지한 채 선택값을 검증한다. 관리자 변경은 의상 저장 커밋 후에 진행된다.
             Optional<ClothesAttributeDefinition> definition =
-                    clothesAttributeDefinitionRepository.findById(attribute.definitionId());
+                    clothesAttributeDefinitionRepository.findForUsage(attribute.definitionId());
 
             if(definition.isEmpty()){
                 throw new ClothesAttributeDefinitionNotFoundException();
@@ -343,7 +343,7 @@ public class ClothesService {
             }
 
             ClothesAttributeDefinition definition =
-                    clothesAttributeDefinitionRepository.findById(definitionId)
+                    clothesAttributeDefinitionRepository.findForUsage(definitionId)
                             .orElseThrow(
                                     ClothesAttributeDefinitionNotFoundException::new
                             );
