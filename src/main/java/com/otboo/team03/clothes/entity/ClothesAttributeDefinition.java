@@ -38,6 +38,12 @@ public class ClothesAttributeDefinition extends CreateEntity {
         // 전달받은 목록을 복사하여 외부 목록 변경이 엔티티에 직접 반영되지 않도록 한다.
         this.selectableValues.addAll(selectableValues);
     }
-
-
+    /**
+     * 공유 정의의 이름과 선택지를 변경한다. 의상별 선택값은 변경하지 않는다.
+     * Service에서 사용 중인 값 제거 여부를 먼저 검사한다. 생략 필드는 유지하고 목록은 복사한다.
+     */
+    public void update(String name, List<String> selectableValues) {
+        if (name != null) this.name = name;
+        if (selectableValues != null) this.selectableValues = new ArrayList<>(selectableValues);
+    }
 }

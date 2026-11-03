@@ -30,6 +30,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -145,6 +147,47 @@ class UserControllerTest {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.exceptionName").exists())
                     .andExpect(jsonPath("$.message").exists());
+        }
+    }
+
+    @Nested
+    @DisplayName("사용자 권한 변경")
+    class UpdateRoleTest {
+
+        @Test
+        @DisplayName("성공 - 사용자 권한 변경 시 200 OK 및 UserDto 반환")
+        void updateRole_success() throws Exception {
+            // given
+            UUID userId = UUID.randomUUID();
+            UserDto response = new UserDto(
+                    userId,
+                    Instant.parse("2026-01-01T00:00:00Z"),
+                    "test@example.com",
+                    "홍길동",
+                    UserRole.ADMIN,
+                    false
+            );
+
+            when(userService.updateRole(userId, UserRole.ADMIN)).thenReturn(response);
+
+            MockMvc mockMvc = MockMvcBuilders.standaloneSetup(userController).build();
+
+            // when & then
+            mockMvc.perform(patch("/api/users/{userId}/role", userId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                {
+                                  "role": "ADMIN"
+                                }
+                                """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(userId.toString()))
+                    .andExpect(jsonPath("$.email").value("test@example.com"))
+                    .andExpect(jsonPath("$.name").value("홍길동"))
+                    .andExpect(jsonPath("$.role").value("ADMIN"))
+                    .andExpect(jsonPath("$.locked").value(false));
+
+            verify(userService).updateRole(userId, UserRole.ADMIN);
         }
     }
 
