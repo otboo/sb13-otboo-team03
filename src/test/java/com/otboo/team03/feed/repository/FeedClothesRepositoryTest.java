@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
 @Transactional
-class FeedClothesRepositoryTest {
+class FeedClothesRepositoryTest extends com.otboo.team03.support.PostgresTestSupport {
 
   @Autowired
   private FeedClothesRepository feedClothesRepository;

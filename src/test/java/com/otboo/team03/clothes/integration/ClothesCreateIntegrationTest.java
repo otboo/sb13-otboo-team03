@@ -704,6 +704,82 @@ class ClothesCreateIntegrationTest {
         org.mockito.Mockito.verify(imageStorage).delete("clothes/rollback.png");
     }
 
+    @Test
+    @org.junit.jupiter.api.extension.ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
+    @DisplayName("교체와 삭제의 S3 정리가 실패해도 DB 커밋을 유지하고 재처리 key를 기록한다")
+    void cleanupFailureKeepsCommittedChanges(org.springframework.boot.test.system.CapturedOutput output) {
+        var created = service.create(request());
+        Clothes stored = clothesRepository.findById(created.id()).orElseThrow();
+        stored.updateImageKey("clothes/old.png");
+        clothesRepository.saveAndFlush(stored);
+        org.mockito.Mockito.when(imageStorage.upload(any())).thenReturn("clothes/new.png");
+        org.mockito.Mockito.when(imageStorage.getAccessUrl("clothes/new.png")).thenReturn("https://example.com/new");
+        org.mockito.Mockito.doThrow(new IllegalStateException("delete unavailable")).when(imageStorage).delete(any());
+
+        service.update(created.id(), new ClothesUpdateRequest("새 이름", null, null), owner.getId(),
+                new org.springframework.mock.web.MockMultipartFile("image", new byte[]{1}));
+        assertThat(clothesRepository.findById(created.id()).orElseThrow().getImageKey()).isEqualTo("clothes/new.png");
+        assertThat(output).contains("S3 image cleanup failed: key=clothes/old.png");
+        service.delete(created.id(), owner.getId());
+        assertThat(clothesRepository.existsById(created.id())).isFalse();
+        assertThat(output).contains("S3 image cleanup failed: key=clothes/new.png");
+    }
+
+    @Test
+    @DisplayName("롤백 파일 정리가 실패해도 원래 DB 오류를 보존한다")
+    void rollbackCleanupFailureKeepsOriginalFailure() {
+        org.mockito.Mockito.when(imageStorage.upload(any())).thenReturn("clothes/failed.png");
+        org.mockito.Mockito.doThrow(new IllegalStateException("delete unavailable")).when(imageStorage).delete(any());
+        doAnswer(invocation -> {
+            clothesRepository.flush();
+            throw new DataIntegrityViolationException("database save failed");
+        }).when(attributes).save(any(ClothesAttribute.class));
+        assertThatThrownBy(() -> service.create(request(), new org.springframework.mock.web.MockMultipartFile("image", new byte[]{1})))
+                .isInstanceOf(DataIntegrityViolationException.class).hasMessage("database save failed");
+        assertThat(clothesRepository.findAllByOwner_Id(owner.getId())).isEmpty();
+        org.mockito.Mockito.verify(imageStorage).delete("clothes/failed.png");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"invalid", "upload-failure", "anonymous", "other-owner", "csrf"})
+    @DisplayName("이미지 multipart 요청의 검증·저장소·인증·권한·CSRF 오류는 DB를 변경하지 않는다")
+    void imageRequestFailures(String scenario) throws Exception {
+        String body = "{\"ownerId\":\"%s\",\"name\":\"반팔\",\"type\":\"TOP\",\"attributes\":[{\"definitionId\":\"%s\",\"value\":\"파랑\"}]}"
+                .formatted(owner.getId(), color.getId());
+        var builder = imageMultipart(org.springframework.http.HttpMethod.POST, "/api/clothes", body)
+                .file(new org.springframework.mock.web.MockMultipartFile("image", new byte[]{1}));
+        int expected;
+        switch (scenario) {
+            case "invalid" -> {
+                org.mockito.Mockito.when(imageStorage.upload(any())).thenThrow(new com.otboo.team03.global.exception.OtbooException(
+                        com.otboo.team03.global.exception.ErrorCode.INVALID_INPUT_VALUE));
+                expected = 400;
+            }
+            case "upload-failure" -> {
+                org.mockito.Mockito.when(imageStorage.upload(any())).thenThrow(new IllegalStateException("S3 unavailable"));
+                expected = 500;
+            }
+            case "anonymous" -> {
+                builder.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.anonymous());
+                expected = 401;
+            }
+            case "other-owner" -> {
+                var other = users.saveAndFlush(new User(UUID.randomUUID() + "@example.com", "encoded", "다른 사용자"));
+                builder.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(
+                        new com.otboo.team03.global.security.OtbooUserDetails(com.otboo.team03.user.dto.response.UserDto.from(other), "encoded")));
+                expected = 403;
+            }
+            default -> {
+                builder.with(csrf().useInvalidToken());
+                expected = 403;
+            }
+        }
+        mvc.perform(builder).andExpect(status().is(expected));
+        assertThat(clothesRepository.findAllByOwner_Id(owner.getId())).isEmpty();
+        if (expected == 401 || expected == 403) org.mockito.Mockito.verifyNoInteractions(imageStorage);
+        org.mockito.Mockito.verify(imageStorage, org.mockito.Mockito.never()).delete(any());
+    }
+
     private org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder imageMultipart(
             org.springframework.http.HttpMethod method, String url, String json) {
         var dto = com.otboo.team03.user.dto.response.UserDto.from(owner);
