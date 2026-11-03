@@ -47,6 +47,8 @@ public class SecurityConfig {
                                 "/api/auth/refresh"
                         ).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
+                        // 페이지 자체는 공개하고, 데이터 접근 권한은 기존 API 규칙으로 검사한다.
+                        .requestMatchers(SpaPageRequest::matches).permitAll()
                         .requestMatchers(
                                 "/",
                                 "/index.html",
