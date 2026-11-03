@@ -249,6 +249,112 @@ class FeedReadIntegrationTest {
         .andExpect(jsonPath("$.totalCount").value(3));
   }
 
+  @Test
+  void 생성일시_오름차순에서_같은시간의_피드도_페이지를_이동한다()
+      throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "오름차순 테스트"
+        )
+    );
+
+    UUID weatherId = UUID.randomUUID();
+    insertWeather(weatherId);
+
+    Instant firstTime = Instant.parse("2026-10-29T10:00:00Z");
+    Instant sameTime = Instant.parse("2026-10-29T10:01:00Z");
+
+    UUID firstFeedId = insertFeed(
+        author.getId(),
+        weatherId,
+        "피드 A",
+        firstTime
+    );
+
+    UUID secondFeedId = UUID.fromString(
+        "00000000-0000-0000-0000-000000000001"
+    );
+    UUID thirdFeedId = UUID.fromString(
+        "00000000-0000-0000-0000-000000000002"
+    );
+
+    insertFeedWithId(
+        secondFeedId,
+        author.getId(),
+        weatherId,
+        "피드 B",
+        sameTime
+    );
+
+    insertFeedWithId(
+        thirdFeedId,
+        author.getId(),
+        weatherId,
+        "피드 C",
+        sameTime
+    );
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var firstPage = mockMvc.perform(
+            get("/api/feeds")
+                .header("Authorization", "Bearer " + accessToken)
+                .param("limit", "2")
+                .param("sortBy", "createdAt")
+                .param("sortDirection", "ASCENDING")
+        )
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(firstFeedId.toString()))
+        .andExpect(jsonPath("$.data[1].id")
+            .value(secondFeedId.toString()))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andExpect(jsonPath("$.nextCursor")
+            .value(sameTime.toString()))
+        .andExpect(jsonPath("$.nextIdAfter")
+            .value(secondFeedId.toString()))
+        .andReturn();
+
+    String responseBody =
+        firstPage.getResponse().getContentAsString();
+
+    String nextCursor =
+        JsonPath.read(responseBody, "$.nextCursor");
+
+    String nextIdAfter =
+        JsonPath.read(responseBody, "$.nextIdAfter");
+
+    var secondPage = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "2")
+            .param("sortBy", "createdAt")
+            .param("sortDirection", "ASCENDING")
+            .param("cursor", nextCursor)
+            .param("idAfter", nextIdAfter)
+    );
+
+    // then
+    secondPage
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(thirdFeedId.toString()))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.totalCount").value(3))
+        .andExpect(jsonPath("$.nextCursor").isEmpty())
+        .andExpect(jsonPath("$.nextIdAfter").isEmpty());
+  }
+
   private void insertWeather(UUID weatherId) {
     Timestamp now = Timestamp.from(Instant.now());
 
@@ -290,19 +396,34 @@ class FeedReadIntegrationTest {
       String content,
       Instant createdAt
   ) {
-    UUID feedId = UUID.randomUUID();
+    return insertFeedWithId(
+        UUID.randomUUID(),
+        authorId,
+        weatherId,
+        content,
+        createdAt
+    );
+  }
+
+  private UUID insertFeedWithId(
+      UUID feedId,
+      UUID authorId,
+      UUID weatherId,
+      String content,
+      Instant createdAt
+  ) {
     Timestamp timestamp = Timestamp.from(createdAt);
 
     jdbcTemplate.update("""
-                INSERT INTO feeds (
-                    id,
-                    author_id,
-                    weather_id,
-                    content,
-                    created_at,
-                    updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
+      INSERT INTO feeds (
+          id,
+          author_id,
+          weather_id,
+          content,
+          created_at,
+          updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      """,
         feedId,
         authorId,
         weatherId,
