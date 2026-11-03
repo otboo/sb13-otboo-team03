@@ -900,6 +900,108 @@ class FeedReadIntegrationTest {
         .andExpect(jsonPath("$.nextIdAfter").isEmpty());
   }
 
+  @Test
+  void 키워드로_검색한_피드를_커서로_조회한다()
+      throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "키워드 검색 테스트"
+        )
+    );
+
+    UUID weatherId = UUID.randomUUID();
+    insertWeather(weatherId);
+
+    UUID firstMatchId = insertFeed(
+        author.getId(),
+        weatherId,
+        "주말 코디 추천",
+        Instant.parse("2026-10-29T10:00:00Z")
+    );
+
+    insertFeed(
+        author.getId(),
+        weatherId,
+        "오늘 날씨 맑음",
+        Instant.parse("2026-10-29T10:01:00Z")
+    );
+
+    UUID secondMatchId = insertFeed(
+        author.getId(),
+        weatherId,
+        "출근 코디 공유",
+        Instant.parse("2026-10-29T10:02:00Z")
+    );
+
+    insertFeed(
+        author.getId(),
+        weatherId,
+        "운동 다녀옴",
+        Instant.parse("2026-10-29T10:03:00Z")
+    );
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var firstPage = mockMvc.perform(
+            get("/api/feeds")
+                .header("Authorization", "Bearer " + accessToken)
+                .param("limit", "1")
+                .param("sortBy", "createdAt")
+                .param("sortDirection", "DESCENDING")
+                .param("keywordLike", "코디")
+        )
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(secondMatchId.toString()))
+        .andExpect(jsonPath("$.data[0].content")
+            .value("출근 코디 공유"))
+        .andExpect(jsonPath("$.totalCount").value(2))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andReturn();
+
+    String responseBody =
+        firstPage.getResponse().getContentAsString();
+
+    String nextCursor =
+        JsonPath.read(responseBody, "$.nextCursor");
+
+    String nextIdAfter =
+        JsonPath.read(responseBody, "$.nextIdAfter");
+
+    var secondPage = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "1")
+            .param("sortBy", "createdAt")
+            .param("sortDirection", "DESCENDING")
+            .param("keywordLike", "코디")
+            .param("cursor", nextCursor)
+            .param("idAfter", nextIdAfter)
+    );
+
+    // then
+    secondPage
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(firstMatchId.toString()))
+        .andExpect(jsonPath("$.data[0].content")
+            .value("주말 코디 추천"))
+        .andExpect(jsonPath("$.totalCount").value(2))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.nextCursor").isEmpty())
+        .andExpect(jsonPath("$.nextIdAfter").isEmpty());
+  }
+
   private void insertWeather(UUID weatherId) {
     Timestamp now = Timestamp.from(Instant.now());
 
