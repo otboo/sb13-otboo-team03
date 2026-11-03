@@ -14,6 +14,7 @@ import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.repository.UserRepository;
+import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -82,23 +83,48 @@ public class FeedService {
     return feedDtoAssembler.toDto(savedFeed, null);
   }
 
+
   @Transactional(readOnly = true)
   public CursorResponse<FeedDto> getFeedList(
       int limit,
       String sortBy,
       String sortDirection,
+      String cursor,
+      UUID idAfter,
       UUID viewerId
   ) {
-    if (limit <= 0 || limit == Integer.MAX_VALUE
+    if (limit <= 0
+        || limit == Integer.MAX_VALUE
         || !"createdAt".equals(sortBy)
         || !"DESCENDING".equals(sortDirection)) {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
     }
 
-    List<Feed> fetched = feedRepository
-        .findAllByOrderByCreatedAtDescIdDesc(
-            PageRequest.of(0, limit + 1)
-        );
+    if ((cursor == null) != (idAfter == null)) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    List<Feed> fetched;
+
+    if (cursor == null) {
+      fetched = feedRepository.findAllByOrderByCreatedAtDescIdDesc(
+          PageRequest.of(0, limit + 1)
+      );
+    } else {
+      Instant cursorTime;
+
+      try {
+        cursorTime = Instant.parse(cursor);
+      } catch (java.time.format.DateTimeParseException ex) {
+        throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+      }
+
+      fetched = feedRepository.findNextPage(
+          cursorTime,
+          idAfter,
+          limit + 1
+      );
+    }
 
     boolean hasNext = fetched.size() > limit;
 
@@ -132,6 +158,7 @@ public class FeedService {
         sortDirection
     );
   }
+
 
   private void validateRequest(FeedCreateRequest request) {
     if (request == null
