@@ -1,7 +1,9 @@
 package com.otboo.team03.user.service;
 
 import com.otboo.team03.global.security.jwt.JwtRegistry;
+import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
+import com.otboo.team03.user.dto.request.UserListRequest;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.entity.UserRole;
@@ -18,6 +20,8 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.UUID;
+
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -68,4 +72,41 @@ public class UserService {
         return UserDto.from(user);
     }
 
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
+    public CursorResponse<UserDto> getUsers(UserListRequest request) {
+        List<User> users = userRepository.findUsersByCursor(request);
+        boolean hasNext = users.size() > request.limit();
+
+        List<User> page = users.stream()
+                .limit(request.limit())
+                .toList();
+
+        List<UserDto> data = page.stream()
+                .map(UserDto::from)
+                .toList();
+
+        User lastUser = page.isEmpty() ? null : page.get(page.size() - 1);
+
+        String nextCursor = hasNext
+                ? "createdAt".equals(request.sortBy())
+                  ? lastUser.getCreatedAt().toString()
+                  : lastUser.getEmail()
+                : null;
+
+        UUID nextIdAfter = hasNext ? lastUser.getId() : null;
+
+        long totalCount = userRepository.countUsers(request);
+
+        return new CursorResponse<>(
+                data,
+                nextCursor,
+                nextIdAfter,
+                hasNext,
+                totalCount,
+                request.sortBy(),
+                request.sortDirection()
+        );
+    }
 }

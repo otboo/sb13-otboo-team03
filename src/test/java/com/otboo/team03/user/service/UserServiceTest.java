@@ -1,8 +1,9 @@
-
 package com.otboo.team03.user.service;
 
 import com.otboo.team03.global.security.jwt.JwtRegistry;
+import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
+import com.otboo.team03.user.dto.request.UserListRequest;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.entity.UserRole;
@@ -24,6 +25,10 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Optional;
+import java.util.UUID;
+
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -244,6 +249,61 @@ class UserServiceTest {
 
             // then: Redis 세션 유지
             verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+        }
+    }
+
+    @Nested
+    @DisplayName("사용자 목록 조회")
+    class GetUserListTest {
+
+        @Test
+        @DisplayName("커서 페이지네이션 결과 및 메타데이터 반환")
+        void shouldReturnUserListWithCursorPaginationMetadata() {
+            // given
+            UserListRequest request = new UserListRequest(
+                    null, null, 2, "email", "ASCENDING", null, null, null
+            );
+
+            User alice = mock(User.class);
+            User bob = mock(User.class);
+            User charlie = mock(User.class);
+
+            UUID aliceId = UUID.randomUUID();
+            UUID bobId = UUID.randomUUID();
+
+            when(alice.getId()).thenReturn(aliceId);
+            when(alice.getEmail()).thenReturn("alice@example.com");
+            when(alice.getName()).thenReturn("Alice");
+            when(alice.getRole()).thenReturn(UserRole.USER);
+            when(alice.getCreatedAt()).thenReturn(Instant.parse("2026-01-01T00:00:00Z"));
+
+            when(bob.getId()).thenReturn(bobId);
+            when(bob.getEmail()).thenReturn("bob@example.com");
+            when(bob.getName()).thenReturn("Bob");
+            when(bob.getRole()).thenReturn(UserRole.USER);
+            when(bob.getCreatedAt()).thenReturn(Instant.parse("2026-01-02T00:00:00Z"));
+
+            when(userRepository.findUsersByCursor(request)).thenReturn(List.of(alice, bob, charlie));
+            when(userRepository.countUsers(request)).thenReturn(5L);
+
+            // when
+            CursorResponse<UserDto> response = userService.getUsers(request);
+
+            // then
+            assertThat(response.data())
+                    .hasSize(2)
+                    .extracting(UserDto::email)
+                    .containsExactly("alice@example.com", "bob@example.com");
+
+            assertThat(response.hasNext()).isTrue();
+            assertThat(response.nextCursor()).isEqualTo("bob@example.com");
+            assertThat(response.nextIdAfter()).isEqualTo(bobId);
+            assertThat(response.totalCount()).isEqualTo(5L);
+            assertThat(response.sortBy()).isEqualTo("email");
+            assertThat(response.sortDirection()).isEqualTo("ASCENDING");
+
+            verify(userRepository).findUsersByCursor(request);
+            verify(userRepository).countUsers(request);
         }
     }
 }

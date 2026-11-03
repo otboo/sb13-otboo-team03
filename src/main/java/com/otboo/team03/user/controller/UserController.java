@@ -1,7 +1,9 @@
 package com.otboo.team03.user.controller;
 
+import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
 import com.otboo.team03.user.dto.request.UserRoleUpdateRequest;
+import com.otboo.team03.user.dto.request.UserListRequest;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.service.UserService;
 import jakarta.validation.Valid;
@@ -12,6 +14,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/users")
@@ -34,5 +37,10 @@ public class UserController {
                                               @Valid @RequestBody UserRoleUpdateRequest request) {
         UserDto response = userService.updateRole(userId, request.role());
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping
+    public ResponseEntity<CursorResponse<UserDto>> getUsers(@Valid @ModelAttribute UserListRequest request) {
+        return ResponseEntity.ok(userService.getUsers(request));
     }
 }
