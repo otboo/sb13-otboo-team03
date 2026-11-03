@@ -43,4 +43,16 @@ public interface FeedRepository extends JpaRepository<Feed, UUID> {
       @Param("idAfter") UUID idAfter,
       @Param("pageSize") int pageSize
   );
+
+  @Query(value = """
+      SELECT f.*
+      FROM feeds f
+      LEFT JOIN feed_likes fl ON fl.feed_id = f.id
+      GROUP BY f.id
+      ORDER BY COUNT(fl.id) DESC, f.id DESC
+      LIMIT :pageSize
+      """, nativeQuery = true)
+  List<Feed> findFirstPageByLikeCountDesc(
+      @Param("pageSize") int pageSize
+  );
 }
