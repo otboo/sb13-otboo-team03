@@ -302,6 +302,20 @@ class UserListIntegrationTest {
                             .param("idAfter", "invalid-uuid"))
                     .andExpect(status().isBadRequest());
         }
+
+        @Test
+        @DisplayName("잘못된 createdAt 커서 형식이면 400 Bad Request를 반환한다")
+        void getUserList_invalidCreatedAtCursor() throws Exception {
+            String accessToken = getAccessToken(login(adminProperties.email(), adminProperties.password()));
+
+            mockMvc.perform(get("/api/users")
+                            .header("Authorization", "Bearer " + accessToken)
+                            .param("limit", "10")
+                            .param("sortBy", "createdAt")
+                            .param("sortDirection", "ASCENDING")
+                            .param("cursor", "invalid-date"))
+                    .andExpect(status().isBadRequest());
+        }
     }
 
     // 테스트용 사용자 생성

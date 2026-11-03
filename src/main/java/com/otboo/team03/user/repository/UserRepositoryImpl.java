@@ -1,5 +1,6 @@
 package com.otboo.team03.user.repository;
 
+import com.otboo.team03.global.exception.cursor.InvalidCursorException;
 import com.otboo.team03.user.dto.request.UserListRequest;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.entity.UserRole;
@@ -7,9 +8,12 @@ import com.querydsl.core.types.OrderSpecifier;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.UUID;
 
@@ -104,7 +108,14 @@ public class UserRepositoryImpl implements UserRepositoryCustom {
         }
 
         boolean ascending = "ASCENDING".equals(request.sortDirection());
-        Instant cursor = Instant.parse(request.cursor());
+
+        Instant cursor;
+        try {
+            cursor = Instant.parse(request.cursor());
+        } catch (DateTimeParseException e) {
+            throw new InvalidCursorException();
+        }
+
         UUID idAfter = request.idAfter();
 
         BooleanExpression primaryCondition = ascending

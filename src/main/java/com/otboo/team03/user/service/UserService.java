@@ -2,7 +2,6 @@ package com.otboo.team03.user.service;
 
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.dto.CursorResponse;
-import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
 import com.otboo.team03.user.dto.request.UserListRequest;
 import com.otboo.team03.user.dto.response.UserDto;
@@ -23,7 +22,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.util.UUID;
 
 import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -86,14 +84,7 @@ public class UserService {
                 .toList();
 
         List<UserDto> data = page.stream()
-                .map(user -> new UserDto(
-                        user.getId(),
-                        user.getCreatedAt(),
-                        user.getEmail(),
-                        user.getName(),
-                        user.getRole(),
-                        user.isLocked()
-                ))
+                .map(UserDto::from)
                 .toList();
 
         User lastUser = page.isEmpty() ? null : page.get(page.size() - 1);
