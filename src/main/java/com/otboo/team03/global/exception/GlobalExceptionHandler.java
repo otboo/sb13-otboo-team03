@@ -1,6 +1,10 @@
 package com.otboo.team03.global.exception;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
@@ -91,6 +95,18 @@ public class GlobalExceptionHandler {
         ErrorCode code = ErrorCode.INVALID_INPUT_VALUE;
         return ResponseEntity.status(code.getHttpStatus()).body(ErrorResponse.from(
                 code, Map.of(ex.getParameterName(), "필수 요청 파라미터입니다.")));
+    }
+
+    /** Multipart의 필수 JSON 파트 누락과 용량 초과도 클라이언트 입력 오류다. */
+    @ExceptionHandler({MissingServletRequestPartException.class, MaxUploadSizeExceededException.class, HttpMessageNotReadableException.class})
+    public ResponseEntity<ErrorResponse> handleMultipartInput(Exception ex) {
+        ErrorCode code = ErrorCode.INVALID_INPUT_VALUE;
+        return ResponseEntity.status(code.getHttpStatus()).body(ErrorResponse.from(code));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException ex) {
+        return ResponseEntity.status(415).body(ErrorResponse.from(ErrorCode.INVALID_INPUT_VALUE));
     }
 
     @ExceptionHandler(Exception.class)

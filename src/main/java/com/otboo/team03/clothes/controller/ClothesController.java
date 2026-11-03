@@ -17,19 +17,27 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
+import org.springframework.http.MediaType;
+import org.springframework.web.multipart.MultipartFile;
 
+/**
+ * 사용자 소유 의상의 생성·조회·수정·삭제 HTTP 진입점.
+ * 생성·수정·삭제는 본인 소유만 허용하고, 조회는 인증 후 지정한 소유자의 의상을 반환한다.
+ * 생성·수정은 multipart의 request(JSON)와 선택 image(파일)를 받는다.
+ */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/clothes")
 public class ClothesController {
     private final ClothesService clothesService;
 
-    @PostMapping
-    public ResponseEntity<ClothesDto > create(@RequestBody @Valid ClothesCreateRequest request, Authentication authentication){
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ClothesDto > create(@RequestPart("request") @Valid ClothesCreateRequest request,
+            @RequestPart(value = "image", required = false) MultipartFile image, Authentication authentication){
         //Spring Security가 현재 인증 정보를 전달
         if(authentication == null || !authentication.isAuthenticated()
         || !(authentication.getPrincipal()  instanceof  OtbooUserDetails userDetails)){
-            //getPrincipal은 인증된 사용자의 객체를 꺼내는 것과 userDetails에서 서버가 인즈한 사용자 id를 가져옴
+            // principal 타입을 확인한 후 서버가 인증한 사용자 ID를 사용한다.
             throw  new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
 
@@ -37,7 +45,7 @@ public class ClothesController {
             throw new OtbooException(ErrorCode.ACCESS_DENIED);
         }
 
-        ClothesDto clothesDto =  clothesService.create(request);
+        ClothesDto clothesDto =  clothesService.create(request, image);
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -61,10 +69,11 @@ public class ClothesController {
         return ResponseEntity.ok(clothesDto);
     }
 
-    @PatchMapping("/{clothesId}")
+    @PatchMapping(value = "/{clothesId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ClothesDto> update(
             @PathVariable UUID clothesId,
-            @RequestBody @Valid ClothesUpdateRequest request,
+            @RequestPart("request") @Valid ClothesUpdateRequest request,
+            @RequestPart(value = "image", required = false) MultipartFile image,
             Authentication authentication
     ) {
         // 요청에 입력된 ID가 아니라 서버가 인증한 사용자 정보를 사용한다.
@@ -80,17 +89,22 @@ public class ClothesController {
         ClothesDto clothesDto = clothesService.update(
                 clothesId,
                 request,
-                requesterId
+                requesterId, image
         );
 
         return ResponseEntity.ok(clothesDto);
     }
-//
-//    @DeleteMapping("/{clothesId}")
-//    public ResponseEntity<Void> delete(@PathVariable UUID clothesId) {
-//        clothesService.delete(clothesId);
-//
-//        return ResponseEntity
-//                .noContent().build();
-//    }
+    /**
+     * 서버가 인증한 요청자 ID를 전달하고 삭제 성공 시 204를 반환한다.
+     * 삭제된 의상은 기존 피드의 의상 목록에서도 빠지며 피드 본문은 유지된다.
+     */
+    @DeleteMapping("/{clothesId}")
+    public ResponseEntity<Void> delete(@PathVariable UUID clothesId, Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()
+                || !(authentication.getPrincipal() instanceof OtbooUserDetails userDetails)) {
+            throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
+        clothesService.delete(clothesId, userDetails.getUserDto().id());
+        return ResponseEntity.noContent().build();
+    }
 }

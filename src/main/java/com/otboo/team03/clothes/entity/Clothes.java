@@ -28,9 +28,14 @@ public class Clothes extends BaseEntity {
     @Column(nullable = false, length = 30)
     private ClothesType type;
 
-    // 의상 이미지의 접근 URL. 이미지 파일 자체는 이 테이블에 저장하지 않는다.
+    // 기존 이미지 URL 보관용. 만료되는 S3 서명 URL은 이 필드에 저장하지 않는다.
     @Column(name = "image_url", length = 2048)
     private String imageUrl;
+
+    // 비공개 S3 파일의 영구 식별자. 예: clothes/UUID.png. 접근 URL과 구분한다.
+    // 이미지가 없는 기존 의상은 null이며, DTO에는 key를 노출하지 않는다.
+    @Column(name = "image_key", length = 1024)
+    private String imageKey;
 
     // 여러 의상이 한 사용자를 참조한다. DB에는 기존 owner_id 외래 키를 사용한다.
     // 의상 삭제가 사용자 삭제로 전파되지 않도록 cascade는 지정하지 않는다.
@@ -45,6 +50,18 @@ public class Clothes extends BaseEntity {
         this.imageUrl = imageUrl;
         this.owner = owner;
     }
+    /**
+     * 업로드가 완료된 파일의 key를 보관한다.
+     * null을 전달하면 기존 key가 제거되어 S3 이미지가 없는 상태가 된다.
+     * 따라서 수정 요청에 이미지가 미첨부된 경우에는 Service에서 이 메서드를 호출하지 않아야 한다.
+     * 미첨부를 updateImageKey(null)로 처리하면 기존 이미지 연결이 사라진다.
+     * 새 이미지 업로드가 성공한 경우에만 반환된 key로 호출하여 교체한다.
+     * 실제 S3 업로드·파일 삭제·서명 URL 생성은 이 엔티티에서 수행하지 않는다.
+     */
+    public void updateImageKey(String imageKey) {
+        this.imageKey = imageKey;
+    }
+
     public void update(String name, ClothesType type) {
         // PATCH에서 생략되거나 null인 값은 기존 값을 유지한다.
         if (name != null) {

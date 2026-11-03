@@ -56,8 +56,8 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
 
-      - name: Build, test and generate coverage
-        run: bash ./gradlew clean build jacocoTestReport --no-daemon
+      - name: Build, test and verify coverage
+        run: bash ./gradlew clean build jacocoTestReport jacocoTestCoverageVerification --no-daemon
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
