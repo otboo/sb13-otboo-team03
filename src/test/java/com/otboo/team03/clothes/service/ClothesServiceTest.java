@@ -150,7 +150,7 @@ class ClothesServiceTest {
         when(clothesRepository.save(any(Clothes.class))).thenReturn(saved);
         ClothesAttributeDefinition definition = new ClothesAttributeDefinition("색상", List.of("파랑", "빨강"));
         ReflectionTestUtils.setField(definition, "id", definitionId);
-        when(clothesAttributeDefinitionRepository.findById(definitionId)).thenReturn(Optional.of(definition));
+        when(clothesAttributeDefinitionRepository.findForUsage(definitionId)).thenReturn(Optional.of(definition));
 
         // when: 실제 Service의 생성 메서드를 실행한다.
         ClothesDto result = clothesService.create(request);
@@ -301,7 +301,7 @@ class ClothesServiceTest {
         UUID owner = UUID.randomUUID();
         UUID definition = UUID.randomUUID();
         when(userRepository.findById(owner)).thenReturn(Optional.of(owner(owner)));
-        when(clothesAttributeDefinitionRepository.findById(definition)).thenReturn(Optional.empty());
+        when(clothesAttributeDefinitionRepository.findForUsage(definition)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> clothesService.create(new ClothesCreateRequest(owner, "반팔", ClothesType.TOP,
                 List.of(new ClothesAttributeDto(definition, "파랑")))))
                 .isInstanceOfSatisfying(OtbooException.class,
@@ -315,7 +315,7 @@ class ClothesServiceTest {
         UUID owner = UUID.randomUUID();
         UUID id = UUID.randomUUID();
         when(userRepository.findById(owner)).thenReturn(Optional.of(owner(owner)));
-        when(clothesAttributeDefinitionRepository.findById(id)).thenReturn(Optional.of(
+        when(clothesAttributeDefinitionRepository.findForUsage(id)).thenReturn(Optional.of(
                 new ClothesAttributeDefinition("색상", List.of("파랑"))));
         assertThatThrownBy(() -> clothesService.create(new ClothesCreateRequest(owner, "반팔", ClothesType.TOP,
                 List.of(new ClothesAttributeDto(id, "철")))))
@@ -330,14 +330,14 @@ class ClothesServiceTest {
         UUID owner = UUID.randomUUID();
         UUID id = UUID.randomUUID();
         when(userRepository.findById(owner)).thenReturn(Optional.of(owner(owner)));
-        when(clothesAttributeDefinitionRepository.findById(id)).thenReturn(Optional.of(
+        when(clothesAttributeDefinitionRepository.findForUsage(id)).thenReturn(Optional.of(
                 new ClothesAttributeDefinition("색상", List.of("파랑"))));
         ClothesAttributeDto attribute = new ClothesAttributeDto(id, "파랑");
         assertThatThrownBy(() -> clothesService.create(new ClothesCreateRequest(owner, "반팔", ClothesType.TOP,
                 List.of(attribute, attribute))))
                 .isInstanceOfSatisfying(OtbooException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.DUPLICATE_ATTRIBUTE));
-        verify(clothesAttributeDefinitionRepository, times(1)).findById(id);
+        verify(clothesAttributeDefinitionRepository, times(1)).findForUsage(id);
         verifyNoInteractions(clothesRepository, clothesAttributeRepository);
     }
     @org.junit.jupiter.params.ParameterizedTest

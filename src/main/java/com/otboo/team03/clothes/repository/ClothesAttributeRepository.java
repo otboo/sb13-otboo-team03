@@ -18,4 +18,11 @@ public interface ClothesAttributeRepository
     @EntityGraph(attributePaths = "definition")
     List<ClothesAttribute> findAllByClothes_IdIn(Collection<UUID> clothesIds);
 
+    // 공유 정의를 삭제해도 되는지 확인한다. 하나라도 참조 중이면 정의 삭제를 거부한다.
+    // 의상 자체가 아니라 clothes_attribute의 참조 존재 여부를 조회한다.
+    boolean existsByDefinition_Id(UUID definitionId);
+
+    // 정의 수정 시 제거할 선택값이 실제 의상에 남아 있는지 확인한다. 빈 values 목록은 호출 전에 제외한다.
+    boolean existsByDefinition_IdAndValueIn(UUID definitionId, Collection<String> values);
+
 }

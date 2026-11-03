@@ -30,7 +30,10 @@ public enum ErrorCode {
     DUPLICATE_ATTRIBUTE(HttpStatus.BAD_REQUEST,"이미 정의된 속성입니다."),
     NOT_FOUND_ATTRIBUTE_DEFINITION(HttpStatus.NOT_FOUND,"속성 정의 없음"),
     INVALID_CLOTHES_ATTRIBUTE_VALUE(HttpStatus.BAD_REQUEST, "허용되지 않은 의상 속성 값입니다."),
-
+    // 정의 수정 시 기존 의상에서 사용하는 선택값 제거를 거부한다.
+    ATTRIBUTE_VALUE_IN_USE(HttpStatus.BAD_REQUEST, "의상에서 사용 중인 선택값은 제거할 수 없습니다."),
+    // 정의 삭제 시 의상 속성의 참조가 남아 있으면 거부한다.
+    ATTRIBUTE_DEFINITION_IN_USE(HttpStatus.BAD_REQUEST, "의상에서 사용 중인 속성 정의는 삭제할 수 없습니다."),
     // notification
     NOT_FOUND_NOTIFICATION(HttpStatus.NOT_FOUND, "알림이 존재하지 않습니다.");
 
