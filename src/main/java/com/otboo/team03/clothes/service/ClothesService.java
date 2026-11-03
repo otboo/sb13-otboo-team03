@@ -27,7 +27,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import com.otboo.team03.global.storage.ImageStorage;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ClothesService {
@@ -38,6 +45,8 @@ public class ClothesService {
     private final ClothesAttributeRepository clothesAttributeRepository;
 
     private final UserRepository userRepository;
+    // 이미지 없는 local/test 실행은 가능하며, 이미지 작업 시에는 저장소 구현이 반드시 필요하다.
+    private final ObjectProvider<ImageStorage> imageStorageProvider;
 
 
     /**
@@ -45,7 +54,12 @@ public class ClothesService {
      * 저장 중 RuntimeException이 발생하면 이 트랜잭션의 변경을 모두 롤백한다.
      */
     @Transactional
-    public ClothesDto create(ClothesCreateRequest request){
+    public ClothesDto create(ClothesCreateRequest request) {
+        return create(request, null);
+    }
+
+    @Transactional
+    public ClothesDto create(ClothesCreateRequest request, MultipartFile image) {
         // Controller의 @Valid를 거치지 않는 내부 호출에서도 필수 값과 최소 한 개 규칙을 보장한다.
         if (request == null || request.ownerId() == null || request.type() == null
                 || request.name() == null || request.name().isBlank() || request.name().length() > 255
@@ -88,8 +102,9 @@ public class ClothesService {
             definitions.put(attribute.definitionId(), attributeDefinition);
         }
         // 모든 속성 검증이 끝나기 전에는 의상이나 속성을 저장하지 않는다.
-        //이미지 업로드/저장소 연동은 미구현이다. 현재 이미지 URL은 null이다.
+        // 검증이 끝난 뒤 업로드한다. 신규 파일은 DB 롤백 시 정리한다.
         Clothes clothes = new Clothes(request.name(),request.type(),null,owner);
+        if (image != null) clothes.updateImageKey(uploadImage(image));
         Clothes savedClothes = clothesRepository.save(clothes);
 
         //응답으로 반환할 속성 DTO 목록
@@ -117,7 +132,7 @@ public class ClothesService {
 
             attributeWithDefDtos.add(attributeDto);
         }
-        return ClothesDto.from(savedClothes, List.copyOf(attributeWithDefDtos));
+        return toDto(savedClothes, List.copyOf(attributeWithDefDtos));
     }
 
     @Transactional(readOnly = true)
@@ -133,7 +148,7 @@ public class ClothesService {
                 clothesAttributeRepository.findAllByClothes_Id(clothesId);
         // 변환한 목록을 실제 응답에 전달해야 저장된 속성이 JSON에 포함된다.
         List<ClothesAttributeWithDefDto> attributeDtos = toAttributeDtos(attributes);
-        return ClothesDto.from(clothes, attributeDtos);
+        return toDto(clothes, attributeDtos);
     }
 
     /**
@@ -168,6 +183,11 @@ public class ClothesService {
      */
     @Transactional
     public ClothesDto update(UUID clothesId, ClothesUpdateRequest request, UUID requesterId) {
+        return update(clothesId, request, requesterId, null);
+    }
+
+    @Transactional
+    public ClothesDto update(UUID clothesId, ClothesUpdateRequest request, UUID requesterId, MultipartFile image) {
         Clothes clothes = clothesRepository.findById(clothesId)
                 .orElseThrow(ClothesNotFoundException::new);
         if (!clothes.getOwner().getId().equals(requesterId)) {
@@ -181,6 +201,12 @@ public class ClothesService {
         // 모든 입력 검증을 끝낸 뒤에만 엔티티를 변경한다.
         Map<UUID, ClothesAttributeDefinition> definitions = request.attributes() == null
                 ? null : validateAttributes(request.attributes());
+        // 미첨부는 기존 key 유지. 첨부된 0바이트 파일은 저장소에서 거부한다.
+        if (image != null) {
+            String oldKey = clothes.getImageKey();
+            clothes.updateImageKey(uploadImage(image));
+            deleteImageAfterCommit(oldKey);
+        }
         List<ClothesAttribute> existing = clothesAttributeRepository.findAllByClothes_Id(clothesId);
         List<ClothesAttribute> resultAttributes = new ArrayList<>(existing);
         if (definitions != null) {
@@ -205,7 +231,7 @@ public class ClothesService {
             clothesAttributeRepository.deleteAll(remaining.values());
         }
         clothes.update(request.name(), request.type());
-        return ClothesDto.from(clothes, toAttributeDtos(resultAttributes));
+        return toDto(clothes, toAttributeDtos(resultAttributes));
     }
 
     /**
@@ -221,6 +247,7 @@ public class ClothesService {
             throw new OtbooException(ErrorCode.ACCESS_DENIED);
         }
         clothesRepository.delete(clothes);
+        deleteImageAfterCommit(clothes.getImageKey());
     }
     /**
      * 소유자와 타입 조건에 맞는 의상을 커서 방식으로 조회한다.
@@ -311,7 +338,7 @@ public class ClothesService {
             // 속성이 없는 의상도 제외하지 않고 빈 속성 목록으로 응답한다.
             List<ClothesAttribute> attributes = attributesByClothesId.getOrDefault(clothes.getId(), List.of());
             List<ClothesAttributeWithDefDto> attributeDtos = toAttributeDtos(attributes);
-            clothesResponses.add(ClothesDto.from(clothes, attributeDtos));
+            clothesResponses.add(toDto(clothes, attributeDtos));
         }
         // 각 의상의 기본 정보와 속성을 담은 목록을 반환한다. 의상이 없으면 빈 목록이다.
         return clothesResponses;
@@ -358,4 +385,46 @@ public class ClothesService {
 
         return definitions;
     }
+    /** 서명 URL은 DB에 저장하지 않고 응답 시 생성한다. 기존 URL 데이터는 key가 없을 때 유지한다. */
+    private ClothesDto toDto(Clothes clothes, List<ClothesAttributeWithDefDto> attributes) {
+        String url = clothes.getImageKey() == null ? clothes.getImageUrl()
+                : imageStorageProvider.getObject().getAccessUrl(clothes.getImageKey());
+        return new ClothesDto(clothes.getId(), clothes.getOwner().getId(), clothes.getName(),
+                url, clothes.getType(), attributes);
+    }
+
+    private String uploadImage(MultipartFile image) {
+        ImageStorage storage = imageStorageProvider.getObject();
+        String key = storage.upload(image);
+        // DB의 @Transactional만으로 S3 파일은 롤백되지 않는다.
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == STATUS_ROLLED_BACK) safelyDeleteImage(storage, key);
+            }
+        });
+        return key;
+    }
+
+    private void deleteImageAfterCommit(String key) {
+        if (key == null) return;
+        ImageStorage storage = imageStorageProvider.getObject();
+        // 교체/삭제가 DB에 확정되기 전에는 기존 파일을 삭제하지 않는다.
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                safelyDeleteImage(storage, key);
+            }
+        });
+    }
+
+    private void safelyDeleteImage(ImageStorage storage, String key) {
+        try {
+            storage.delete(key);
+        } catch (RuntimeException ex) {
+            // DB 커밋 결과를 뒤집지 않는다. 파일 정리 실패는 로그로 남겨 운영 시 재처리한다.
+            log.error("S3 image cleanup failed: key={}", key, ex);
+        }
+    }
+
 }
