@@ -10,10 +10,12 @@ import com.otboo.team03.feed.mapper.FeedDtoAssembler;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
+import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -78,6 +80,57 @@ public class FeedService {
     }
 
     return feedDtoAssembler.toDto(savedFeed, null);
+  }
+
+  @Transactional(readOnly = true)
+  public CursorResponse<FeedDto> getFeedList(
+      int limit,
+      String sortBy,
+      String sortDirection,
+      UUID viewerId
+  ) {
+    if (limit <= 0 || limit == Integer.MAX_VALUE
+        || !"createdAt".equals(sortBy)
+        || !"DESCENDING".equals(sortDirection)) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    List<Feed> fetched = feedRepository
+        .findAllByOrderByCreatedAtDescIdDesc(
+            PageRequest.of(0, limit + 1)
+        );
+
+    boolean hasNext = fetched.size() > limit;
+
+    List<Feed> page = hasNext
+        ? fetched.subList(0, limit)
+        : fetched;
+
+    List<FeedDto> data = page.stream()
+        .map(feed -> feedDtoAssembler.toDto(feed, viewerId))
+        .toList();
+
+    Feed lastFeed = page.isEmpty()
+        ? null
+        : page.get(page.size() - 1);
+
+    String nextCursor = hasNext && lastFeed != null
+        ? lastFeed.getCreatedAt().toString()
+        : null;
+
+    UUID nextIdAfter = hasNext && lastFeed != null
+        ? lastFeed.getId()
+        : null;
+
+    return new CursorResponse<>(
+        data,
+        nextCursor,
+        nextIdAfter,
+        hasNext,
+        feedRepository.count(),
+        sortBy,
+        sortDirection
+    );
   }
 
   private void validateRequest(FeedCreateRequest request) {
