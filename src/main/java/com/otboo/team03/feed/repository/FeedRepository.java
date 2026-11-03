@@ -14,6 +14,8 @@ public interface FeedRepository extends JpaRepository<Feed, UUID> {
 
   List<Feed> findAllByOrderByCreatedAtDescIdDesc(Pageable pageable);
 
+  List<Feed> findAllByOrderByCreatedAtAscIdAsc(Pageable pageable);
+
   @Query(value = """
       SELECT *
       FROM feeds
@@ -23,6 +25,20 @@ public interface FeedRepository extends JpaRepository<Feed, UUID> {
       LIMIT :pageSize
       """, nativeQuery = true)
   List<Feed> findNextPage(
+      @Param("cursor") Instant cursor,
+      @Param("idAfter") UUID idAfter,
+      @Param("pageSize") int pageSize
+  );
+
+  @Query(value = """
+      SELECT *
+      FROM feeds
+      WHERE created_at > :cursor
+         OR (created_at = :cursor AND id > :idAfter)
+      ORDER BY created_at ASC, id ASC
+      LIMIT :pageSize
+      """, nativeQuery = true)
+  List<Feed> findNextPageAscending(
       @Param("cursor") Instant cursor,
       @Param("idAfter") UUID idAfter,
       @Param("pageSize") int pageSize

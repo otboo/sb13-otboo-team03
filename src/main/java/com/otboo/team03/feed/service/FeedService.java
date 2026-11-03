@@ -83,7 +83,6 @@ public class FeedService {
     return feedDtoAssembler.toDto(savedFeed, null);
   }
 
-
   @Transactional(readOnly = true)
   public CursorResponse<FeedDto> getFeedList(
       int limit,
@@ -96,7 +95,8 @@ public class FeedService {
     if (limit <= 0
         || limit == Integer.MAX_VALUE
         || !"createdAt".equals(sortBy)
-        || !"DESCENDING".equals(sortDirection)) {
+        || (!"ASCENDING".equals(sortDirection)
+        && !"DESCENDING".equals(sortDirection))) {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
     }
 
@@ -104,12 +104,20 @@ public class FeedService {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
     }
 
+    boolean ascending = "ASCENDING".equals(sortDirection);
+
     List<Feed> fetched;
 
     if (cursor == null) {
-      fetched = feedRepository.findAllByOrderByCreatedAtDescIdDesc(
-          PageRequest.of(0, limit + 1)
-      );
+      if (ascending) {
+        fetched = feedRepository.findAllByOrderByCreatedAtAscIdAsc(
+            PageRequest.of(0, limit + 1)
+        );
+      } else {
+        fetched = feedRepository.findAllByOrderByCreatedAtDescIdDesc(
+            PageRequest.of(0, limit + 1)
+        );
+      }
     } else {
       Instant cursorTime;
 
@@ -119,11 +127,19 @@ public class FeedService {
         throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
       }
 
-      fetched = feedRepository.findNextPage(
-          cursorTime,
-          idAfter,
-          limit + 1
-      );
+      if (ascending) {
+        fetched = feedRepository.findNextPageAscending(
+            cursorTime,
+            idAfter,
+            limit + 1
+        );
+      } else {
+        fetched = feedRepository.findNextPage(
+            cursorTime,
+            idAfter,
+            limit + 1
+        );
+      }
     }
 
     boolean hasNext = fetched.size() > limit;
@@ -158,7 +174,6 @@ public class FeedService {
         sortDirection
     );
   }
-
 
   private void validateRequest(FeedCreateRequest request) {
     if (request == null
