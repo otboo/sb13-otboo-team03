@@ -32,6 +32,11 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+/**
+ * 실제 PostgreSQL·Flyway·보안 필터·HTTP 응답을 함께 검증한다.
+ * 의상 및 공유 정의 CRUD, 관리자/소유자 권한, CSRF, 삭제 후 타 도메인 데이터 보존을 확인한다.
+ * 프런트 브라우저 연동이나 Redis를 통한 실제 로그인 세션 전체를 검증하는 테스트는 아니다.
+ */
 // 실제 운영 키 대신 테스트 전용 키를 사용한다. HS256은 최소 32바이트가 필요하다.
 @SpringBootTest(properties = "otboo.jwt.secret=otboo-clothes-test-secret-12345678901234567890")
 @AutoConfigureMockMvc
@@ -346,6 +351,255 @@ class ClothesCreateIntegrationTest {
             if (params[1] != null) request.param("sortDirection", params[1]);
             mvc.perform(request).andExpect(status().isBadRequest())
                     .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.exceptionName").value("INVALID_INPUT_VALUE"));
+        }
+    }
+
+    @Test
+    @DisplayName("관리자는 미사용 정의만 삭제하고 사용 중인 정의와 의상 데이터는 보존한다")
+    void deleteDefinitionLifecycle() throws Exception {
+        var unused = definitions.saveAndFlush(new ClothesAttributeDefinition("미사용", List.of("값")));
+        mvc.perform(definitionDelete(unused.getId(), "ADMIN", true))
+                .andExpect(status().isNoContent())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(""));
+        assertThat(definitions.existsById(unused.getId())).isFalse();
+        mvc.perform(definitionDelete(unused.getId(), "ADMIN", true))
+                .andExpect(status().isNotFound());
+
+        var clothes = service.create(request());
+        mvc.perform(definitionDelete(color.getId(), "ADMIN", true))
+                .andExpect(status().isBadRequest())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.exceptionName")
+                        .value("ATTRIBUTE_DEFINITION_IN_USE"));
+        assertThat(definitions.existsById(color.getId())).isTrue();
+        assertThat(service.findById(clothes.id())).isEqualTo(clothes);
+    }
+
+    @Test
+    @DisplayName("정의 삭제는 일반 사용자·비로그인·CSRF 누락 요청을 거부한다")
+    void deleteDefinitionAuthorization() throws Exception {
+        mvc.perform(definitionDelete(color.getId(), "USER", true)).andExpect(status().isForbidden());
+        mvc.perform(definitionDelete(color.getId(), null, true)).andExpect(status().isUnauthorized());
+        mvc.perform(definitionDelete(color.getId(), "ADMIN", false)).andExpect(status().isForbidden());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/clothes/attribute-defs/invalid").with(csrf())
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN")))
+                .andExpect(status().isBadRequest());
+        assertThat(definitions.existsById(color.getId())).isTrue();
+    }
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder definitionDelete(
+            UUID id, String role, boolean csrfPresent) {
+        var request = org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .delete("/api/clothes/attribute-defs/{definitionId}", id);
+        if (role != null) request.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("tester").roles(role));
+        if (csrfPresent) request.with(csrf());
+        return request;
+    }
+
+    @Test
+    @DisplayName("관리자는 정의 이름·선택지를 수정하고 사용 중인 선택값은 제거할 수 없다")
+    void updateDefinitionLifecycle() throws Exception {
+        var createdAt = definitions.findById(color.getId()).orElseThrow().getCreatedAt();
+        var clothes = service.create(request());
+        mvc.perform(definitionPatch(color.getId(), "ADMIN", true,
+                "{\"name\":\"의상 색상\",\"selectableValues\":[\"파랑\",\"빨강\",\"검정\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.name").value("의상 색상"));
+        // 사용하지 않는 빨강·검정은 제거 가능하며 이름을 생략하면 유지된다.
+        mvc.perform(definitionPatch(color.getId(), "ADMIN", true, "{\"selectableValues\":[\"파랑\"]}"))
+                .andExpect(status().isOk());
+        mvc.perform(definitionPatch(color.getId(), "ADMIN", true, "{}"))
+                .andExpect(status().isOk());
+        mvc.perform(definitionPatch(color.getId(), "ADMIN", true,
+                "{\"name\":\"변경되면안됨\",\"selectableValues\":[\"빨강\"]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.exceptionName").value("ATTRIBUTE_VALUE_IN_USE"));
+        var stored = definitions.findById(color.getId()).orElseThrow();
+        assertThat(stored.getName()).isEqualTo("의상 색상");
+        assertThat(stored.getSelectableValues()).containsExactly("파랑");
+        assertThat(stored.getCreatedAt()).isEqualTo(createdAt);
+        assertThat(service.findById(clothes.id()).attributes().get(0).value()).isEqualTo("파랑");
+        mvc.perform(definitionPatch(UUID.randomUUID(), "ADMIN", true, "{}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("정의 수정은 권한·CSRF·입력값을 검증한다")
+    void updateDefinitionValidationAndAuthorization() throws Exception {
+        mvc.perform(definitionPatch(color.getId(), "USER", true, "{}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(definitionPatch(color.getId(), null, true, "{}"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(definitionPatch(color.getId(), "ADMIN", false, "{}"))
+                .andExpect(status().isForbidden());
+        for (String body : List.of("{\"name\":\" \"}", "{\"selectableValues\":[]}",
+                "{\"selectableValues\":[null]}", "{\"selectableValues\":[\" \"]}")) {
+            mvc.perform(definitionPatch(color.getId(), "ADMIN", true, body))
+                    .andExpect(status().isBadRequest());
+        }
+        assertThat(definitions.findById(color.getId()).orElseThrow().getName()).isEqualTo("색상");
+    }
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder definitionPatch(
+            UUID id, String role, boolean csrfPresent, String body) {
+        var request = org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .patch("/api/clothes/attribute-defs/{definitionId}", id).contentType(MediaType.APPLICATION_JSON).content(body);
+        if (role != null) request.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("tester").roles(role));
+        if (csrfPresent) request.with(csrf());
+        return request;
+    }
+
+    @Test
+    @DisplayName("의상 삭제는 여러 피드의 연결·속성값만 정리하고 피드·정의·다른 의상을 보존한다")
+    void deleteClothesCascadesOnlyDependentRows() throws Exception {
+        var target = service.create(request());
+        var other = service.create(request());
+        UUID weatherId = UUID.randomUUID();
+        UUID feed1 = UUID.randomUUID();
+        UUID feed2 = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO weathers (id, latitude, longitude, forecasted_at, forecast_at,
+                sky_status, precipitation_type, precipitation_amount, precipitation_probability,
+                temperature, humidity, wind_speed, created_at, updated_at)
+                VALUES (?, 0, 0, now(), now(), 'CLEAR', 'NONE', 0, 0, 20, 50, 1, now(), now())
+                """, weatherId);
+        try {
+            for (UUID feedId : List.of(feed1, feed2)) {
+                jdbc.update("INSERT INTO feeds (id, author_id, weather_id, content, created_at, updated_at) VALUES (?, ?, ?, '피드 유지', now(), now())",
+                        feedId, owner.getId(), weatherId);
+                jdbc.update("INSERT INTO feed_clothes (feed_id, clothes_id) VALUES (?, ?)", feedId, target.id());
+            }
+            jdbc.update("INSERT INTO feed_clothes (feed_id, clothes_id) VALUES (?, ?)", feed1, other.id());
+            mvc.perform(clothesDelete(target.id(), owner.getId(), true))
+                    .andExpect(status().isNoContent())
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(""));
+            assertThat(clothesRepository.existsById(target.id())).isFalse();
+            assertThat(attributes.findAllByClothes_Id(target.id())).isEmpty();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM feed_clothes WHERE clothes_id = ?", Long.class, target.id())).isZero();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM feeds WHERE id IN (?, ?)", Long.class, feed1, feed2)).isEqualTo(2);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM feed_clothes WHERE clothes_id = ?", Long.class, other.id())).isEqualTo(1);
+            assertThat(service.findById(other.id())).isEqualTo(other);
+            assertThat(definitions.existsById(color.getId())).isTrue();
+            assertThat(users.existsById(owner.getId())).isTrue();
+            mvc.perform(clothesDelete(target.id(), owner.getId(), true)).andExpect(status().isNotFound());
+        } finally {
+            jdbc.update("DELETE FROM feed_clothes WHERE feed_id IN (?, ?)", feed1, feed2);
+            jdbc.update("DELETE FROM feeds WHERE id IN (?, ?)", feed1, feed2);
+            jdbc.update("DELETE FROM weathers WHERE id = ?", weatherId);
+        }
+    }
+
+    @Test
+    @DisplayName("타인·비로그인·CSRF 누락 삭제 요청은 의상을 보존한다")
+    void deleteClothesAuthorization() throws Exception {
+        var target = service.create(request());
+        mvc.perform(clothesDelete(target.id(), UUID.randomUUID(), true)).andExpect(status().isForbidden());
+        mvc.perform(clothesDelete(target.id(), null, true)).andExpect(status().isUnauthorized());
+        mvc.perform(clothesDelete(target.id(), owner.getId(), false)).andExpect(status().isForbidden());
+        assertThat(service.findById(target.id())).isEqualTo(target);
+    }
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder clothesDelete(
+            UUID id, UUID requesterId, boolean csrfPresent) {
+        var request = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/clothes/{clothesId}", id);
+        if (requesterId != null) {
+            var dto = new com.otboo.team03.user.dto.response.UserDto(requesterId, java.time.Instant.now(),
+                    "test@example.com", "테스트", com.otboo.team03.user.entity.UserRole.USER, false);
+            request.with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(
+                    new com.otboo.team03.global.security.OtbooUserDetails(dto, "encoded")));
+        }
+        if (csrfPresent) request.with(csrf());
+        return request;
+    }
+
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "create-update", "create-delete", "update-update", "update-delete", "change-update", "change-delete"
+    })
+    @DisplayName("동시 의상 등록·수정과 정의 변경은 DB 잠금으로 순서를 보장한다")
+    void concurrentDefinitionUsageAndChange(String scenario) throws Exception {
+        boolean delete = scenario.endsWith("delete");
+        boolean changeFirst = scenario.startsWith("change");
+        boolean updateClothes = scenario.startsWith("update");
+        var existing = updateClothes ? service.create(request()) : null;
+        String usedValue = updateClothes ? "빨강" : "파랑";
+        String retainedValue = updateClothes ? "파랑" : "빨강";
+        Runnable use = () -> {
+            if (updateClothes) {
+                service.update(existing.id(), new ClothesUpdateRequest(null, null,
+                        List.of(new ClothesAttributeDto(color.getId(), usedValue))), owner.getId());
+            } else {
+                service.create(request());
+            }
+        };
+        Runnable change = () -> {
+            if (delete) definitionService.delete(color.getId());
+            else definitionService.update(color.getId(),
+                    new ClothesAttributeDefUpdateRequest(null, List.of(retainedValue)));
+        };
+        var expected = changeFirst
+                ? (delete ? com.otboo.team03.global.exception.ErrorCode.NOT_FOUND_ATTRIBUTE_DEFINITION
+                          : com.otboo.team03.global.exception.ErrorCode.INVALID_CLOTHES_ATTRIBUTE_VALUE)
+                : (delete ? com.otboo.team03.global.exception.ErrorCode.ATTRIBUTE_DEFINITION_IN_USE
+                          : com.otboo.team03.global.exception.ErrorCode.ATTRIBUTE_VALUE_IN_USE);
+        runContendingTransactions(changeFirst ? change : use, changeFirst ? use : change, expected);
+        if (!changeFirst) {
+            assertThat(definitions.findById(color.getId()).orElseThrow().getSelectableValues())
+                    .contains(usedValue);
+            assertThat(attributes.existsByDefinition_Id(color.getId())).isTrue();
+        } else {
+            assertThat(attributes.existsByDefinition_Id(color.getId())).isFalse();
+            assertThat(clothesRepository.findAllByOwner_Id(owner.getId())).isEmpty();
+        }
+    }
+
+    /** 두 독립 트랜잭션을 실제로 경합시킨다. 시간 지연 추측 대신 PostgreSQL의 Lock 대기를 확인한다. */
+    private void runContendingTransactions(Runnable first, Runnable second,
+            com.otboo.team03.global.exception.ErrorCode expected) throws Exception {
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        var ready = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var transaction = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+        try {
+            var holder = pool.submit(() -> transaction.executeWithoutResult(status -> {
+                first.run();
+                ready.countDown();
+                try {
+                    if (!release.await(15, java.util.concurrent.TimeUnit.SECONDS))
+                        throw new IllegalStateException("잠금 해제 대기 시간 초과");
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(e);
+                }
+            }));
+            assertThat(ready.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            var contender = pool.submit(second);
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+            boolean blocked = false;
+            while (System.nanoTime() < deadline && !contender.isDone()) {
+                blocked = Boolean.TRUE.equals(jdbc.queryForObject("""
+                        SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+                        WHERE datname = current_database() AND wait_event_type = 'Lock'
+                        AND query LIKE '%clothes_attribute_definitions%')
+                        """, Boolean.class));
+                if (blocked) break;
+                Thread.sleep(20);
+            }
+            assertThat(blocked).as("두 번째 요청이 실제 DB 잠금을 기다리는지").isTrue();
+            release.countDown();
+            holder.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertThatThrownBy(() -> contender.get(10, java.util.concurrent.TimeUnit.SECONDS))
+                    .isInstanceOfSatisfying(java.util.concurrent.ExecutionException.class, ex -> {
+                        assertThat(ex.getCause()).isInstanceOfSatisfying(
+                                com.otboo.team03.global.exception.OtbooException.class,
+                                cause -> assertThat(cause.getErrorCode()).isEqualTo(expected));
+                    });
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+            assertThat(pool.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
         }
     }
 

@@ -15,11 +15,16 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import com.otboo.team03.clothes.dto.request.ClothesAttributeDefUpdateRequest;
+import org.springframework.web.bind.annotation.PatchMapping;
+import java.util.UUID;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 
 /**
- * 여러 의상이 공유하는 속성 정의의 등록·조회 진입점.
+ * 여러 의상이 공유하는 속성 정의의 등록·조회·수정·삭제 진입점.
  * 의상 자체의 생성·조회는 ClothesController가 담당한다.
- * 전역 보안 설정에서 등록은 관리자만, 조회는 인증된 사용자가 호출하도록 제한한다.
+ * 등록·수정·삭제는 관리자만, 조회는 인증된 사용자가 호출한다. 권한은 SecurityConfig에서 검사한다.
  */
 @RestController
 @RequiredArgsConstructor
@@ -36,10 +41,32 @@ public class ClothesAttributeDefinitionController {
     }
 
     /**
+     * 이름·선택지를 부분 수정한다. 생략/null은 유지하며 선택지 목록은 전체 교체한다.
+     * 의상에서 사용 중인 선택값 제거는 거부한다. ID와 최초 생성 시각은 유지한다.
+     */
+    @PatchMapping("/{definitionId}")
+    public ResponseEntity<ClothesAttributeDefDto> update(@PathVariable UUID definitionId,
+            @Valid @RequestBody ClothesAttributeDefUpdateRequest request) {
+        return ResponseEntity.ok(service.update(definitionId, request));
+    }
+
+    /**
+     * 의상에서 사용 중인 정의는 400으로 거부하고, 미사용 정의만 삭제하여 204를 반환한다.
+     * 의상 삭제와 달리 연결된 속성값을 자동 제거하는 API가 아니다.
+     */
+    @DeleteMapping("/{definitionId}")
+    public ResponseEntity<Void> delete(@PathVariable UUID definitionId) {
+        service.delete(definitionId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * 의상 등록 화면에 정의 ID, 이름, 선택지, 정의 생성 시각을 제공한다.
      * 클라이언트는 여기서 받은 id를 의상 생성 요청의 definitionId로 전달한다.
      * 선택한 값(value)은 이 응답에 없으며 의상별 속성에서 관리한다.
-     * 전체 목록을 반환하고, 정의가 없으면 200 OK와 빈 배열을 반환한다.
+     * sortBy(name/createdAt)와 sortDirection(ASCENDING/DESCENDING)은 필수다.
+     * keywordLike는 정의 이름의 대소문자 구분 없는 부분 검색이며, 응답은 페이지 객체가 아닌 배열이다.
+     * 조건에 맞는 정의가 없으면 200 OK와 빈 배열을 반환한다.
      */
     @GetMapping
     public ResponseEntity<List<ClothesAttributeDefDto>> findAll(

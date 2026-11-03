@@ -56,9 +56,11 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**"
                         ).permitAll()
-                        // 조회는 로그인 사용자에게 열고, 공유 정의 등록만 관리자로 제한한다.
+                        // 공유 정의 조회는 로그인 사용자에게 허용하고, 등록·수정·삭제는 관리자만 허용한다.
                         // 구체적인 규칙을 anyRequest보다 먼저 선언해야 한다.
                         .requestMatchers(HttpMethod.POST, "/api/clothes/attribute-defs").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/clothes/attribute-defs/*").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, "/api/clothes/attribute-defs/*").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session

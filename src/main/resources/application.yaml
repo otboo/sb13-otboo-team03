@@ -41,3 +41,9 @@ otboo:
     access-token-validity: 30m
     refresh-token-validity: 7d
     cookie-secure: ${JWT_COOKIE_SECURE:false}
+
+  storage: ${STORAGE_TYPE:local}
+  s3:
+    bucket: ${S3_BUCKET_NAME}
+    region: ${AWS_REGION:ap-northeast-2}
+    presign-minutes: 5
