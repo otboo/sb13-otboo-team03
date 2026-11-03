@@ -50,27 +50,27 @@ class ClothesControllerTest {
         var authentication = new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
                 details, null, java.util.List.of());
         // given: Service가 성공했을 때 반환할 결과를 지정한다.
-        when(service.create(any())).thenReturn(response());
+        when(service.create(any(), any())).thenReturn(response());
 
         // when + then: 프론트처럼 JSON 요청을 보내 상태 코드와 응답 필드를 확인한다.
-        mvc.perform(post("/api/clothes").principal(authentication).contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+        mvc.perform(multipart("/api/clothes").principal(authentication)
+                        .file(jsonPart("""
                                 {"ownerId":"%s","name":"반팔","type":"TOP","attributes":[{"definitionId":"%s","value":"파랑"}]}
-                                """.formatted(ownerId, definitionId)))
+                                """.formatted(ownerId, definitionId))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(clothesId.toString()))
                 .andExpect(jsonPath("$.ownerId").value(ownerId.toString()))
                 .andExpect(jsonPath("$.name").value("반팔"))
                 .andExpect(jsonPath("$.type").value("TOP"));
         // JSON이 요청 DTO로 변환되어 Service에 전달됐는지도 검증한다.
-        verify(service).create(new ClothesCreateRequest(ownerId, "반팔", ClothesType.TOP, List.of(new com.otboo.team03.clothes.dto.request.ClothesAttributeDto(definitionId, "파랑"))));
+        verify(service).create(new ClothesCreateRequest(ownerId, "반팔", ClothesType.TOP, List.of(new com.otboo.team03.clothes.dto.request.ClothesAttributeDto(definitionId, "파랑"))), null);
     }
 
     @Test
     @DisplayName("필수 값이 빠진 생성 요청은 400으로 거절한다")
     void createWhenInvalid() throws Exception {
-        mvc.perform(post("/api/clothes").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\" \"}"))
+        mvc.perform(multipart("/api/clothes")
+                        .file(jsonPart("{\"name\":\" \"}")))
                 .andExpect(status().isBadRequest());
         // @Valid에서 거절되면 Service가 호출되면 안 된다.
         verifyNoInteractions(service);
@@ -131,10 +131,10 @@ class ClothesControllerTest {
                 new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("user", "password"),
                 new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("wrong principal", null, List.of()));
         for (var authentication : invalid) {
-            var createRequest = post("/api/clothes")
-                    .contentType(MediaType.APPLICATION_JSON).content(createBody());
-            var updateRequest = patch("/api/clothes/{clothesId}", clothesId)
-                    .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"새 이름\"}");
+            var createRequest = multipart("/api/clothes")
+                    .file(jsonPart(createBody()));
+            var updateRequest = multipart(org.springframework.http.HttpMethod.PATCH, "/api/clothes/{clothesId}", clothesId)
+                    .file(jsonPart("{\"name\":\"새 이름\"}"));
             if (authentication != null) {
                 createRequest.principal(authentication);
                 updateRequest.principal(authentication);
@@ -149,8 +149,8 @@ class ClothesControllerTest {
 
     @Test
     void rejectsOtherOwnerOnCreate() throws Exception {
-        mvc.perform(post("/api/clothes").principal(auth(UUID.randomUUID()))
-                .contentType(MediaType.APPLICATION_JSON).content(createBody()))
+        mvc.perform(multipart("/api/clothes").principal(auth(UUID.randomUUID()))
+                .file(jsonPart(createBody())))
                 .andExpect(status().isForbidden());
         verifyNoInteractions(service);
     }
@@ -160,13 +160,13 @@ class ClothesControllerTest {
         var request = new com.otboo.team03.clothes.dto.request.ClothesUpdateRequest("새 이름", null, null);
         var attribute = new com.otboo.team03.clothes.dto.response.ClothesAttributeWithDefDto(
                 definitionId, "색상", List.of("파랑"), "파랑");
-        when(service.update(clothesId, request, ownerId)).thenReturn(
+        when(service.update(clothesId, request, ownerId, null)).thenReturn(
                 new ClothesDto(clothesId, ownerId, "새 이름", null, ClothesType.TOP, List.of(attribute)));
-        mvc.perform(patch("/api/clothes/{clothesId}", clothesId).principal(auth(ownerId))
-                .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"새 이름\"}"))
+        mvc.perform(multipart(org.springframework.http.HttpMethod.PATCH, "/api/clothes/{clothesId}", clothesId).principal(auth(ownerId))
+                .file(jsonPart("{\"name\":\"새 이름\"}")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.attributes[0].value").value("파랑"));
-        verify(service).update(clothesId, request, ownerId);
+        verify(service).update(clothesId, request, ownerId, null);
     }
 
     private org.springframework.security.core.Authentication auth(UUID userId) {
@@ -240,6 +240,32 @@ class ClothesControllerTest {
         verify(service).delete(clothesId, ownerId);
     }
 
+    private org.springframework.mock.web.MockMultipartFile jsonPart(String json) {
+        return new org.springframework.mock.web.MockMultipartFile("request", "", "application/json",
+                json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void multipartRequiresJsonRequestAndRejectsLegacyJsonBody() throws Exception {
+        mvc.perform(multipart("/api/clothes").principal(auth(ownerId)))
+                .andExpect(status().isBadRequest());
+        mvc.perform(multipart("/api/clothes").file(jsonPart("{broken")).principal(auth(ownerId)))
+                .andExpect(status().isBadRequest());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/clothes")
+                        .principal(auth(ownerId)).contentType(MediaType.APPLICATION_JSON).content(createBody()))
+                .andExpect(status().isUnsupportedMediaType());
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void multipartPassesImageToService() throws Exception {
+        var image = new org.springframework.mock.web.MockMultipartFile("image", "photo.png", "image/png", new byte[]{1});
+        when(service.create(any(), org.mockito.ArgumentMatchers.eq(image))).thenReturn(response());
+        mvc.perform(multipart("/api/clothes").file(jsonPart(createBody())).file(image).principal(auth(ownerId)))
+                .andExpect(status().isCreated());
+        verify(service).create(any(), org.mockito.ArgumentMatchers.eq(image));
+    }
+
     private ClothesDto response() {
         return new ClothesDto(clothesId, ownerId, "반팔", null, ClothesType.TOP, List.of());
     }
@@ -249,8 +275,8 @@ class ClothesControllerTest {
     })
     @DisplayName("속성 목록이나 항목의 필수 값이 유효하지 않으면 400으로 거절한다")
     void invalidAttributes(String attributes) throws Exception {
-        mvc.perform(post("/api/clothes").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"ownerId\":\"" + ownerId + "\",\"name\":\"반팔\",\"type\":\"TOP\",\"attributes\":" + attributes + "}"))
+        mvc.perform(multipart("/api/clothes")
+                .file(jsonPart("{\"ownerId\":\"" + ownerId + "\",\"name\":\"반팔\",\"type\":\"TOP\",\"attributes\":" + attributes + "}")))
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(service);
     }

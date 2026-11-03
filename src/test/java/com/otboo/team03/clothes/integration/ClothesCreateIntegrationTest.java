@@ -558,6 +558,11 @@ class ClothesCreateIntegrationTest {
     /** 두 독립 트랜잭션을 실제로 경합시킨다. 시간 지연 추측 대신 PostgreSQL의 Lock 대기를 확인한다. */
     private void runContendingTransactions(Runnable first, Runnable second,
             com.otboo.team03.global.exception.ErrorCode expected) throws Exception {
+        runContendingTransactions(first, second, expected, "clothes_attribute_definitions");
+    }
+
+    private void runContendingTransactions(Runnable first, Runnable second,
+            com.otboo.team03.global.exception.ErrorCode expected, String table) throws Exception {
         var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
         var ready = new java.util.concurrent.CountDownLatch(1);
         var release = new java.util.concurrent.CountDownLatch(1);
@@ -582,14 +587,18 @@ class ClothesCreateIntegrationTest {
                 blocked = Boolean.TRUE.equals(jdbc.queryForObject("""
                         SELECT EXISTS (SELECT 1 FROM pg_stat_activity
                         WHERE datname = current_database() AND wait_event_type = 'Lock'
-                        AND query LIKE '%clothes_attribute_definitions%')
-                        """, Boolean.class));
+                        AND query LIKE ?)
+                        """, Boolean.class, "%" + table + "%"));
                 if (blocked) break;
                 Thread.sleep(20);
             }
             assertThat(blocked).as("두 번째 요청이 실제 DB 잠금을 기다리는지").isTrue();
             release.countDown();
             holder.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            if (expected == null) {
+                contender.get(10, java.util.concurrent.TimeUnit.SECONDS);
+                return;
+            }
             assertThatThrownBy(() -> contender.get(10, java.util.concurrent.TimeUnit.SECONDS))
                     .isInstanceOfSatisfying(java.util.concurrent.ExecutionException.class, ex -> {
                         assertThat(ex.getCause()).isInstanceOfSatisfying(
@@ -600,6 +609,155 @@ class ClothesCreateIntegrationTest {
             release.countDown();
             pool.shutdownNow();
             assertThat(pool.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    @DisplayName("V4 이후 기존 URL은 유지하고 이미지 key를 별도로 저장·교체·제거한다")
+    void persistImageKeySeparatelyFromLegacyUrl() {
+        var clothes = clothesRepository.saveAndFlush(new Clothes("이미지 의상", ClothesType.TOP,
+                "https://example.com/legacy.png", owner));
+        var id = clothes.getId();
+        assertThat(clothesRepository.findById(id).orElseThrow().getImageKey()).isNull();
+
+        clothes.updateImageKey("clothes/first.png");
+        clothesRepository.saveAndFlush(clothes);
+        var reloaded = clothesRepository.findById(id).orElseThrow();
+        assertThat(reloaded.getImageKey()).isEqualTo("clothes/first.png");
+        assertThat(reloaded.getImageUrl()).isEqualTo("https://example.com/legacy.png");
+        assertThat(jdbc.queryForObject("SELECT image_key FROM clothes WHERE id = ?", String.class, id))
+                .isEqualTo("clothes/first.png");
+
+        reloaded.updateImageKey("clothes/replacement.png");
+        clothesRepository.saveAndFlush(reloaded);
+        assertThat(clothesRepository.findById(id).orElseThrow().getImageKey()).isEqualTo("clothes/replacement.png");
+        reloaded.updateImageKey(null);
+        clothesRepository.saveAndFlush(reloaded);
+        assertThat(clothesRepository.findById(id).orElseThrow().getImageKey()).isNull();
+    }
+
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.otboo.team03.global.storage.ImageStorage imageStorage;
+
+    @Test
+    @DisplayName("multipart 생성·미첨부 수정·이미지 교체·삭제는 key와 서명 URL을 연결한다")
+    void multipartImageLifecycle() throws Exception {
+        var image = new org.springframework.mock.web.MockMultipartFile("image", "test.png", "image/png", new byte[]{1});
+        org.mockito.Mockito.when(imageStorage.upload(any())).thenReturn("clothes/first.png", "clothes/second.png");
+        org.mockito.Mockito.when(imageStorage.getAccessUrl("clothes/first.png")).thenReturn("https://example.com/signed-first");
+        org.mockito.Mockito.when(imageStorage.getAccessUrl("clothes/second.png")).thenReturn("https://example.com/signed-second");
+        String body = "{\"ownerId\":\"%s\",\"name\":\"반팔\",\"type\":\"TOP\",\"attributes\":[{\"definitionId\":\"%s\",\"value\":\"파랑\"}]}"
+                .formatted(owner.getId(), color.getId());
+        mvc.perform(imageMultipart(org.springframework.http.HttpMethod.POST, "/api/clothes", body).file(image))
+                .andExpect(status().isCreated())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.imageUrl").value("https://example.com/signed-first"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.imageKey").doesNotExist());
+        var clothes = clothesRepository.findAllByOwner_Id(owner.getId()).get(0);
+        assertThat(clothes.getImageKey()).isEqualTo("clothes/first.png");
+        assertThat(clothes.getImageUrl()).isNull();
+        mvc.perform(imageMultipart(org.springframework.http.HttpMethod.PATCH, "/api/clothes/" + clothes.getId(), "{\"name\":\"이름만 수정\"}"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.imageUrl").value("https://example.com/signed-first"));
+        org.mockito.Mockito.verify(imageStorage, org.mockito.Mockito.times(1)).upload(any());
+        org.mockito.Mockito.verify(imageStorage, org.mockito.Mockito.never()).delete(any());
+        mvc.perform(imageMultipart(org.springframework.http.HttpMethod.PATCH, "/api/clothes/" + clothes.getId(), "{}").file(image))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.imageUrl").value("https://example.com/signed-second"));
+        assertThat(clothesRepository.findById(clothes.getId()).orElseThrow().getImageKey()).isEqualTo("clothes/second.png");
+        org.mockito.Mockito.verify(imageStorage).delete("clothes/first.png");
+        assertThat(service.findById(clothes.getId()).imageUrl()).isEqualTo("https://example.com/signed-second");
+        assertThat(service.findAll(owner.getId(), 20, null, null, null).data().get(0).imageUrl()).isEqualTo("https://example.com/signed-second");
+        mvc.perform(clothesDelete(clothes.getId(), owner.getId(), true)).andExpect(status().isNoContent());
+        org.mockito.Mockito.verify(imageStorage).delete("clothes/second.png");
+    }
+
+    @Test
+    @DisplayName("DB 롤백 시 신규 이미지만 정리하고 기존 이미지 key와 파일은 유지한다")
+    void imageRollbackPreservesOldFile() {
+        var created = service.create(request());
+        var clothes = clothesRepository.findById(created.id()).orElseThrow();
+        clothes.updateImageKey("clothes/old.png");
+        clothesRepository.saveAndFlush(clothes);
+        org.mockito.Mockito.when(imageStorage.upload(any())).thenReturn("clothes/new.png");
+        org.mockito.Mockito.when(imageStorage.getAccessUrl("clothes/new.png")).thenReturn("https://example.com/new");
+        var transaction = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+        transaction.executeWithoutResult(status -> {
+            service.update(created.id(), new ClothesUpdateRequest("롤백", null, null), owner.getId(),
+                    new org.springframework.mock.web.MockMultipartFile("image", new byte[]{1}));
+            org.mockito.Mockito.verify(imageStorage, org.mockito.Mockito.never()).delete(any());
+            status.setRollbackOnly();
+        });
+        assertThat(clothesRepository.findById(created.id()).orElseThrow().getImageKey()).isEqualTo("clothes/old.png");
+        org.mockito.Mockito.verify(imageStorage).delete("clothes/new.png");
+        org.mockito.Mockito.verify(imageStorage, org.mockito.Mockito.never()).delete("clothes/old.png");
+    }
+
+    @Test
+    @DisplayName("업로드 후 DB 저장 오류가 나면 의상과 신규 파일을 함께 정리한다")
+    void imageCreateDatabaseFailureCleansFile() {
+        org.mockito.Mockito.when(imageStorage.upload(any())).thenReturn("clothes/rollback.png");
+        doAnswer(invocation -> { throw new DataIntegrityViolationException("attribute insert failed"); })
+                .when(attributes).save(any(ClothesAttribute.class));
+        assertThatThrownBy(() -> service.create(request(), new org.springframework.mock.web.MockMultipartFile("image", new byte[]{1})))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThat(clothesRepository.findAllByOwner_Id(owner.getId())).isEmpty();
+        org.mockito.Mockito.verify(imageStorage).delete("clothes/rollback.png");
+    }
+
+    private org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder imageMultipart(
+            org.springframework.http.HttpMethod method, String url, String json) {
+        var dto = com.otboo.team03.user.dto.response.UserDto.from(owner);
+        var request = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart(method, url);
+        request.file(new org.springframework.mock.web.MockMultipartFile("request", "", "application/json",
+                json.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        request.with(csrf()).with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(
+                new com.otboo.team03.global.security.OtbooUserDetails(dto, "encoded")));
+        return request;
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "image-name", "name-image", "image-image", "image-delete", "delete-image"
+    })
+    @DisplayName("동시 이미지 교체·이름 수정·삭제는 최신 key를 유지하고 삭제된 key를 복원하지 않는다")
+    void concurrentImageChangesPreserveLiveKey(String scenario) throws Exception {
+        var created = service.create(request());
+        var clothes = clothesRepository.findById(created.id()).orElseThrow();
+        clothes.updateImageKey("clothes/old.png");
+        clothesRepository.saveAndFlush(clothes);
+        // S3는 대체하되 파일 생성·삭제 상태를 추적하여 DB key가 살아 있는 파일을 가리키는지 확인한다.
+        var files = java.util.concurrent.ConcurrentHashMap.<String>newKeySet();
+        files.add("clothes/old.png");
+        var sequence = new java.util.concurrent.atomic.AtomicInteger();
+        org.mockito.Mockito.when(imageStorage.upload(any())).thenAnswer(invocation -> {
+            String key = "clothes/new-" + sequence.incrementAndGet() + ".png";
+            files.add(key);
+            return key;
+        });
+        org.mockito.Mockito.when(imageStorage.getAccessUrl(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(invocation -> "https://example.com/" + invocation.getArgument(0));
+        doAnswer(invocation -> { files.remove((String) invocation.getArgument(0)); return null; })
+                .when(imageStorage).delete(org.mockito.ArgumentMatchers.anyString());
+        Runnable image = () -> service.update(created.id(), new ClothesUpdateRequest(null, null, null), owner.getId(),
+                new org.springframework.mock.web.MockMultipartFile("image", new byte[]{1}));
+        Runnable name = () -> service.update(created.id(), new ClothesUpdateRequest("변경된 이름", null, null), owner.getId());
+        Runnable delete = () -> service.delete(created.id(), owner.getId());
+        String[] operations = scenario.split("-");
+        var actions = java.util.Map.of("image", image, "name", name, "delete", delete);
+        var expected = operations[0].equals("delete")
+                ? com.otboo.team03.global.exception.ErrorCode.NOT_FOUND_CLOTHES : null;
+        runContendingTransactions(actions.get(operations[0]), actions.get(operations[1]), expected, "clothes");
+
+        var result = clothesRepository.findById(created.id());
+        if (scenario.contains("delete")) {
+            assertThat(result).isEmpty();
+            assertThat(files).isEmpty();
+        } else {
+            var saved = result.orElseThrow();
+            assertThat(saved.getImageKey()).startsWith("clothes/new-");
+            assertThat(files).containsExactly(saved.getImageKey());
+            if (scenario.contains("name")) assertThat(saved.getName()).isEqualTo("변경된 이름");
+            if (scenario.equals("image-image")) assertThat(saved.getImageKey()).isEqualTo("clothes/new-2.png");
         }
     }
 
