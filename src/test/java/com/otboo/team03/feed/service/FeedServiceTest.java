@@ -466,4 +466,55 @@ class FeedServiceTest {
     verify(feedRepository).findById(feedId);
     verify(feedRepository).delete(feed);
   }
+
+  @Test
+  void 존재하지_않는_피드는_삭제할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID requesterId = UUID.randomUUID();
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.empty());
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.delete(feedId, requesterId)
+    );
+
+    // then
+    assertEquals(ErrorCode.NOT_FOUND_RESOURCE, exception.getErrorCode());
+
+    verify(feedRepository).findById(feedId);
+    verifyNoMoreInteractions(feedRepository);
+  }
+
+  @Test
+  void 작성자가_아니면_피드를_삭제할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+    UUID requesterId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        UUID.randomUUID(),
+        "삭제하면 안 되는 피드"
+    );
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.delete(feedId, requesterId)
+    );
+
+    // then
+    assertEquals(ErrorCode.ACCESS_DENIED, exception.getErrorCode());
+
+    verify(feedRepository).findById(feedId);
+    verifyNoMoreInteractions(feedRepository);
+  }
 }
