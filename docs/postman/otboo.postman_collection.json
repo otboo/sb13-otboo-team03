@@ -1,0 +1,391 @@
+{
+  "info": {
+    "name": "otboo",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "CSRF 쿠키 받기",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const token =\n    pm.response.cookies.get(\"XSRF-TOKEN\") ||\n    pm.cookies.get(\"XSRF-TOKEN\");\n\nif (!token) {\n    throw new Error(\"CSRF 쿠키를 찾을 수 없습니다.\");\n}\n\npm.collectionVariables.set(\"csrfToken\", token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/csrf-token",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "csrf-token"
+          ]
+        }
+      }
+    },
+    {
+      "name": "로그인 요청 후 로그인 완료 상태",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 200) {\n    const data = pm.response.json();\n\n    pm.collectionVariables.set(\"accessToken\", data.accessToken);\n    pm.collectionVariables.set(\"userId\", data.userDto.id);\n}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "username",
+              "value": "{{email}}",
+              "description": "어드민 계정 이메일"
+            },
+            {
+              "key": "password",
+              "value": "{{password}}",
+              "description": "어드민 계정 비밀번호"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/sign-in",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "sign-in"
+          ]
+        }
+      }
+    },
+    {
+      "name": "의상 속성 등록",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"소재\",\n  \"selectableValues\": [\"면\", \"울\", \"폴리에스터\"]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/clothes/attribute-defs",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "clothes",
+            "attribute-defs"
+          ]
+        }
+      }
+    },
+    {
+      "name": "의상 속성 정의 조회",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/clothes/attribute-defs?sortBy=name&sortDirection=ASCENDING",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "clothes",
+            "attribute-defs"
+          ],
+          "query": [
+            {
+              "key": "sortBy",
+              "value": "name"
+            },
+            {
+              "key": "sortDirection",
+              "value": "ASCENDING"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "이미지 없이 의상 등록",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}"
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "request",
+              "value": "{\n  \"ownerId\": \"{{userId}}\",\n  \"name\": \"흰색 티셔츠\",\n  \"type\": \"TOP\",\n  \"attributes\": [\n    {\n      \"definitionId\": \"{{definitionId}}\",\n      \"value\": \"흰색\"\n    }\n  ]\n}",
+              "type": "text",
+              "contentType": "application/json"
+            },
+            {
+              "key": "image",
+              "type": "file",
+              "src": [],
+              "disabled": true
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/clothes",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "clothes"
+          ]
+        }
+      }
+    },
+    {
+      "name": "이미지 포함 의상 등록",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}"
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "request",
+              "value": "{\n  \"ownerId\": \"{{userId}}\",\n  \"name\": \"파란 아우터\",\n  \"type\": \"TOP\",\n  \"attributes\": [\n    {\n      \"definitionId\": \"{{definitionId}}\",\n      \"value\": \"남색\"\n    }\n  ]\n}",
+              "type": "text",
+              "contentType": "application/json"
+            },
+            {
+              "key": "image",
+              "type": "file",
+              "src": []
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/clothes",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "clothes"
+          ]
+        },
+        "description": "이전 이미지 없이 요청에서 같은 등록 요청에 `image`를 **File**로 추가하고 JPEG·PNG·WebP 파일을 선택합니다.\n\n예상 결과:\n\n| 확인 위치 | 기대 결과 |\n| --- | --- |\n| API 응답 | 201, `imageUrl` 반환 |\n| DB | `image_key`에 `clothes/...` 저장 |\n| S3 | 해당 key의 객체 존재 |\n| 브라우저 | 응답의 URL로 이미지 표시 |\n\n실제 S3 서명 URL 검증은 서버가 S3 저장소 설정으로 실행 중이어야 합니다."
+      }
+    },
+    {
+      "name": "단건 조회",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/clothes/{{clothesId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "clothes",
+            "{{clothesId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "목록 조회",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/clothes?ownerId={{userId}}&limit=10",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "clothes"
+          ],
+          "query": [
+            {
+              "key": "ownerId",
+              "value": "{{userId}}"
+            },
+            {
+              "key": "limit",
+              "value": "10"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "수정 시 이미지 유지 및 교체 확인",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}"
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "request",
+              "value": "{\n  \"name\": \"무신사바지\",\n  \"attributes\": [\n    {\n      \"definitionId\": \"{{definitionId}}\",\n      \"value\": \"차콜\"\n    }\n  ]\n}",
+              "type": "text",
+              "contentType": "application/json"
+            },
+            {
+              "key": "image",
+              "type": "file",
+              "src": [],
+              "disabled": true
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/clothes/{{clothesId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "clothes",
+            "{{clothesId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "의상 삭제 확인",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/clothes/{{clothesId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "clothes",
+            "{{clothesId}}"
+          ]
+        }
+      }
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "csrfToken",
+      "value": ""
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "email",
+      "value": ""
+    },
+    {
+      "key": "password",
+      "value": ""
+    },
+    {
+      "key": "definitionId",
+      "value": ""
+    },
+    {
+      "key": "clothesId",
+      "value": ""
+    }
+  ]
+}
