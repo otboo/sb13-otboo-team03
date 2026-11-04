@@ -4,6 +4,7 @@ import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.clothes.repository.ClothesRepository;
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
+import com.otboo.team03.feed.dto.request.FeedUpdateRequest;
 import com.otboo.team03.feed.dto.response.AuthorDto;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.dto.response.PrecipitationDto;
@@ -313,5 +314,46 @@ class FeedServiceTest {
     verify(feedRepository, never()).save(any(Feed.class));
     verify(feedClothesRepository, never()).save(any(FeedClothes.class));
     verifyNoInteractions(feedDtoAssembler);
+  }
+
+  @Test
+  void 작성자가_피드를_수정하면_변경된_내용과_응답을_반환한다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+    UUID weatherId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        weatherId,
+        "수정 전 내용"
+    );
+
+    FeedUpdateRequest request =
+        new FeedUpdateRequest("수정 후 내용");
+
+    FeedDto expectedResponse = mock(FeedDto.class);
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
+    when(feedDtoAssembler.toDto(feed, authorId))
+        .thenReturn(expectedResponse);
+
+    // when
+    FeedDto result = feedService.update(
+        feedId,
+        authorId,
+        request
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals("수정 후 내용", feed.getContent()),
+        () -> assertSame(expectedResponse, result)
+    );
+
+    verify(feedRepository).findById(feedId);
+    verify(feedDtoAssembler).toDto(feed, authorId);
   }
 }
