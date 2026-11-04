@@ -47,6 +47,13 @@ public class SecurityConfig {
                                 "/api/auth/refresh"
                         ).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
+                        // 공유 정의 조회는 로그인 사용자에게 허용하고, 등록·수정·삭제는 관리자만 허용한다.
+                        // 구체적인 규칙을 anyRequest보다 먼저 선언해야 한다.
+                        .requestMatchers(HttpMethod.POST, "/api/clothes/attribute-defs").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/clothes/attribute-defs/*").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, "/api/clothes/attribute-defs/*").hasRole("ADMIN")
+                        // API 인증은 SPA 공개 규칙보다 먼저 검사한다.
+                        .requestMatchers("/api/**").authenticated()
                         // 페이지 자체는 공개하고, 데이터 접근 권한은 기존 API 규칙으로 검사한다.
                         .requestMatchers(SpaPageRequest::matches).permitAll()
                         .requestMatchers(
@@ -57,11 +64,6 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**"
                         ).permitAll()
-                        // 공유 정의 조회는 로그인 사용자에게 허용하고, 등록·수정·삭제는 관리자만 허용한다.
-                        // 구체적인 규칙을 anyRequest보다 먼저 선언해야 한다.
-                        .requestMatchers(HttpMethod.POST, "/api/clothes/attribute-defs").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/clothes/attribute-defs/*").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.PATCH, "/api/clothes/attribute-defs/*").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session
