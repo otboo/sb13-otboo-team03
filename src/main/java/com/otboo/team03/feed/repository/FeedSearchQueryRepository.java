@@ -3,16 +3,17 @@ package com.otboo.team03.feed.repository;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.QFeed;
 import com.otboo.team03.feed.entity.QFeedLike;
+import com.otboo.team03.feed.entity.QFeedWeatherFilter;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.NumberExpression;
+import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.EntityManager;
-import org.springframework.stereotype.Repository;
-
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.stereotype.Repository;
 
 @Repository
 public class FeedSearchQueryRepository {
@@ -26,6 +27,8 @@ public class FeedSearchQueryRepository {
   public List<Feed> findByFilters(
       String keywordLike,
       UUID authorIdEqual,
+      String skyStatusEqual,
+      String precipitationTypeEqual,
       String sortBy,
       String sortDirection,
       Instant createdAtCursor,
@@ -40,7 +43,12 @@ public class FeedSearchQueryRepository {
         .selectFrom(feed)
         .where(
             keywordCondition(feed, keywordLike),
-            authorCondition(feed, authorIdEqual)
+            authorCondition(feed, authorIdEqual),
+            weatherCondition(
+                feed,
+                skyStatusEqual,
+                precipitationTypeEqual
+            )
         );
 
     if ("likeCount".equals(sortBy)) {
@@ -71,7 +79,6 @@ public class FeedSearchQueryRepository {
           ascending ? likeCount.asc() : likeCount.desc(),
           ascending ? feed.id.asc() : feed.id.desc()
       );
-
     } else {
       if (createdAtCursor != null) {
         query.where(
@@ -100,7 +107,9 @@ public class FeedSearchQueryRepository {
 
   public long countByFilters(
       String keywordLike,
-      UUID authorIdEqual
+      UUID authorIdEqual,
+      String skyStatusEqual,
+      String precipitationTypeEqual
   ) {
     QFeed feed = QFeed.feed;
 
@@ -109,7 +118,12 @@ public class FeedSearchQueryRepository {
         .from(feed)
         .where(
             keywordCondition(feed, keywordLike),
-            authorCondition(feed, authorIdEqual)
+            authorCondition(feed, authorIdEqual),
+            weatherCondition(
+                feed,
+                skyStatusEqual,
+                precipitationTypeEqual
+            )
         )
         .fetchOne();
 
@@ -136,5 +150,31 @@ public class FeedSearchQueryRepository {
     }
 
     return feed.authorId.eq(authorIdEqual);
+  }
+
+  private BooleanExpression weatherCondition(
+      QFeed feed,
+      String skyStatusEqual,
+      String precipitationTypeEqual
+  ) {
+    if (skyStatusEqual == null && precipitationTypeEqual == null) {
+      return null;
+    }
+
+    QFeedWeatherFilter weather = QFeedWeatherFilter.feedWeatherFilter;
+
+    return JPAExpressions
+        .selectOne()
+        .from(weather)
+        .where(
+            weather.id.eq(feed.weatherId),
+            skyStatusEqual == null
+                ? null
+                : weather.skyStatus.eq(skyStatusEqual),
+            precipitationTypeEqual == null
+                ? null
+                : weather.precipitationType.eq(precipitationTypeEqual)
+        )
+        .exists();
   }
 }

@@ -16,6 +16,7 @@ import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.repository.UserRepository;
 import java.time.Instant;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -94,6 +95,8 @@ public class FeedService {
       UUID idAfter,
       String keywordLike,
       UUID authorIdEqual,
+      String skyStatusEqual,
+      String precipitationTypeEqual,
       UUID viewerId
   ) {
     FeedListQuery query = new FeedListQuery(
@@ -104,6 +107,8 @@ public class FeedService {
         idAfter,
         keywordLike,
         authorIdEqual,
+        skyStatusEqual,
+        precipitationTypeEqual,
         viewerId
     );
 
@@ -125,6 +130,18 @@ public class FeedService {
     }
 
     if ((query.cursor() == null) != (query.idAfter() == null)) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if (query.skyStatusEqual() != null
+        && !Set.of("CLEAR", "MOSTLY_CLOUDY", "CLOUDY")
+        .contains(query.skyStatusEqual())) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if (query.precipitationTypeEqual() != null
+        && !Set.of("NONE", "RAIN", "RAIN_SNOW", "SNOW", "SHOWER")
+        .contains(query.precipitationTypeEqual())) {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
     }
   }
@@ -156,6 +173,8 @@ public class FeedService {
     return feedSearchQueryRepository.findByFilters(
         query.keywordLike(),
         query.authorIdEqual(),
+        query.skyStatusEqual(),
+        query.precipitationTypeEqual(),
         query.sortBy(),
         query.sortDirection(),
         createdAtCursor,
@@ -268,7 +287,9 @@ public class FeedService {
     long totalCount = query.hasFilters()
         ? feedSearchQueryRepository.countByFilters(
         query.keywordLike(),
-        query.authorIdEqual()
+        query.authorIdEqual(),
+        query.skyStatusEqual(),
+        query.precipitationTypeEqual()
     )
         : feedRepository.count();
 
@@ -291,6 +312,8 @@ public class FeedService {
       UUID idAfter,
       String keywordLike,
       UUID authorIdEqual,
+      String skyStatusEqual,
+      String precipitationTypeEqual,
       UUID viewerId
   ) {
     boolean isAscending() {
@@ -303,7 +326,9 @@ public class FeedService {
 
     boolean hasFilters() {
       return (keywordLike != null && !keywordLike.isBlank())
-          || authorIdEqual != null;
+          || authorIdEqual != null
+          || skyStatusEqual != null
+          || precipitationTypeEqual != null;
     }
   }
 

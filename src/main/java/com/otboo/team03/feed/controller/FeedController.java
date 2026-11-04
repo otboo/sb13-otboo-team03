@@ -62,6 +62,8 @@ public class FeedController {
       @RequestParam(required = false) UUID idAfter,
       @RequestParam(required = false) String keywordLike,
       @RequestParam(required = false) UUID authorIdEqual,
+      @RequestParam(required = false) String skyStatusEqual,
+      @RequestParam(required = false) String precipitationTypeEqual,
       Authentication authentication
   ) {
     if (authentication == null
@@ -81,6 +83,8 @@ public class FeedController {
         idAfter,
         keywordLike,
         authorIdEqual,
+        skyStatusEqual,
+        precipitationTypeEqual,
         viewerId
     );
 
