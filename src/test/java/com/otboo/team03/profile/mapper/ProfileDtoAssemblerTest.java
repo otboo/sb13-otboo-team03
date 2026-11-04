@@ -55,8 +55,8 @@ class ProfileDtoAssemblerTest {
   }
 
   @Test
-  @DisplayName("2. 기존 http/https 형태의 URL인 경우 변환 없이 그대로 반환한다")
-  void toDto_withHttpUrl_keepsOriginalUrl() {
+  @DisplayName("2. 기존 https 형태의 URL인 경우 변환 없이 그대로 반환한다")
+  void toDto_withHttpsUrl_keepsOriginalUrl() {
 
     // given
     ProfileDtoAssembler assembler = new ProfileDtoAssembler(Optional.of(imageStorage));
@@ -72,11 +72,14 @@ class ProfileDtoAssemblerTest {
   @Test
   @DisplayName("3. 이미지가 null인 경우 null을 반환한다")
   void toDto_withNullImage_returnsNull() {
+
     // given: 이미지를 null로 넣어 프로필 생성
     ProfileDtoAssembler assembler = new ProfileDtoAssembler(Optional.of(imageStorage));
     Profile profile = createProfile(null);
+
     // when
     ProfileDto result = assembler.toDto(profile);
+
     // then: 반환된 DTO의 이미지 URL도 null이어야 함!
     assertThat(result.profileImageUrl()).isNull();
   }
@@ -84,13 +87,62 @@ class ProfileDtoAssemblerTest {
   @Test
   @DisplayName("4. ImageStorage 빈이 없는 환경(Optional.empty())에서도 에러 없이 null을 반환한다")
   void toDto_withoutImageStorage_returnsNullGracefully() {
+
     // given: 빈이 없는 상황을 테스트하기 위해 Optional.empty()를 주입!
     ProfileDtoAssembler assembler = new ProfileDtoAssembler(Optional.empty());
     Profile profile = createProfile("profiles/avatar_123.jpg");
+
     // when
     ProfileDto result = assembler.toDto(profile);
+
     // then: NPE 에러 없이 안전하게 null이어야 함!
     assertThat(result.profileImageUrl()).isNull();
+  }
+
+  @Test
+  @DisplayName("5. 기존 http (비보안) URL인 경우에도 변환 없이 그대로 반환한다")
+  void toDto_withInsecureHttpUrl_keepsOriginalUrl() { // ← 메서드명을 InsecureHttp 로 변경!
+
+    // given
+    ProfileDtoAssembler assembler = new ProfileDtoAssembler(Optional.of(imageStorage));
+    Profile profile = createProfile("http://cdn.otboo.io/legacy-image.png");
+
+    // when
+    ProfileDto result = assembler.toDto(profile);
+
+    // then
+    assertThat(result.profileImageUrl()).isEqualTo("http://cdn.otboo.io/legacy-image.png");
+  }
+
+  @Test
+  @DisplayName("6. User가 null이거나 기타 모든 필드(좌표, 이름 등)가 ProfileDto로 완벽히 조립되는지 검증")
+  void toDto_fullFieldsAndNullUser_coveredSuccessfully() {
+
+    // given: User가 null인 프로필 생성 (ProfileDto 삼항연산자 분기 커버!)
+    Profile profileWithoutUser = new Profile(
+        null,
+        null,
+        Gender.FEMALE,
+        LocalDate.of(2000, 1, 1),
+        35.1796,
+        129.0756,
+        1,
+        List.of("부산광역시")
+    );
+    ProfileDtoAssembler assembler = new ProfileDtoAssembler(Optional.empty());
+
+    // when
+    ProfileDto result = assembler.toDto(profileWithoutUser);
+
+    // then: ProfileDto의 모든 Record 게터 메서드 실행 (커버리지 100% 달성)
+    assertThat(result.userId()).isNull();
+    assertThat(result.name()).isNull();
+    assertThat(result.gender()).isEqualTo(Gender.FEMALE);
+    assertThat(result.birthDate()).isEqualTo(LocalDate.of(2000, 1, 1));
+    assertThat(result.temperatureSensitivity()).isEqualTo(1);
+    assertThat(result.location().latitude()).isEqualTo(35.1796);
+    assertThat(result.location().longitude()).isEqualTo(129.0756);
+    assertThat(result.location().locationNames()).containsExactly("부산광역시");
   }
 
 }
