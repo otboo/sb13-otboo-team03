@@ -443,4 +443,27 @@ class FeedServiceTest {
 
     verifyNoInteractions(feedDtoAssembler);
   }
+
+  @Test
+  void 작성자가_피드를_삭제하면_저장소에서_삭제한다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        UUID.randomUUID(),
+        "삭제할 피드"
+    );
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
+    // when
+    feedService.delete(feedId, authorId);
+
+    // then
+    verify(feedRepository).findById(feedId);
+    verify(feedRepository).delete(feed);
+  }
 }
