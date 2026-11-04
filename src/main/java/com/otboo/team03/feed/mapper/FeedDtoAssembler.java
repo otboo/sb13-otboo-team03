@@ -2,6 +2,8 @@ package com.otboo.team03.feed.mapper;
 
 import com.otboo.team03.clothes.dto.response.ClothesAttributeWithDefDto;
 import com.otboo.team03.clothes.entity.Clothes;
+import com.otboo.team03.global.storage.ImageStorage;
+import org.springframework.beans.factory.ObjectProvider;
 import com.otboo.team03.feed.dto.response.AuthorDto;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.dto.response.OotdDto;
@@ -27,6 +29,7 @@ public class FeedDtoAssembler {
   private final FeedClothesRepository feedClothesRepository;
   private final FeedWeatherLookupRepository weatherRepository;
   private final JdbcTemplate jdbcTemplate;
+  private final ObjectProvider<ImageStorage> imageStorageProvider;
 
   public FeedDto toDto(Feed feed, UUID viewerId) {
     User author = userRepository.findById(feed.getAuthorId())
@@ -110,7 +113,8 @@ public class FeedDtoAssembler {
     return new OotdDto(
         clothes.getId(),
         clothes.getName(),
-        clothes.getImageUrl(),
+        clothes.getImageKey() == null ? clothes.getImageUrl()
+            : imageStorageProvider.getObject().getAccessUrl(clothes.getImageKey()),
         clothes.getType(),
         attributes
     );

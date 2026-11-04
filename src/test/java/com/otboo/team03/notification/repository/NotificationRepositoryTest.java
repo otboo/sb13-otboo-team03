@@ -1,5 +1,7 @@
 package com.otboo.team03.notification.repository;
 
+import com.otboo.team03.global.config.JpaConfig;
+import com.otboo.team03.global.config.QuerydslConfig;
 import com.otboo.team03.notification.entity.Notification;
 import com.otboo.team03.notification.entity.NotificationLevel;
 import com.otboo.team03.user.entity.User;
@@ -8,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -19,6 +22,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest
+@Import({JpaConfig.class, QuerydslConfig.class})
 @Testcontainers
 class NotificationRepositoryTest {
 

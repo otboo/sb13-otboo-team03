@@ -33,6 +33,11 @@ dependencies {
         // Flyway
         implementation 'org.springframework.boot:spring-boot-starter-flyway'
         runtimeOnly 'org.flywaydb:flyway-database-postgresql'
+        // AWS SDK 모듈 버전을 통일한다.
+        implementation platform('software.amazon.awssdk:bom:2.57.8')
+
+        // S3 업로드·삭제 및 서명 URL 생성 기능
+        implementation 'software.amazon.awssdk:s3'
 
         // Validation
         implementation 'org.springframework.boot:spring-boot-starter-validation'
@@ -72,6 +77,9 @@ dependencies {
         // 재시도 관련
         implementation 'org.springframework.retry:spring-retry:2.0.12'
         implementation 'org.springframework.boot:spring-boot-starter-aspectj'
+
+        // Mail
+        implementation 'org.springframework.boot:spring-boot-starter-mail'
 }
 
 tasks.named('test') {

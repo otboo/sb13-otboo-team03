@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
 @Transactional
-class FeedRepositoryTest {
+class FeedRepositoryTest extends com.otboo.team03.support.PostgresTestSupport {
 
   @Autowired
   private FeedRepository feedRepository;

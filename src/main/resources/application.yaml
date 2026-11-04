@@ -1,4 +1,8 @@
 spring:
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
   profiles:
     default: dev
   application:
@@ -14,6 +18,22 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
 
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
 otboo:
   admin:
     email: ${ADMIN_EMAIL}
@@ -25,3 +45,9 @@ otboo:
     access-token-validity: 30m
     refresh-token-validity: 7d
     cookie-secure: ${JWT_COOKIE_SECURE:false}
+
+  storage: ${STORAGE_TYPE:local}
+  s3:
+    bucket: ${S3_BUCKET_NAME}
+    region: ${AWS_REGION:ap-northeast-2}
+    presign-minutes: 5
