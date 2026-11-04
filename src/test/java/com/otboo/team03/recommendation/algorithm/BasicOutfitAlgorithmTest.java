@@ -1,5 +1,8 @@
 package com.otboo.team03.recommendation.algorithm;
 
+import com.otboo.team03.clothes.entity.Clothes;
+import com.otboo.team03.clothes.entity.ClothesType;
+import com.otboo.team03.user.entity.User;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -20,5 +23,21 @@ class BasicOutfitAlgorithmTest {
 
         // then
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("상의 하나와 하의 하나가 있으면 두 의상을 반환한다")
+    void 상의_하의_각각_하나면_두_의상_반환() {
+        // given
+        BasicOutfitAlgorithm algorithm = new BasicOutfitAlgorithm();
+        User owner = new User("user@example.com", "encoded-password", "사용자");
+        Clothes top = new Clothes("상의", ClothesType.TOP, null, owner);
+        Clothes bottom = new Clothes("하의", ClothesType.BOTTOM, null, owner);
+
+        // when
+        var result = algorithm.recommend(List.of(top, bottom));
+
+        // then
+        assertThat(result).containsExactlyInAnyOrder(top, bottom);
     }
 }
