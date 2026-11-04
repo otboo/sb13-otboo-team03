@@ -37,6 +37,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -383,5 +384,24 @@ class FeedControllerTest {
         authorId,
         new FeedUpdateRequest("수정 후 내용")
     );
+  }
+
+  @Test
+  void 작성자가_피드를_삭제하면_204를_반환한다()
+      throws Exception {
+    // given
+    UUID targetFeedId = UUID.randomUUID();
+
+    // when
+    var result = mockMvc.perform(
+        delete("/api/feeds/{feedId}", targetFeedId)
+            .principal(authentication(authorId))
+    );
+
+    // then
+    result.andExpect(status().isNoContent())
+        .andExpect(content().string(""));
+
+    verify(feedService).delete(targetFeedId, authorId);
   }
 }
