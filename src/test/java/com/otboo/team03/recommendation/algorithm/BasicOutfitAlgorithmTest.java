@@ -117,5 +117,50 @@ class BasicOutfitAlgorithmTest {
             // then
             assertThat(result).containsExactly(dress);
         }
+        @Test
+        @DisplayName("상의·하의·원피스가 모두 있으면 상의와 하의만 반환한다")
+        void 모든_기본_종류가_있으면_상의와_하의_우선() {
+            // given
+            Clothes top = new Clothes("상의", ClothesType.TOP, null, owner);
+            Clothes bottom = new Clothes("하의", ClothesType.BOTTOM, null, owner);
+            Clothes dress = new Clothes("원피스", ClothesType.DRESS, null, owner);
+
+            // when
+            var result = algorithm.recommend(List.of(dress, top, bottom));
+
+            // then
+            assertThat(result).containsExactlyInAnyOrder(top, bottom);
+        }
+
+        @Test
+        @DisplayName("상의가 여러 개면 입력 순서상 첫 번째 상의를 선택한다")
+        void 상의가_여러개면_첫번째_상의_선택() {
+            // given
+            Clothes firstTop = new Clothes("첫 상의", ClothesType.TOP, null, owner);
+            Clothes secondTop = new Clothes("두 번째 상의", ClothesType.TOP, null, owner);
+            Clothes bottom = new Clothes("하의", ClothesType.BOTTOM, null, owner);
+
+            // when
+            var result = algorithm.recommend(List.of(bottom, firstTop, secondTop));
+
+            // then
+            assertThat(result).containsExactlyInAnyOrder(firstTop, bottom);
+        }
+
+        @Test
+        @DisplayName("하의가 여러 개면 입력 순서상 첫 번째 하의를 선택한다")
+        void 하의가_여러개면_첫번째_하의_선택() {
+            // given
+            Clothes top = new Clothes("상의", ClothesType.TOP, null, owner);
+            Clothes firstBottom = new Clothes("첫 하의", ClothesType.BOTTOM, null, owner);
+            Clothes secondBottom = new Clothes("두 번째 하의", ClothesType.BOTTOM, null, owner);
+
+            // when
+            var result = algorithm.recommend(List.of(firstBottom, top, secondBottom));
+
+            // then
+            assertThat(result).containsExactlyInAnyOrder(top, firstBottom);
+        }
+
     }
 }
