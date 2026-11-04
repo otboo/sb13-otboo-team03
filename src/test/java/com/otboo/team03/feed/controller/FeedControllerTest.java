@@ -3,6 +3,7 @@ package com.otboo.team03.feed.controller;
 import com.otboo.team03.clothes.dto.response.ClothesAttributeWithDefDto;
 import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
+import com.otboo.team03.feed.dto.request.FeedUpdateRequest;
 import com.otboo.team03.feed.dto.response.AuthorDto;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.dto.response.OotdDto;
@@ -331,6 +332,55 @@ class FeedControllerTest {
         0L,
         0,
         false
+    );
+  }
+
+  @Test
+  void 작성자가_피드를_수정하면_200과_FeedDto를_반환한다()
+      throws Exception {
+    // given
+    FeedDto original = createResponse();
+
+    FeedDto updatedResponse = new FeedDto(
+        original.id(),
+        original.createdAt(),
+        original.updatedAt(),
+        original.author(),
+        original.weather(),
+        original.ootds(),
+        "수정 후 내용",
+        original.likeCount(),
+        original.commentCount(),
+        original.likedByMe()
+    );
+
+    when(feedService.update(
+        eq(feedId),
+        eq(authorId),
+        any(FeedUpdateRequest.class)
+    )).thenReturn(updatedResponse);
+
+    // when
+    var result = mockMvc.perform(
+        patch("/api/feeds/{feedId}", feedId)
+            .principal(authentication(authorId))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+              {
+                "content": "수정 후 내용"
+              }
+              """)
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(feedId.toString()))
+        .andExpect(jsonPath("$.content").value("수정 후 내용"));
+
+    verify(feedService).update(
+        feedId,
+        authorId,
+        new FeedUpdateRequest("수정 후 내용")
     );
   }
 }
