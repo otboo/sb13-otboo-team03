@@ -357,4 +357,90 @@ class FeedServiceTest {
     verify(feedRepository).findById(feedId);
     verify(feedDtoAssembler).toDto(feed, authorId);
   }
+
+  @Test
+  void 존재하지_않는_피드는_수정할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID requesterId = UUID.randomUUID();
+    FeedUpdateRequest request = new FeedUpdateRequest("수정 내용");
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.empty());
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.update(feedId, requesterId, request)
+    );
+
+    // then
+    assertEquals(ErrorCode.NOT_FOUND_RESOURCE, exception.getErrorCode());
+    verifyNoInteractions(feedDtoAssembler);
+  }
+
+  @Test
+  void 작성자가_아니면_피드를_수정할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+    UUID requesterId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        UUID.randomUUID(),
+        "수정 전 내용"
+    );
+
+    FeedUpdateRequest request = new FeedUpdateRequest("수정 후 내용");
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.update(feedId, requesterId, request)
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(ErrorCode.ACCESS_DENIED, exception.getErrorCode()),
+        () -> assertEquals("수정 전 내용", feed.getContent())
+    );
+
+    verifyNoInteractions(feedDtoAssembler);
+  }
+
+  @Test
+  void 수정_내용이_공백이면_피드를_수정할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        UUID.randomUUID(),
+        "수정 전 내용"
+    );
+
+    FeedUpdateRequest request = new FeedUpdateRequest("   ");
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.update(feedId, authorId, request)
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(ErrorCode.INVALID_INPUT_VALUE, exception.getErrorCode()),
+        () -> assertEquals("수정 전 내용", feed.getContent())
+    );
+
+    verifyNoInteractions(feedDtoAssembler);
+  }
 }
