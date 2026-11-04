@@ -1,6 +1,10 @@
 package com.otboo.team03.global.exception;
 
 import lombok.extern.slf4j.Slf4j;
+import com.otboo.team03.global.config.SpaPageRequest;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.web.servlet.ModelAndView;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
@@ -107,6 +111,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<ErrorResponse> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException ex) {
         return ResponseEntity.status(415).body(ErrorResponse.from(ErrorCode.INVALID_INPUT_VALUE));
+    }
+
+    /** 알려진 화면과 없는 화면 모두 프런트 라우터가 처리하며, 없는 API·파일은 404로 응답한다. */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public Object handleNoResourceFound(NoResourceFoundException ex, HttpServletRequest request) {
+        if (SpaPageRequest.matches(request)) {
+            return new ModelAndView("forward:/index.html");
+        }
+        return ResponseEntity.status(404).contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .body(ErrorResponse.from(ErrorCode.NOT_FOUND_RESOURCE));
     }
 
     @ExceptionHandler(Exception.class)

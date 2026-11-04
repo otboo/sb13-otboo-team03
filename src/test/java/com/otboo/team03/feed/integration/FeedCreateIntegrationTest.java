@@ -41,7 +41,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class FeedCreateIntegrationTest {
+class FeedCreateIntegrationTest extends com.otboo.team03.support.PostgresTestSupport {
 
   @Autowired
   private MockMvc mockMvc;

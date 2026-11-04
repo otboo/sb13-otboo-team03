@@ -2,23 +2,24 @@ package com.otboo.team03.feed.mapper;
 
 import com.otboo.team03.clothes.dto.response.ClothesAttributeWithDefDto;
 import com.otboo.team03.clothes.entity.Clothes;
+import com.otboo.team03.global.storage.ImageStorage;
+import org.springframework.beans.factory.ObjectProvider;
 import com.otboo.team03.feed.dto.response.AuthorDto;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.dto.response.OotdDto;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
-import com.otboo.team03.global.storage.ImageStorage;
 import com.otboo.team03.user.entity.User;
-import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.UserRepository;
+import com.otboo.team03.user.exception.UserNotFoundException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
@@ -112,44 +113,28 @@ public class FeedDtoAssembler {
     return new OotdDto(
         clothes.getId(),
         clothes.getName(),
-        resolveImageUrl(clothes),
+        clothes.getImageKey() == null ? clothes.getImageUrl()
+            : imageStorageProvider.getObject().getAccessUrl(clothes.getImageKey()),
         clothes.getType(),
         attributes
     );
   }
 
-  private String resolveImageUrl(Clothes clothes) {
-    String imageKey = clothes.getImageKey();
-
-    // S3 이미지가 있으면 응답 생성 시 서명 URL을 발급한다.
-    if (imageKey != null && !imageKey.isBlank()) {
-      ImageStorage storage = imageStorageProvider.getIfAvailable();
-
-      if (storage != null) {
-        return storage.getAccessUrl(imageKey);
-      }
-    }
-
-    // 기존 이미지 URL을 유지하고, 이미지가 없으면 null을 반환한다.
-    return clothes.getImageUrl();
-  }
-
   private List<ClothesAttributeWithDefDto> findClothesAttributes(
       UUID clothesId
   ) {
-    return jdbcTemplate.query(
-        """
-        SELECT
-            ca.definition_id,
-            cad.name AS definition_name,
-            cad.selectable_values,
-            ca.value
-        FROM clothes_attribute ca
-        JOIN clothes_attribute_definitions cad
-            ON ca.definition_id = cad.id
-        WHERE ca.clothes_id = ?
-        ORDER BY ca.definition_id
-        """,
+    return jdbcTemplate.query("""
+                SELECT
+                    ca.definition_id,
+                    cad.name AS definition_name,
+                    cad.selectable_values,
+                    ca.value
+                FROM clothes_attribute ca
+                JOIN clothes_attribute_definitions cad
+                    ON ca.definition_id = cad.id
+                WHERE ca.clothes_id = ?
+                ORDER BY ca.definition_id
+                """,
         (rs, rowNum) -> {
           String[] values = (String[]) rs
               .getArray("selectable_values")
