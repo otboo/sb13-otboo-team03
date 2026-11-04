@@ -318,6 +318,26 @@ class BasicOutfitAlgorithmTest {
         }
 
         @Test
+        @DisplayName("기온 14.9℃에서 민감도 3이면 아우터를 포함한다")
+        void 기준_기온_미만이면_아우터를_포함한다() {
+            // when
+            var result = algorithm.recommend(clothes, 14.9, 3);
+
+            // then
+            assertThat(result).containsExactlyInAnyOrder(top, bottom, outer);
+        }
+
+        @Test
+        @DisplayName("기온이 정확히 15℃이고 민감도 3이면 아우터를 포함하지 않는다")
+        void 기준_기온과_같으면_아우터를_제외한다() {
+            // when
+            var result = algorithm.recommend(clothes, 15.0, 3);
+
+            // then
+            assertThat(result).containsExactlyInAnyOrder(top, bottom);
+        }
+
+        @Test
         @DisplayName("원피스 코디도 기온 10℃에서 민감도 3이면 아우터를 추가한다")
         void 추운_날_원피스_코디에_아우터를_추가한다() {
             // given

@@ -90,7 +90,11 @@ class RecommendationControllerTest {
     @Test
     void weatherId가_없으면_400을_반환한다() throws Exception {
         mvc.perform(get("/api/recommendations").principal(authentication()))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.exceptionName").value("INVALID_INPUT_VALUE"))
+                .andExpect(jsonPath("$.message").value("입력값이 올바르지 않습니다."))
+                .andExpect(jsonPath("$.details").isMap())
+                .andExpect(jsonPath("$.details.weatherId").value("필수 요청 파라미터입니다."));
         verifyNoInteractions(service);
     }
 
@@ -98,7 +102,12 @@ class RecommendationControllerTest {
     void weatherId가_UUID가_아니면_400을_반환한다() throws Exception {
         mvc.perform(get("/api/recommendations").param("weatherId", "invalid")
                         .principal(authentication()))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.exceptionName").value("INVALID_INPUT_VALUE"))
+                .andExpect(jsonPath("$.message").value("입력값이 올바르지 않습니다."))
+                .andExpect(jsonPath("$.details").isMap())
+                .andExpect(jsonPath("$.details.weatherId")
+                        .value("요청 값의 형식 또는 허용 범위가 올바르지 않습니다."));
         verifyNoInteractions(service);
     }
 
