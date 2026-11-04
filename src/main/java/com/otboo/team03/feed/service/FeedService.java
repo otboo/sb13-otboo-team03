@@ -18,7 +18,6 @@ import com.otboo.team03.user.repository.UserRepository;
 import java.time.Instant;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -147,15 +146,7 @@ public class FeedService {
   }
 
   private List<Feed> findFeeds(FeedListQuery query) {
-    if (query.hasFilters()) {
-      return findFeedsByFilters(query);
-    }
-
-    if (query.isLikeCountSort()) {
-      return findFeedsByLikeCount(query);
-    }
-
-    return findFeedsByCreatedAt(query);
+    return findFeedsByFilters(query);
   }
 
   private List<Feed> findFeedsByFilters(FeedListQuery query) {
@@ -182,56 +173,6 @@ public class FeedService {
         query.idAfter(),
         query.limit() + 1
     );
-  }
-
-  private List<Feed> findFeedsByLikeCount(FeedListQuery query) {
-    int pageSize = query.limit() + 1;
-
-    if (query.cursor() == null) {
-      return query.isAscending()
-          ? feedRepository.findFirstPageByLikeCountAsc(pageSize)
-          : feedRepository.findFirstPageByLikeCountDesc(pageSize);
-    }
-
-    long cursorCount = parseLikeCountCursor(query.cursor());
-
-    return query.isAscending()
-        ? feedRepository.findNextPageByLikeCountAsc(
-        cursorCount,
-        query.idAfter(),
-        pageSize
-    )
-        : feedRepository.findNextPageByLikeCountDesc(
-            cursorCount,
-            query.idAfter(),
-            pageSize
-        );
-  }
-
-  private List<Feed> findFeedsByCreatedAt(FeedListQuery query) {
-    int pageSize = query.limit() + 1;
-
-    if (query.cursor() == null) {
-      PageRequest pageable = PageRequest.of(0, pageSize);
-
-      return query.isAscending()
-          ? feedRepository.findAllByOrderByCreatedAtAscIdAsc(pageable)
-          : feedRepository.findAllByOrderByCreatedAtDescIdDesc(pageable);
-    }
-
-    Instant cursorTime = parseCreatedAtCursor(query.cursor());
-
-    return query.isAscending()
-        ? feedRepository.findNextPageAscending(
-        cursorTime,
-        query.idAfter(),
-        pageSize
-    )
-        : feedRepository.findNextPage(
-            cursorTime,
-            query.idAfter(),
-            pageSize
-        );
   }
 
   private long parseLikeCountCursor(String cursor) {
@@ -284,14 +225,12 @@ public class FeedService {
           : lastFeed.getCreatedAt().toString();
     }
 
-    long totalCount = query.hasFilters()
-        ? feedSearchQueryRepository.countByFilters(
+    long totalCount = feedSearchQueryRepository.countByFilters(
         query.keywordLike(),
         query.authorIdEqual(),
         query.skyStatusEqual(),
         query.precipitationTypeEqual()
-    )
-        : feedRepository.count();
+    );
 
     return new CursorResponse<>(
         data,
@@ -316,19 +255,8 @@ public class FeedService {
       String precipitationTypeEqual,
       UUID viewerId
   ) {
-    boolean isAscending() {
-      return "ASCENDING".equals(sortDirection);
-    }
-
     boolean isLikeCountSort() {
       return "likeCount".equals(sortBy);
-    }
-
-    boolean hasFilters() {
-      return (keywordLike != null && !keywordLike.isBlank())
-          || authorIdEqual != null
-          || skyStatusEqual != null
-          || precipitationTypeEqual != null;
     }
   }
 
