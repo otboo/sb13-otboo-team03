@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -27,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest
@@ -200,5 +202,33 @@ class FeedDeleteIntegrationTest extends PostgresTestSupport {
         Long.class,
         feedId
     );
+  }
+
+  @Test
+  void 인증하지_않으면_피드를_수정하거나_삭제할_수_없다()
+      throws Exception {
+    // given
+    UUID feedId = UUID.randomUUID();
+
+    // when
+    var updateResult = mockMvc.perform(
+        patch("/api/feeds/{feedId}", feedId)
+            .with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+              {
+                "content": "수정할 내용"
+              }
+              """)
+    );
+
+    var deleteResult = mockMvc.perform(
+        delete("/api/feeds/{feedId}", feedId)
+            .with(csrf())
+    );
+
+    // then
+    updateResult.andExpect(status().isUnauthorized());
+    deleteResult.andExpect(status().isUnauthorized());
   }
 }
