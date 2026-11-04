@@ -162,5 +162,34 @@ class BasicOutfitAlgorithmTest {
             assertThat(result).containsExactlyInAnyOrder(top, firstBottom);
         }
 
+        @Test
+        @DisplayName("아우터·신발·액세서리만 있으면 빈 목록을 반환한다")
+        void 아우터_신발_액세서리만_있으면_빈목록_반환() {
+            // given
+            Clothes outer = new Clothes("아우터", ClothesType.OUTER, null, owner);
+            Clothes shoes = new Clothes("신발", ClothesType.SHOES, null, owner);
+            Clothes accessory = new Clothes("액세서리", ClothesType.ACCESSORY, null, owner);
+
+            // when
+            var result = algorithm.recommend(List.of(outer, shoes, accessory));
+
+            // then
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("상의·하의와 함께 아우터가 있어도 상의와 하의만 반환한다")
+        void 상의_하의_아우터가_있으면_상의와_하의만_반환() {
+            // given
+            Clothes top = new Clothes("상의", ClothesType.TOP, null, owner);
+            Clothes bottom = new Clothes("하의", ClothesType.BOTTOM, null, owner);
+            Clothes outer = new Clothes("아우터", ClothesType.OUTER, null, owner);
+
+            // when
+            var result = algorithm.recommend(List.of(outer, top, bottom));
+
+            // then
+            assertThat(result).containsExactlyInAnyOrder(top, bottom);
+        }
     }
 }
