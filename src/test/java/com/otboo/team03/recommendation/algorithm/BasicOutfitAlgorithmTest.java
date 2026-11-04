@@ -40,4 +40,19 @@ class BasicOutfitAlgorithmTest {
         // then
         assertThat(result).containsExactlyInAnyOrder(top, bottom);
     }
+
+    @Test
+    @DisplayName("원피스 하나만 있으면 원피스를 반환한다")
+    void 원피스_하나면_원피스_반환() {
+        // given
+        BasicOutfitAlgorithm algorithm = new BasicOutfitAlgorithm();
+        User owner = new User("user@example.com", "encoded-password", "사용자");
+        Clothes dress = new Clothes("원피스", ClothesType.DRESS, null, owner);
+
+        // when
+        var result = algorithm.recommend(List.of(dress));
+
+        // then
+        assertThat(result).containsExactly(dress);
+    }
 }
