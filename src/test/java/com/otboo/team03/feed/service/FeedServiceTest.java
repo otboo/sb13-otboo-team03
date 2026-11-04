@@ -517,4 +517,50 @@ class FeedServiceTest {
     verify(feedRepository).findById(feedId);
     verifyNoMoreInteractions(feedRepository);
   }
+
+  @Test
+  void 수정_요청이나_내용이_null이면_피드를_수정할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        UUID.randomUUID(),
+        "수정 전 내용"
+    );
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
+    // when
+    OtbooException nullRequestException = assertThrows(
+        OtbooException.class,
+        () -> feedService.update(feedId, authorId, null)
+    );
+
+    OtbooException nullContentException = assertThrows(
+        OtbooException.class,
+        () -> feedService.update(
+            feedId,
+            authorId,
+            new FeedUpdateRequest(null)
+        )
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            nullRequestException.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            nullContentException.getErrorCode()
+        ),
+        () -> assertEquals("수정 전 내용", feed.getContent())
+    );
+
+    verifyNoInteractions(feedDtoAssembler);
+  }
 }

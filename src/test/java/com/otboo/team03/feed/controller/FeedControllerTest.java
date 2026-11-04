@@ -404,4 +404,44 @@ class FeedControllerTest {
 
     verify(feedService).delete(targetFeedId, authorId);
   }
+
+  @Test
+  void 수정과_삭제에서_유효하지_않은_인증은_401을_반환한다()
+      throws Exception {
+    // given
+    Authentication[] invalidAuthentications = {
+        null,
+        new UsernamePasswordAuthenticationToken("user", null),
+        new UsernamePasswordAuthenticationToken(
+            "user", null, List.of()
+        )
+    };
+
+    // when
+    for (Authentication authentication : invalidAuthentications) {
+      var patchRequest = patch("/api/feeds/{feedId}", feedId)
+          .contentType(MediaType.APPLICATION_JSON)
+          .content("""
+            {
+              "content": "수정 내용"
+            }
+            """);
+
+      var deleteRequest = delete("/api/feeds/{feedId}", feedId);
+
+      if (authentication != null) {
+        patchRequest.principal(authentication);
+        deleteRequest.principal(authentication);
+      }
+
+      // then
+      mockMvc.perform(patchRequest)
+          .andExpect(status().isUnauthorized());
+
+      mockMvc.perform(deleteRequest)
+          .andExpect(status().isUnauthorized());
+    }
+
+    verifyNoInteractions(feedService);
+  }
 }
