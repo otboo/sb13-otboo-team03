@@ -253,5 +253,38 @@ class BasicOutfitAlgorithmTest {
             // then
             assertThat(result).containsExactlyInAnyOrder(top, bottom);
         }
+
+        @Test
+        @DisplayName("기온 13℃에서 민감도 3이면 상의·하의와 아우터를 반환한다")
+        void 기온_13도_민감도_3이면_아우터를_추가한다() {
+            // when
+            var result = algorithm.recommend(clothes, 13.0, 3);
+
+            // then
+            assertThat(result).containsExactlyInAnyOrder(top, bottom, outer);
+        }
+
+        @Test
+        @DisplayName("기온 -5℃에서 민감도 3이면 상의·하의와 아우터를 반환한다")
+        void 영하_5도_민감도_3이면_아우터를_추가한다() {
+            // when
+            var result = algorithm.recommend(clothes, -5.0, 3);
+
+            // then
+            assertThat(result).containsExactlyInAnyOrder(top, bottom, outer);
+        }
+
+        @Test
+        @DisplayName("원피스 코디도 기온 10℃에서 민감도 3이면 아우터를 추가한다")
+        void 추운_날_원피스_코디에_아우터를_추가한다() {
+            // given
+            Clothes dress = new Clothes("원피스", ClothesType.DRESS, null, owner);
+
+            // when
+            var result = algorithm.recommend(List.of(dress, outer), 10.0, 3);
+
+            // then
+            assertThat(result).containsExactlyInAnyOrder(dress, outer);
+        }
     }
 }
