@@ -2,11 +2,13 @@ package com.otboo.team03.recommendation.algorithm;
 
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesType;
+import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+@Component
 public class BasicOutfitAlgorithm {
 
     private static final double TEMPERATURE_ADJUSTMENT_PER_LEVEL = 2.0;
