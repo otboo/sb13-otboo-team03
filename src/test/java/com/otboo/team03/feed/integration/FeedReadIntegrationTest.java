@@ -1105,6 +1105,257 @@ class FeedReadIntegrationTest {
         .andExpect(jsonPath("$.hasNext").value(false));
   }
 
+  @Test
+  void 하늘상태로_필터링한_피드를_커서로_조회한다() throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "날씨 필터 테스트"
+        )
+    );
+
+    UUID clearWeatherId = insertWeather("CLEAR", "NONE");
+    UUID cloudyWeatherId = insertWeather("CLOUDY", "NONE");
+
+    UUID olderClearFeedId = insertFeed(
+        author.getId(),
+        clearWeatherId,
+        "맑은 날 첫 번째 코디",
+        Instant.parse("2026-10-29T10:00:00Z")
+    );
+
+    insertFeed(
+        author.getId(),
+        cloudyWeatherId,
+        "흐린 날 코디",
+        Instant.parse("2026-10-29T10:01:00Z")
+    );
+
+    UUID newerClearFeedId = insertFeed(
+        author.getId(),
+        clearWeatherId,
+        "맑은 날 두 번째 코디",
+        Instant.parse("2026-10-29T10:02:00Z")
+    );
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var firstPage = mockMvc.perform(
+            get("/api/feeds")
+                .header("Authorization", "Bearer " + accessToken)
+                .param("limit", "1")
+                .param("sortBy", "createdAt")
+                .param("sortDirection", "DESCENDING")
+                .param("skyStatusEqual", "CLEAR")
+        )
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(newerClearFeedId.toString()))
+        .andExpect(jsonPath("$.totalCount").value(2))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andReturn();
+
+    String responseBody =
+        firstPage.getResponse().getContentAsString();
+
+    String nextCursor =
+        JsonPath.read(responseBody, "$.nextCursor");
+
+    String nextIdAfter =
+        JsonPath.read(responseBody, "$.nextIdAfter");
+
+    var secondPage = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "1")
+            .param("sortBy", "createdAt")
+            .param("sortDirection", "DESCENDING")
+            .param("skyStatusEqual", "CLEAR")
+            .param("cursor", nextCursor)
+            .param("idAfter", nextIdAfter)
+    );
+
+    // then
+    secondPage
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(olderClearFeedId.toString()))
+        .andExpect(jsonPath("$.data[0].weather.skyStatus")
+            .value("CLEAR"))
+        .andExpect(jsonPath("$.totalCount").value(2))
+        .andExpect(jsonPath("$.hasNext").value(false));
+  }
+
+  @Test
+  void 강수형태로_피드를_필터링한다() throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "강수 필터 테스트"
+        )
+    );
+
+    UUID rainWeatherId = insertWeather("CLOUDY", "RAIN");
+    UUID noneWeatherId = insertWeather("CLEAR", "NONE");
+
+    UUID olderRainFeedId = insertFeed(
+        author.getId(),
+        rainWeatherId,
+        "비 오는 날 첫 번째 코디",
+        Instant.parse("2026-10-29T10:00:00Z")
+    );
+
+    insertFeed(
+        author.getId(),
+        noneWeatherId,
+        "비가 오지 않는 날 코디",
+        Instant.parse("2026-10-29T10:01:00Z")
+    );
+
+    UUID newerRainFeedId = insertFeed(
+        author.getId(),
+        rainWeatherId,
+        "비 오는 날 두 번째 코디",
+        Instant.parse("2026-10-29T10:02:00Z")
+    );
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "10")
+            .param("sortBy", "createdAt")
+            .param("sortDirection", "DESCENDING")
+            .param("precipitationTypeEqual", "RAIN")
+    );
+
+    // then
+    result
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(newerRainFeedId.toString()))
+        .andExpect(jsonPath("$.data[1].id")
+            .value(olderRainFeedId.toString()))
+        .andExpect(jsonPath("$.data[0].weather.precipitation.type")
+            .value("RAIN"))
+        .andExpect(jsonPath("$.data[1].weather.precipitation.type")
+            .value("RAIN"))
+        .andExpect(jsonPath("$.totalCount").value(2))
+        .andExpect(jsonPath("$.hasNext").value(false));
+  }
+
+  @Test
+  void 키워드_작성자_날씨_강수형태를_동시에_필터링한다()
+      throws Exception {
+    // given
+    User authorA = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "작성자 A"
+        )
+    );
+
+    User authorB = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "작성자 B"
+        )
+    );
+
+    UUID clearRainId = insertWeather("CLEAR", "RAIN");
+    UUID clearNoneId = insertWeather("CLEAR", "NONE");
+    UUID cloudyRainId = insertWeather("CLOUDY", "RAIN");
+
+    UUID expectedFeedId = insertFeed(
+        authorA.getId(),
+        clearRainId,
+        "오늘의 코디",
+        Instant.parse("2026-10-29T10:00:00Z")
+    );
+
+    insertFeed(
+        authorA.getId(),
+        clearNoneId,
+        "강수가 다른 코디",
+        Instant.parse("2026-10-29T10:01:00Z")
+    );
+
+    insertFeed(
+        authorA.getId(),
+        cloudyRainId,
+        "하늘 상태가 다른 코디",
+        Instant.parse("2026-10-29T10:02:00Z")
+    );
+
+    insertFeed(
+        authorB.getId(),
+        clearRainId,
+        "작성자가 다른 코디",
+        Instant.parse("2026-10-29T10:03:00Z")
+    );
+
+    insertFeed(
+        authorA.getId(),
+        clearRainId,
+        "검색어가 다른 옷차림",
+        Instant.parse("2026-10-29T10:04:00Z")
+    );
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(authorA.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "10")
+            .param("sortBy", "createdAt")
+            .param("sortDirection", "DESCENDING")
+            .param("keywordLike", "코디")
+            .param("authorIdEqual", authorA.getId().toString())
+            .param("skyStatusEqual", "CLEAR")
+            .param("precipitationTypeEqual", "RAIN")
+    );
+
+    // then
+    result
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(expectedFeedId.toString()))
+        .andExpect(jsonPath("$.data[0].author.userId")
+            .value(authorA.getId().toString()))
+        .andExpect(jsonPath("$.data[0].weather.skyStatus")
+            .value("CLEAR"))
+        .andExpect(jsonPath("$.data[0].weather.precipitation.type")
+            .value("RAIN"))
+        .andExpect(jsonPath("$.totalCount").value(1))
+        .andExpect(jsonPath("$.hasNext").value(false));
+  }
+
   private void insertWeather(UUID weatherId) {
     Timestamp now = Timestamp.from(Instant.now());
 
@@ -1138,6 +1389,29 @@ class FeedReadIntegrationTest {
         now,
         now
     );
+  }
+
+  private UUID insertWeather(
+      String skyStatus,
+      String precipitationType
+  ) {
+    UUID weatherId = UUID.randomUUID();
+
+    insertWeather(weatherId);
+
+    jdbcTemplate.update(
+        """
+        UPDATE weathers
+        SET sky_status = ?,
+            precipitation_type = ?
+        WHERE id = ?
+        """,
+        skyStatus,
+        precipitationType,
+        weatherId
+    );
+
+    return weatherId;
   }
 
   private UUID insertFeed(
