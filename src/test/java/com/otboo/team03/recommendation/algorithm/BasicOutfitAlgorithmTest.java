@@ -206,4 +206,52 @@ class BasicOutfitAlgorithmTest {
             assertThat(result).containsExactlyInAnyOrder(top, bottom);
         }
     }
+
+    @Nested
+    @DisplayName("날씨·온도 민감도에 따른 의상 추천")
+    class WeatherAndTemperatureSensitivityRecommendation {
+
+        private Clothes top;
+        private Clothes bottom;
+        private Clothes outer;
+        private List<Clothes> clothes;
+
+        @BeforeEach
+        void setUpClothes() {
+            top = new Clothes("상의", ClothesType.TOP, null, owner);
+            bottom = new Clothes("하의", ClothesType.BOTTOM, null, owner);
+            outer = new Clothes("아우터", ClothesType.OUTER, null, owner);
+            clothes = List.of(top, bottom, outer);
+        }
+
+        @Test
+        @DisplayName("기온 17℃에서 민감도 1이면 상의·하의와 아우터를 반환한다")
+        void 민감도_1이면_아우터를_추가한다() {
+            // when
+            var result = algorithm.recommend(clothes, 17.0, 1);
+
+            // then
+            assertThat(result).containsExactlyInAnyOrder(top, bottom, outer);
+        }
+
+        @Test
+        @DisplayName("기온 17℃에서 민감도 3이면 상의와 하의만 반환한다")
+        void 민감도_3이면_기온_기준으로_아우터를_제외한다() {
+            // when
+            var result = algorithm.recommend(clothes, 17.0, 3);
+
+            // then
+            assertThat(result).containsExactlyInAnyOrder(top, bottom);
+        }
+
+        @Test
+        @DisplayName("기온 13℃에서 민감도 5이면 상의와 하의만 반환한다")
+        void 민감도_5이면_보정하여_아우터를_제외한다() {
+            // when
+            var result = algorithm.recommend(clothes, 13.0, 5);
+
+            // then
+            assertThat(result).containsExactlyInAnyOrder(top, bottom);
+        }
+    }
 }
