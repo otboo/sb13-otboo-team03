@@ -275,6 +275,49 @@ class BasicOutfitAlgorithmTest {
         }
 
         @Test
+        @DisplayName("기온 10℃에서 민감도 3이어도 아우터가 없으면 기본 코디만 반환한다")
+        void 추운_날_아우터가_없으면_기본_코디만_반환한다() {
+            // when
+            var result = algorithm.recommend(List.of(top, bottom), 10.0, 3);
+
+            // then
+            assertThat(result).containsExactlyInAnyOrder(top, bottom);
+        }
+
+        @Test
+        @DisplayName("추운 날 아우터가 여러 개면 입력 순서상 첫 번째 아우터를 선택한다")
+        void 아우터가_여러개면_첫번째_아우터를_선택한다() {
+            // given
+            Clothes secondOuter = new Clothes("두 번째 아우터", ClothesType.OUTER, null, owner);
+
+            // when
+            var result = algorithm.recommend(List.of(top, outer, bottom, secondOuter), 10.0, 3);
+
+            // then
+            assertThat(result).containsExactlyInAnyOrder(top, bottom, outer);
+        }
+
+        @Test
+        @DisplayName("추운 날 아우터만 있고 기본 코디를 구성할 수 없으면 빈 목록을 반환한다")
+        void 추운_날_아우터만_있으면_빈목록을_반환한다() {
+            // when
+            var result = algorithm.recommend(List.of(outer), 10.0, 3);
+
+            // then
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("추운 날에도 보유 의상이 없으면 빈 목록을 반환한다")
+        void 추운_날_보유_의상이_없으면_빈목록을_반환한다() {
+            // when
+            var result = algorithm.recommend(List.of(), 10.0, 3);
+
+            // then
+            assertThat(result).isEmpty();
+        }
+
+        @Test
         @DisplayName("원피스 코디도 기온 10℃에서 민감도 3이면 아우터를 추가한다")
         void 추운_날_원피스_코디에_아우터를_추가한다() {
             // given
