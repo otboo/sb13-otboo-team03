@@ -89,5 +89,33 @@ class BasicOutfitAlgorithmTest {
             // then
             assertThat(result).isEmpty();
         }
+
+        @Test
+        @DisplayName("상의와 원피스가 있으면 원피스만 반환한다")
+        void 상의와_원피스가_있으면_원피스만_반환() {
+            // given
+            Clothes top = new Clothes("상의", ClothesType.TOP, null, owner);
+            Clothes dress = new Clothes("원피스", ClothesType.DRESS, null, owner);
+
+            // when
+            var result = algorithm.recommend(List.of(top, dress));
+
+            // then
+            assertThat(result).containsExactly(dress);
+        }
+
+        @Test
+        @DisplayName("하의와 원피스가 있으면 원피스만 반환한다")
+        void 하의와_원피스가_있으면_원피스만_반환() {
+            // given
+            Clothes bottom = new Clothes("하의", ClothesType.BOTTOM, null, owner);
+            Clothes dress = new Clothes("원피스", ClothesType.DRESS, null, owner);
+
+            // when
+            var result = algorithm.recommend(List.of(bottom, dress));
+
+            // then
+            assertThat(result).containsExactly(dress);
+        }
     }
 }
