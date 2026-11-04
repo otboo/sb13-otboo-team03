@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
 @Transactional
-class FeedDtoAssemblerTest {
+class FeedDtoAssemblerTest extends com.otboo.team03.support.PostgresTestSupport {
 
   @Autowired
   private FeedDtoAssembler assembler;
@@ -44,6 +44,12 @@ class FeedDtoAssemblerTest {
 
   @Autowired
   private JdbcTemplate jdbcTemplate;
+
+  @org.springframework.test.context.bean.override.mockito.MockitoBean
+  private com.otboo.team03.global.storage.ImageStorage imageStorage;
+
+  @Autowired
+  private jakarta.persistence.EntityManager entityManager;
 
   @Test
   void 피드의_작성자_날씨_의상_속성을_응답으로_변환한다() {
@@ -189,5 +195,43 @@ class FeedDtoAssemblerTest {
         () -> assertEquals(0, result.commentCount()),
         () -> assertFalse(result.likedByMe())
     );
+
+    Clothes withoutImage = clothesRepository.saveAndFlush(new Clothes("이미지 없음", ClothesType.TOP, null, author));
+    feedClothesRepository.saveAndFlush(new FeedClothes(feed, withoutImage));
+    assertNull(assembler.toDto(feed, null).ootds().stream()
+        .filter(item -> item.clothesId().equals(withoutImage.getId())).findFirst().orElseThrow().imageUrl());
+    org.mockito.Mockito.verifyNoInteractions(imageStorage);
+    entityManager.flush();
+    entityManager.clear();
+    clothesRepository.deleteById(withoutImage.getId());
+    clothesRepository.flush();
+    entityManager.clear();
+
+    // 영구 key가 있으면 기존 URL보다 우선하며, 응답마다 URL을 다시 생성한다.
+    clothes.updateImageKey("clothes/feed.png");
+    clothesRepository.saveAndFlush(clothes);
+    org.mockito.Mockito.when(imageStorage.getAccessUrl("clothes/feed.png"))
+        .thenReturn("https://example.com/first-signature", "https://example.com/refreshed-signature");
+    assertEquals("https://example.com/first-signature", assembler.toDto(feed, author.getId()).ootds().get(0).imageUrl());
+    assertEquals("https://example.com/refreshed-signature", assembler.toDto(feed, author.getId()).ootds().get(0).imageUrl());
+    assertEquals("clothes/feed.png", clothes.getImageKey());
+    assertEquals("/images/shirt.png", clothes.getImageUrl());
+    org.mockito.Mockito.verify(imageStorage, org.mockito.Mockito.times(2)).getAccessUrl("clothes/feed.png");
+
+    // 실제 FK cascade 이후 새 영속성 컨텍스트에서도 본문은 보존되고 의상만 빠진다.
+    UUID feedId = feed.getId();
+    entityManager.flush();
+    entityManager.clear();
+    clothesRepository.deleteById(clothes.getId());
+    clothesRepository.flush();
+    entityManager.clear();
+    Feed retained = feedRepository.findById(feedId).orElseThrow();
+    FeedDto afterDeletion = assembler.toDto(retained, null);
+    assertEquals("오늘의 코디", afterDeletion.content());
+    assertTrue(afterDeletion.ootds().isEmpty());
+    assertFalse(clothesRepository.existsById(clothes.getId()));
+    assertEquals(0, jdbcTemplate.queryForObject(
+        "SELECT count(*) FROM feed_clothes WHERE feed_id = ?", Integer.class, feedId));
   }
+
 }

@@ -25,7 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-class FeedCreateAuthorizationIntegrationTest {
+class FeedCreateAuthorizationIntegrationTest extends com.otboo.team03.support.PostgresTestSupport {
 
   @Autowired
   private MockMvc mockMvc;
