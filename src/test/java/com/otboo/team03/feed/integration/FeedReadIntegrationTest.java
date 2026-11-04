@@ -1356,6 +1356,324 @@ class FeedReadIntegrationTest {
         .andExpect(jsonPath("$.hasNext").value(false));
   }
 
+  @Test
+  void 날씨_필터에서_좋아요수_내림차순_커서_조회한다()
+      throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "날씨 좋아요 테스트"
+        )
+    );
+
+    User liker1 = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "좋아요 사용자 1"
+        )
+    );
+
+    User liker2 = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "좋아요 사용자 2"
+        )
+    );
+
+    UUID targetWeather = insertWeather("CLEAR", "RAIN");
+    UUID otherWeather = insertWeather("CLOUDY", "RAIN");
+
+    UUID mostLikedId = insertFeed(
+        author.getId(),
+        targetWeather,
+        "좋아요 2개",
+        Instant.parse("2026-10-29T10:00:00Z")
+    );
+
+    UUID mediumLikedId = insertFeed(
+        author.getId(),
+        targetWeather,
+        "좋아요 1개",
+        Instant.parse("2026-10-29T10:01:00Z")
+    );
+
+    UUID zeroLikedId = insertFeed(
+        author.getId(),
+        targetWeather,
+        "좋아요 0개",
+        Instant.parse("2026-10-29T10:02:00Z")
+    );
+
+    UUID excludedId = insertFeed(
+        author.getId(),
+        otherWeather,
+        "날씨가 다른 피드",
+        Instant.parse("2026-10-29T10:03:00Z")
+    );
+
+    insertFeedLike(mostLikedId, liker1.getId());
+    insertFeedLike(mostLikedId, liker2.getId());
+    insertFeedLike(mediumLikedId, liker1.getId());
+
+    insertFeedLike(excludedId, liker1.getId());
+    insertFeedLike(excludedId, liker2.getId());
+    insertFeedLike(excludedId, author.getId());
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var firstPage = mockMvc.perform(
+            get("/api/feeds")
+                .header("Authorization", "Bearer " + accessToken)
+                .param("limit", "2")
+                .param("sortBy", "likeCount")
+                .param("sortDirection", "DESCENDING")
+                .param("skyStatusEqual", "CLEAR")
+                .param("precipitationTypeEqual", "RAIN")
+        )
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(mostLikedId.toString()))
+        .andExpect(jsonPath("$.data[0].likeCount").value(2))
+        .andExpect(jsonPath("$.data[1].id")
+            .value(mediumLikedId.toString()))
+        .andExpect(jsonPath("$.data[1].likeCount").value(1))
+        .andExpect(jsonPath("$.totalCount").value(3))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andExpect(jsonPath("$.nextCursor").value("1"))
+        .andReturn();
+
+    String responseBody =
+        firstPage.getResponse().getContentAsString();
+
+    String nextCursor =
+        JsonPath.read(responseBody, "$.nextCursor");
+
+    String nextIdAfter =
+        JsonPath.read(responseBody, "$.nextIdAfter");
+
+    var secondPage = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "2")
+            .param("sortBy", "likeCount")
+            .param("sortDirection", "DESCENDING")
+            .param("skyStatusEqual", "CLEAR")
+            .param("precipitationTypeEqual", "RAIN")
+            .param("cursor", nextCursor)
+            .param("idAfter", nextIdAfter)
+    );
+
+    // then
+    secondPage
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(zeroLikedId.toString()))
+        .andExpect(jsonPath("$.data[0].likeCount").value(0))
+        .andExpect(jsonPath("$.totalCount").value(3))
+        .andExpect(jsonPath("$.hasNext").value(false));
+  }
+
+  @Test
+  void 날씨_필터에서_좋아요수_오름차순_동점_커서를_조회한다()
+      throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "좋아요 오름차순 테스트"
+        )
+    );
+
+    UUID targetWeather = insertWeather("CLEAR", "NONE");
+    UUID otherWeather = insertWeather("CLOUDY", "NONE");
+
+    UUID firstId = UUID.fromString(
+        "00000000-0000-0000-0000-000000000001"
+    );
+
+    UUID secondId = UUID.fromString(
+        "00000000-0000-0000-0000-000000000002"
+    );
+
+    Instant createdAt = Instant.parse("2026-10-29T10:00:00Z");
+
+    insertFeedWithId(
+        firstId,
+        author.getId(),
+        targetWeather,
+        "좋아요 0개 A",
+        createdAt
+    );
+
+    insertFeedWithId(
+        secondId,
+        author.getId(),
+        targetWeather,
+        "좋아요 0개 B",
+        createdAt
+    );
+
+    insertFeed(
+        author.getId(),
+        otherWeather,
+        "제외할 피드",
+        createdAt
+    );
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var firstPage = mockMvc.perform(
+            get("/api/feeds")
+                .header("Authorization", "Bearer " + accessToken)
+                .param("limit", "1")
+                .param("sortBy", "likeCount")
+                .param("sortDirection", "ASCENDING")
+                .param("skyStatusEqual", "CLEAR")
+        )
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[0].id")
+            .value(firstId.toString()))
+        .andExpect(jsonPath("$.totalCount").value(2))
+        .andExpect(jsonPath("$.nextCursor").value("0"))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andReturn();
+
+    String responseBody =
+        firstPage.getResponse().getContentAsString();
+
+    String nextCursor =
+        JsonPath.read(responseBody, "$.nextCursor");
+
+    String nextIdAfter =
+        JsonPath.read(responseBody, "$.nextIdAfter");
+
+    var secondPage = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "1")
+            .param("sortBy", "likeCount")
+            .param("sortDirection", "ASCENDING")
+            .param("skyStatusEqual", "CLEAR")
+            .param("cursor", nextCursor)
+            .param("idAfter", nextIdAfter)
+    );
+
+    // then
+    secondPage
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(secondId.toString()))
+        .andExpect(jsonPath("$.totalCount").value(2))
+        .andExpect(jsonPath("$.hasNext").value(false));
+  }
+
+  @Test
+  void 잘못된_날씨_필터는_400을_반환한다() throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "잘못된 날씨 테스트"
+        )
+    );
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var invalidSkyStatus = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "10")
+            .param("sortBy", "createdAt")
+            .param("sortDirection", "DESCENDING")
+            .param("skyStatusEqual", "SUNNY")
+    );
+
+    var invalidPrecipitation = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "10")
+            .param("sortBy", "createdAt")
+            .param("sortDirection", "DESCENDING")
+            .param("precipitationTypeEqual", "THUNDER")
+    );
+
+    // then
+    invalidSkyStatus.andExpect(status().isBadRequest());
+    invalidPrecipitation.andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void 날씨_필터_검색결과가_없으면_빈_페이지를_반환한다()
+      throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "빈 검색 결과 테스트"
+        )
+    );
+
+    UUID weatherId = insertWeather("CLEAR", "NONE");
+
+    insertFeed(
+        author.getId(),
+        weatherId,
+        "맑은 날 코디",
+        Instant.parse("2026-10-29T10:00:00Z")
+    );
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "10")
+            .param("sortBy", "createdAt")
+            .param("sortDirection", "DESCENDING")
+            .param("skyStatusEqual", "CLEAR")
+            .param("precipitationTypeEqual", "RAIN")
+    );
+
+    // then
+    result
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(0))
+        .andExpect(jsonPath("$.totalCount").value(0))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.nextCursor").isEmpty())
+        .andExpect(jsonPath("$.nextIdAfter").isEmpty());
+  }
+
   private void insertWeather(UUID weatherId) {
     Timestamp now = Timestamp.from(Instant.now());
 
