@@ -1674,6 +1674,69 @@ class FeedReadIntegrationTest {
         .andExpect(jsonPath("$.nextIdAfter").isEmpty());
   }
 
+  @Test
+  void 잘못된_좋아요수_커서는_400을_반환한다() throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "커서 검증 사용자"
+        )
+    );
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    String idAfter = UUID.randomUUID().toString();
+
+    // when & then
+    for (String cursor : java.util.List.of("invalid", "-1")) {
+      mockMvc.perform(
+          get("/api/feeds")
+              .header("Authorization", "Bearer " + accessToken)
+              .param("limit", "10")
+              .param("sortBy", "likeCount")
+              .param("sortDirection", "DESCENDING")
+              .param("cursor", cursor)
+              .param("idAfter", idAfter)
+      ).andExpect(status().isBadRequest());
+    }
+  }
+
+  @Test
+  void 지원하지_않는_정렬조건은_400을_반환한다() throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "정렬 검증 사용자"
+        )
+    );
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "10")
+            .param("sortBy", "invalid")
+            .param("sortDirection", "DESCENDING")
+    );
+
+    // then
+    result.andExpect(status().isBadRequest());
+  }
+
   private void insertWeather(UUID weatherId) {
     Timestamp now = Timestamp.from(Instant.now());
 
