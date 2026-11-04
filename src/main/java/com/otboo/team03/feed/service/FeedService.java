@@ -115,6 +115,24 @@ public class FeedService {
     return feedDtoAssembler.toDto(feed, requesterId);
   }
 
+  @Transactional
+  public void delete(UUID feedId, UUID requesterId) {
+    Feed feed = feedRepository.findById(feedId)
+        .orElseThrow(
+            () -> new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
+        );
+
+    if (!feed.getAuthorId().equals(requesterId)) {
+      throw new OtbooException(ErrorCode.ACCESS_DENIED);
+    }
+
+    feedRepository.deleteFeedLikesByFeedId(feedId);
+    feedRepository.deleteFeedCommentsByFeedId(feedId);
+    feedRepository.deleteFeedClothesByFeedId(feedId);
+
+    feedRepository.delete(feed);
+  }
+
   @Transactional(readOnly = true)
   public CursorResponse<FeedDto> getFeedList(
       int limit,
