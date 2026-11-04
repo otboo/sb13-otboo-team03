@@ -9,10 +9,14 @@ import com.otboo.team03.feed.entity.FeedClothes;
 import com.otboo.team03.feed.mapper.FeedDtoAssembler;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
+import com.otboo.team03.feed.repository.FeedSearchQueryRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
+import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.repository.UserRepository;
+import java.time.Instant;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +36,7 @@ public class FeedService {
   private final ClothesRepository clothesRepository;
   private final FeedWeatherLookupRepository weatherRepository;
   private final FeedDtoAssembler feedDtoAssembler;
+  private final FeedSearchQueryRepository feedSearchQueryRepository;
 
   @Transactional
   public FeedDto create(FeedCreateRequest request) {
@@ -78,6 +83,181 @@ public class FeedService {
     }
 
     return feedDtoAssembler.toDto(savedFeed, null);
+  }
+
+  @Transactional(readOnly = true)
+  public CursorResponse<FeedDto> getFeedList(
+      int limit,
+      String sortBy,
+      String sortDirection,
+      String cursor,
+      UUID idAfter,
+      String keywordLike,
+      UUID authorIdEqual,
+      String skyStatusEqual,
+      String precipitationTypeEqual,
+      UUID viewerId
+  ) {
+    FeedListQuery query = new FeedListQuery(
+        limit,
+        sortBy,
+        sortDirection,
+        cursor,
+        idAfter,
+        keywordLike,
+        authorIdEqual,
+        skyStatusEqual,
+        precipitationTypeEqual,
+        viewerId
+    );
+
+    validateFeedListQuery(query);
+
+    List<Feed> feeds = findFeeds(query);
+
+    return createCursorResponse(query, feeds);
+  }
+
+  private void validateFeedListQuery(FeedListQuery query) {
+    if (query.limit() <= 0
+        || query.limit() == Integer.MAX_VALUE
+        || (!"createdAt".equals(query.sortBy())
+        && !"likeCount".equals(query.sortBy()))
+        || (!"ASCENDING".equals(query.sortDirection())
+        && !"DESCENDING".equals(query.sortDirection()))) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if ((query.cursor() == null) != (query.idAfter() == null)) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if (query.skyStatusEqual() != null
+        && !Set.of("CLEAR", "MOSTLY_CLOUDY", "CLOUDY")
+        .contains(query.skyStatusEqual())) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if (query.precipitationTypeEqual() != null
+        && !Set.of("NONE", "RAIN", "RAIN_SNOW", "SNOW", "SHOWER")
+        .contains(query.precipitationTypeEqual())) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+  }
+
+  private List<Feed> findFeeds(FeedListQuery query) {
+    return findFeedsByFilters(query);
+  }
+
+  private List<Feed> findFeedsByFilters(FeedListQuery query) {
+    Instant createdAtCursor = null;
+    Long likeCountCursor = null;
+
+    if (query.cursor() != null) {
+      if (query.isLikeCountSort()) {
+        likeCountCursor = parseLikeCountCursor(query.cursor());
+      } else {
+        createdAtCursor = parseCreatedAtCursor(query.cursor());
+      }
+    }
+
+    return feedSearchQueryRepository.findByFilters(
+        query.keywordLike(),
+        query.authorIdEqual(),
+        query.skyStatusEqual(),
+        query.precipitationTypeEqual(),
+        query.sortBy(),
+        query.sortDirection(),
+        createdAtCursor,
+        likeCountCursor,
+        query.idAfter(),
+        query.limit() + 1
+    );
+  }
+
+  private long parseLikeCountCursor(String cursor) {
+    long cursorCount;
+
+    try {
+      cursorCount = Long.parseLong(cursor);
+    } catch (NumberFormatException ex) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if (cursorCount < 0) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    return cursorCount;
+  }
+
+  private Instant parseCreatedAtCursor(String cursor) {
+    try {
+      return Instant.parse(cursor);
+    } catch (java.time.format.DateTimeParseException ex) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+  }
+
+  private CursorResponse<FeedDto> createCursorResponse(
+      FeedListQuery query,
+      List<Feed> fetched
+  ) {
+    boolean hasNext = fetched.size() > query.limit();
+
+    List<Feed> page = hasNext
+        ? fetched.subList(0, query.limit())
+        : fetched;
+
+    List<FeedDto> data = page.stream()
+        .map(feed -> feedDtoAssembler.toDto(feed, query.viewerId()))
+        .toList();
+
+    String nextCursor = null;
+    UUID nextIdAfter = null;
+
+    if (hasNext) {
+      Feed lastFeed = page.get(page.size() - 1);
+      nextIdAfter = lastFeed.getId();
+
+      nextCursor = query.isLikeCountSort()
+          ? Long.toString(data.get(data.size() - 1).likeCount())
+          : lastFeed.getCreatedAt().toString();
+    }
+
+    long totalCount = feedSearchQueryRepository.countByFilters(
+        query.keywordLike(),
+        query.authorIdEqual(),
+        query.skyStatusEqual(),
+        query.precipitationTypeEqual()
+    );
+
+    return new CursorResponse<>(
+        data,
+        nextCursor,
+        nextIdAfter,
+        hasNext,
+        totalCount,
+        query.sortBy(),
+        query.sortDirection()
+    );
+  }
+
+  private record FeedListQuery(
+      int limit,
+      String sortBy,
+      String sortDirection,
+      String cursor,
+      UUID idAfter,
+      String keywordLike,
+      UUID authorIdEqual,
+      String skyStatusEqual,
+      String precipitationTypeEqual,
+      UUID viewerId
+  ) {
+    boolean isLikeCountSort() {
+      return "likeCount".equals(sortBy);
+    }
   }
 
   private void validateRequest(FeedCreateRequest request) {
