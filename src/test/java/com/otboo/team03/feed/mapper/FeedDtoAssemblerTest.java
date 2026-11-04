@@ -358,4 +358,86 @@ class FeedDtoAssemblerTest {
       Clothes clothes
   ) {
   }
+
+  @Test
+  void 의상_삭제_후에도_피드는_유지되고_OOTD에서만_제외된다() {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "의상 삭제 테스트"
+        )
+    );
+
+    UUID weatherId = UUID.randomUUID();
+    Timestamp now = Timestamp.from(Instant.now());
+
+    jdbcTemplate.update("""
+      INSERT INTO weathers (
+          id, latitude, longitude,
+          forecasted_at, forecast_at,
+          sky_status, precipitation_type,
+          precipitation_amount, precipitation_probability,
+          temperature, humidity, wind_speed,
+          created_at, updated_at
+      ) VALUES (?, 35.2, 129.1, ?, ?, 'CLEAR', 'NONE',
+                0, 0, 20, 50, 1, ?, ?)
+      """,
+        weatherId, now, now, now, now
+    );
+
+    Clothes clothes = clothesRepository.saveAndFlush(
+        new Clothes(
+            "삭제할 티셔츠",
+            ClothesType.TOP,
+            "/images/shirt.png",
+            author
+        )
+    );
+
+    Feed feed = feedRepository.saveAndFlush(
+        new Feed(
+            author.getId(),
+            weatherId,
+            "삭제 이후에도 남아야 할 피드"
+        )
+    );
+
+    feedClothesRepository.saveAndFlush(
+        new FeedClothes(feed, clothes)
+    );
+
+    assertEquals(1, assembler.toDto(feed, null).ootds().size());
+
+    // when
+    // 실제 DB 삭제로 V3의 ON DELETE CASCADE 동작을 확인한다.
+    jdbcTemplate.update(
+        "DELETE FROM clothes WHERE id = ?",
+        clothes.getId()
+    );
+
+    FeedDto result = assembler.toDto(feed, null);
+
+    Long remainingFeeds = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM feeds WHERE id = ?",
+        Long.class,
+        feed.getId()
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(1L, remainingFeeds),
+        () -> assertEquals(feed.getId(), result.id()),
+        () -> assertEquals(
+            "삭제 이후에도 남아야 할 피드",
+            result.content()
+        ),
+        () -> assertTrue(result.ootds().isEmpty()),
+        () -> assertTrue(
+            feedClothesRepository.findAllByFeed_Id(feed.getId())
+                .isEmpty()
+        )
+    );
+  }
 }
