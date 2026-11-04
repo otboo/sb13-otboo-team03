@@ -19,6 +19,9 @@ public enum ErrorCode {
     // jwt
     INVALID_JWT(HttpStatus.UNAUTHORIZED, "유효하지 않은 JWT입니다."),
 
+    // profile
+    NOT_FOUND_PROFILE(HttpStatus.NOT_FOUND, "프로필이 존재하지 않습니다."),
+
     // common
     INVALID_INPUT_VALUE(HttpStatus.BAD_REQUEST, "입력값이 올바르지 않습니다."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 내부 오류가 발생했습니다."),
