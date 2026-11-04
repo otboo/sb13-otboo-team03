@@ -1,6 +1,7 @@
 package com.otboo.team03.user.controller;
 
 import com.otboo.team03.global.dto.CursorResponse;
+import com.otboo.team03.user.dto.request.ChangePasswordRequest;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
 import com.otboo.team03.user.dto.request.UserRoleUpdateRequest;
 import com.otboo.team03.user.dto.request.UserListRequest;
@@ -15,6 +16,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/users")
@@ -42,5 +46,16 @@ public class UserController {
     @GetMapping
     public ResponseEntity<CursorResponse<UserDto>> getUsers(@Valid @ModelAttribute UserListRequest request) {
         return ResponseEntity.ok(userService.getUsers(request));
+    }
+
+    @PatchMapping("/{userId}/password")
+    @PreAuthorize("#userId == authentication.principal.userDto.id")
+    public ResponseEntity<Void> changePassword(
+            @PathVariable UUID userId,
+            @Valid @RequestBody ChangePasswordRequest request
+    ) {
+        userService.changePassword(userId, request.password());
+
+        return ResponseEntity.noContent().build();
     }
 }
