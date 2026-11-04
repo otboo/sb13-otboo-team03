@@ -4,6 +4,7 @@ import com.otboo.team03.profile.dto.ProfileDto;
 import com.otboo.team03.profile.dto.Gender;
 import com.otboo.team03.profile.entity.Profile;
 import com.otboo.team03.profile.exception.ProfileNotFoundException;
+import com.otboo.team03.profile.mapper.ProfileDtoAssembler;
 import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.user.entity.User;
 import org.junit.jupiter.api.DisplayName;
@@ -28,6 +29,9 @@ class ProfileServiceTest {
   @Mock
   private ProfileRepository profileRepository;
 
+  @Mock
+  private ProfileDtoAssembler profileDtoAssembler;
+
   @InjectMocks
   private ProfileServiceImpl profileService;
 
@@ -48,8 +52,9 @@ class ProfileServiceTest {
         List.of("서울특별시", "중구")
     );
 
+    ProfileDto expectedDto = ProfileDto.from(profile,profile.getProfileImageUrl());
     given(profileRepository.findById(userId)).willReturn(Optional.of(profile));
-
+    given(profileDtoAssembler.toDto(profile)).willReturn(expectedDto);
     // when
     ProfileDto result = profileService.getProfile(userId);
 
