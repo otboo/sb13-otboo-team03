@@ -162,7 +162,7 @@
           "formdata": [
             {
               "key": "request",
-              "value": "{\n  \"ownerId\": \"{{userId}}\",\n  \"name\": \"흰색 티셔츠\",\n  \"type\": \"TOP\",\n  \"attributes\": [\n    {\n      \"definitionId\": \"{{definitionId}}\",\n      \"value\": \"흰색\"\n    }\n  ]\n}",
+              "value": "{\n  \"ownerId\": \"{{userId}}\",\n  \"name\": \"흰색 티셔츠\",\n  \"type\": \"TOP\",\n  \"attributes\": [\n    {\n      \"definitionId\": \"{{definitionId}}\",\n      \"value\": \"면\"\n    }\n  ]\n}",
               "type": "text",
               "contentType": "application/json"
             },
@@ -201,7 +201,7 @@
           "formdata": [
             {
               "key": "request",
-              "value": "{\n  \"ownerId\": \"{{userId}}\",\n  \"name\": \"파란 아우터\",\n  \"type\": \"TOP\",\n  \"attributes\": [\n    {\n      \"definitionId\": \"{{definitionId}}\",\n      \"value\": \"남색\"\n    }\n  ]\n}",
+              "value": "{\n  \"ownerId\": \"{{userId}}\",\n  \"name\": \"파란 아우터\",\n  \"type\": \"TOP\",\n  \"attributes\": [\n    {\n      \"definitionId\": \"{{definitionId}}\",\n      \"value\": \"울\"\n    }\n  ]\n}",
               "type": "text",
               "contentType": "application/json"
             },
@@ -295,7 +295,7 @@
           "formdata": [
             {
               "key": "request",
-              "value": "{\n  \"name\": \"무신사바지\",\n  \"attributes\": [\n    {\n      \"definitionId\": \"{{definitionId}}\",\n      \"value\": \"차콜\"\n    }\n  ]\n}",
+              "value": "{\n  \"name\": \"무신사바지\",\n  \"attributes\": [\n    {\n      \"definitionId\": \"{{definitionId}}\",\n      \"value\": \"폴리에스터\"\n    }\n  ]\n}",
               "type": "text",
               "contentType": "application/json"
             },
