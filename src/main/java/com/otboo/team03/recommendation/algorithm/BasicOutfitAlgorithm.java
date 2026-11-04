@@ -17,8 +17,16 @@ public class BasicOutfitAlgorithm {
                 .filter(item -> item.getType() == ClothesType.BOTTOM)
                 .findFirst();
 
+        Optional<Clothes> dress = clothes.stream()
+                .filter(item -> item.getType() == ClothesType.DRESS)
+                .findFirst();
+
         if (top.isPresent() && bottom.isPresent()) {
             return List.of(top.get(), bottom.get());
+        }
+
+        if (dress.isPresent()) {
+            return List.of(dress.get());
         }
 
         return List.of();
