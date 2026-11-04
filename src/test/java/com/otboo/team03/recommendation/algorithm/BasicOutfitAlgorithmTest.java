@@ -65,6 +65,20 @@ class BasicOutfitAlgorithmTest {
         }
 
         @Test
+        @DisplayName("원피스가 여러 개면 입력 순서상 첫 번째 원피스만 반환한다")
+        void 원피스가_여러개면_첫번째_원피스만_반환() {
+            // given
+            Clothes firstDress = new Clothes("첫 원피스", ClothesType.DRESS, null, owner);
+            Clothes secondDress = new Clothes("두 번째 원피스", ClothesType.DRESS, null, owner);
+
+            // when
+            var result = algorithm.recommend(List.of(firstDress, secondDress));
+
+            // then
+            assertThat(result).containsExactly(firstDress);
+        }
+
+        @Test
         @DisplayName("상의만 있으면 빈 목록을 반환한다")
         void 상의만_있으면_빈목록_반환() {
             // given
