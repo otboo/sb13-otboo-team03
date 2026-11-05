@@ -173,9 +173,19 @@ public class FeedService {
     }
 
     if (request == null
+        || request.feedId() == null
+        || request.authorId() == null
         || request.content() == null
         || request.content().isBlank()) {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if (!feedId.equals(request.feedId())) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if (!authorId.equals(request.authorId())) {
+      throw new OtbooException(ErrorCode.ACCESS_DENIED);
     }
 
     FeedComment comment = new FeedComment(
