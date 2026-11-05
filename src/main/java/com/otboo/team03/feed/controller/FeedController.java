@@ -1,7 +1,9 @@
 package com.otboo.team03.feed.controller;
 
+import com.otboo.team03.feed.dto.request.CommentCreateRequest;
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
 import com.otboo.team03.feed.dto.request.FeedUpdateRequest;
+import com.otboo.team03.feed.dto.response.CommentDto;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.service.FeedService;
 import com.otboo.team03.global.dto.CursorResponse;
@@ -174,5 +176,29 @@ public class FeedController {
     feedService.unlike(feedId, requesterId);
 
     return ResponseEntity.noContent().build();
+  }
+
+  @PostMapping("/{feedId}/comments")
+  public ResponseEntity<CommentDto> createComment(
+      @PathVariable UUID feedId,
+      @RequestBody CommentCreateRequest request,
+      Authentication authentication
+  ) {
+    if (authentication == null
+        || !authentication.isAuthenticated()
+        || !(authentication.getPrincipal()
+        instanceof OtbooUserDetails userDetails)) {
+      throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
+    }
+
+    UUID requesterId = userDetails.getUserDto().id();
+
+    CommentDto response = feedService.createComment(
+        feedId,
+        requesterId,
+        request
+    );
+
+    return ResponseEntity.ok(response);
   }
 }
