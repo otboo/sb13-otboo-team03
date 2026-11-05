@@ -100,6 +100,32 @@ public class FeedController {
     return ResponseEntity.noContent().build();
   }
 
+  /**
+   * 인증된 사용자가 피드 한 건을 조회한다.
+   *
+   * <p>목록 조회와 동일하게 로그인 사용자의 ID를 서비스에 전달한다. 이 ID는 응답의
+   * likedByMe 등 조회 사용자에 따라 달라지는 값을 계산하는 데 사용한다.
+   * 의상 이미지 URL 변환은 서비스가 호출하는 기존 FeedDtoAssembler에서 수행한다.
+   *
+   * @param feedId 조회할 피드 ID
+   * @param authentication 보안 필터에서 설정한 인증 정보
+   * @return 작성자·날씨·연결된 의상 정보를 포함한 피드 응답
+   */
+  @GetMapping("/{feedId}")
+  public ResponseEntity<FeedDto> getFeed(
+      @PathVariable UUID feedId,
+      Authentication authentication
+  ) {
+    if (authentication == null
+        || !authentication.isAuthenticated()
+        || !(authentication.getPrincipal() instanceof OtbooUserDetails userDetails)) {
+      throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
+    }
+    // 요청 파라미터로 사용자 ID를 받지 않고 인증 정보에서 조회 사용자를 결정한다.
+    return ResponseEntity.ok(
+        feedService.getFeed(feedId, userDetails.getUserDto().id()));
+  }
+
   @GetMapping
   public ResponseEntity<CursorResponse<FeedDto>> getFeedList(
       @RequestParam int limit,

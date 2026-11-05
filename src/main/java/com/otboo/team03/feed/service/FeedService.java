@@ -133,6 +133,26 @@ public class FeedService {
     feedRepository.delete(feed);
   }
 
+  /**
+   * 피드 한 건을 목록 조회와 동일한 응답 변환기로 변환한다.
+   *
+   * <p>변환 과정에서 연결된 의상 등 연관 데이터를 조회하므로 읽기 전용 트랜잭션 안에서
+   * 응답 생성을 마친다. FeedDtoAssembler는 의상에 imageKey가 있으면 접근 URL을 생성하고,
+   * key가 없는 기존 데이터는 기존 URL을 유지하며, 이미지가 없으면 null을 반환한다.
+   * 따라서 상세 조회에서도 재조회 시점의 이미지 key와 서명 URL 생성 기준을 적용한다.
+   *
+   * @param feedId 조회할 피드 ID
+   * @param viewerId 좋아요 여부 등 사용자별 응답을 계산할 조회 사용자 ID
+   * @return 현재 연결된 의상 정보를 포함한 피드 응답
+   * @throws OtbooException 피드가 존재하지 않으면 NOT_FOUND_RESOURCE
+   */
+  @Transactional(readOnly = true)
+  public FeedDto getFeed(UUID feedId, UUID viewerId) {
+    Feed feed = feedRepository.findById(feedId)
+        .orElseThrow(() -> new OtbooException(ErrorCode.NOT_FOUND_RESOURCE));
+    return feedDtoAssembler.toDto(feed, viewerId);
+  }
+
   @Transactional(readOnly = true)
   public CursorResponse<FeedDto> getFeedList(
       int limit,

@@ -1737,6 +1737,36 @@ class FeedReadIntegrationTest {
     result.andExpect(status().isBadRequest());
   }
 
+  /**
+   * 상세 조회의 HTTP 응답과 인증 경계를 검증한다.
+   *
+   * <p>실제 테스트 DB에 사용자·날씨·피드를 저장하고 JWT를 전달해 본문과 빈 의상 목록을
+   * 확인한다. 같은 인증 조건에서 존재하지 않는 ID는 404, 인증이 없는 요청은 401이어야 한다.
+   * 이미지 key·기존 URL·재서명 규칙 자체는 FeedDtoAssemblerTest에서 별도로 검증한다.
+   */
+  @Test
+  void 상세조회는_본문을_반환하고_없는_피드는_404다() throws Exception {
+    User author = userRepository.saveAndFlush(
+        new User(UUID.randomUUID() + "@example.com", "encodedPassword", "상세 조회"));
+    UUID weatherId = UUID.randomUUID();
+    insertWeather(weatherId);
+    UUID feedId = insertFeed(author.getId(), weatherId, "보존할 본문", Instant.now());
+    String token = jwtTokenProvider.createAccessToken(author.getId());
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(token)).thenReturn(true);
+
+    mockMvc.perform(get("/api/feeds/{feedId}", feedId)
+            .header("Authorization", "Bearer " + token))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(feedId.toString()))
+        .andExpect(jsonPath("$.content").value("보존할 본문"))
+        .andExpect(jsonPath("$.ootds").isEmpty());
+    mockMvc.perform(get("/api/feeds/{feedId}", UUID.randomUUID())
+            .header("Authorization", "Bearer " + token))
+        .andExpect(status().isNotFound());
+    mockMvc.perform(get("/api/feeds/{feedId}", feedId))
+        .andExpect(status().isUnauthorized());
+  }
+
   private void insertWeather(UUID weatherId) {
     Timestamp now = Timestamp.from(Instant.now());
 
