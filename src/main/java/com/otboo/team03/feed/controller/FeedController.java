@@ -137,4 +137,42 @@ public class FeedController {
 
     return ResponseEntity.ok(response);
   }
+
+  @PostMapping("/{feedId}/like")
+  public ResponseEntity<Void> like(
+      @PathVariable UUID feedId,
+      Authentication authentication
+  ) {
+    if (authentication == null
+        || !authentication.isAuthenticated()
+        || !(authentication.getPrincipal()
+        instanceof OtbooUserDetails userDetails)) {
+      throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
+    }
+
+    UUID requesterId = userDetails.getUserDto().id();
+
+    feedService.like(feedId, requesterId);
+
+    return ResponseEntity.noContent().build();
+  }
+
+  @DeleteMapping("/{feedId}/like")
+  public ResponseEntity<Void> unlike(
+      @PathVariable UUID feedId,
+      Authentication authentication
+  ) {
+    if (authentication == null
+        || !authentication.isAuthenticated()
+        || !(authentication.getPrincipal()
+        instanceof OtbooUserDetails userDetails)) {
+      throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
+    }
+
+    UUID requesterId = userDetails.getUserDto().id();
+
+    feedService.unlike(feedId, requesterId);
+
+    return ResponseEntity.noContent().build();
+  }
 }
