@@ -1040,4 +1040,200 @@ class FeedServiceTest {
     verify(feedDtoAssembler, never())
         .toCommentDto(thirdComment);
   }
+
+  @Test
+  void 댓글_마지막_페이지에서는_다음_커서를_반환하지_않는다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+    UUID idAfter = UUID.randomUUID();
+
+    Instant cursorTime = Instant.parse("2026-11-05T03:00:00Z");
+    Instant commentTime = Instant.parse("2026-11-05T02:00:00Z");
+
+    FeedComment comment = mock(FeedComment.class);
+
+    CommentDto expectedDto = new CommentDto(
+        UUID.randomUUID(),
+        commentTime,
+        feedId,
+        new AuthorDto(authorId, "작성자", null),
+        "마지막 댓글"
+    );
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    when(feedCommentRepository.findNextPage(
+        feedId, cursorTime, idAfter, 3
+    )).thenReturn(List.of(comment));
+
+    when(feedDtoAssembler.toCommentDto(comment))
+        .thenReturn(expectedDto);
+
+    when(feedCommentRepository.countByFeedId(feedId))
+        .thenReturn(3L);
+
+    // when
+    CursorResponse<CommentDto> result = feedService.getFeedComments(
+        feedId,
+        2,
+        cursorTime.toString(),
+        idAfter
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(List.of(expectedDto), result.data()),
+        () -> assertFalse(result.hasNext()),
+        () -> assertNull(result.nextCursor()),
+        () -> assertNull(result.nextIdAfter()),
+        () -> assertEquals(3L, result.totalCount())
+    );
+  }
+
+  @Test
+  void 댓글이_없는_피드는_빈_목록을_반환한다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    when(feedCommentRepository.findByFeedIdOrderByCreatedAtDescIdDesc(
+        feedId,
+        PageRequest.of(0, 11)
+    )).thenReturn(List.of());
+
+    when(feedCommentRepository.countByFeedId(feedId))
+        .thenReturn(0L);
+
+    // when
+    CursorResponse<CommentDto> result = feedService.getFeedComments(
+        feedId,
+        10,
+        null,
+        null
+    );
+
+    // then
+    assertAll(
+        () -> assertTrue(result.data().isEmpty()),
+        () -> assertFalse(result.hasNext()),
+        () -> assertNull(result.nextCursor()),
+        () -> assertNull(result.nextIdAfter()),
+        () -> assertEquals(0L, result.totalCount())
+    );
+
+    verifyNoInteractions(feedDtoAssembler);
+  }
+
+  @Test
+  void 댓글_조회_limit이_유효하지_않으면_예외가_발생한다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    int[] invalidLimits = {
+        0,
+        -1,
+        Integer.MAX_VALUE
+    };
+
+    // when
+    for (int limit : invalidLimits) {
+      OtbooException exception = assertThrows(
+          OtbooException.class,
+          () -> feedService.getFeedComments(
+              feedId, limit, null, null
+          )
+      );
+
+      // then
+      assertEquals(
+          ErrorCode.INVALID_INPUT_VALUE,
+          exception.getErrorCode()
+      );
+    }
+
+    verifyNoInteractions(feedCommentRepository);
+  }
+
+  @Test
+  void 댓글_조회_커서_형식이나_조합이_잘못되면_예외가_발생한다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID idAfter = UUID.randomUUID();
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    // when
+    OtbooException missingIdException = assertThrows(
+        OtbooException.class,
+        () -> feedService.getFeedComments(
+            feedId, 10, "2026-11-05T03:00:00Z", null
+        )
+    );
+
+    OtbooException missingCursorException = assertThrows(
+        OtbooException.class,
+        () -> feedService.getFeedComments(
+            feedId, 10, null, idAfter
+        )
+    );
+
+    OtbooException invalidCursorException = assertThrows(
+        OtbooException.class,
+        () -> feedService.getFeedComments(
+            feedId, 10, "invalid-cursor", idAfter
+        )
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            missingIdException.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            missingCursorException.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            invalidCursorException.getErrorCode()
+        )
+    );
+
+    verifyNoInteractions(feedCommentRepository);
+  }
+
+  @Test
+  void 존재하지_않는_피드의_댓글은_조회할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(false);
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.getFeedComments(
+            feedId, 10, null, null
+        )
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.NOT_FOUND_RESOURCE,
+        exception.getErrorCode()
+    );
+
+    verifyNoInteractions(feedCommentRepository);
+    verifyNoInteractions(feedDtoAssembler);
+  }
 }
