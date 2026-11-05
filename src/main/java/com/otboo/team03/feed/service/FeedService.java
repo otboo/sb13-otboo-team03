@@ -5,6 +5,7 @@ import com.otboo.team03.clothes.repository.ClothesRepository;
 import com.otboo.team03.feed.dto.request.CommentCreateRequest;
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
 import com.otboo.team03.feed.dto.request.FeedUpdateRequest;
+import com.otboo.team03.feed.dto.response.CommentDto;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.FeedClothes;
@@ -163,7 +164,7 @@ public class FeedService {
   }
 
   @Transactional
-  public void createComment(
+  public CommentDto createComment(
       UUID feedId,
       UUID authorId,
       CommentCreateRequest request
@@ -194,7 +195,9 @@ public class FeedService {
         request.content()
     );
 
-    feedCommentRepository.save(comment);
+    FeedComment savedComment = feedCommentRepository.save(comment);
+
+    return feedDtoAssembler.toCommentDto(savedComment);
   }
 
   @Transactional(readOnly = true)
