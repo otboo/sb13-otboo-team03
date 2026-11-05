@@ -5,6 +5,7 @@ import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.clothes.repository.ClothesRepository;
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
 import com.otboo.team03.feed.dto.request.FeedUpdateRequest;
+import com.otboo.team03.feed.dto.request.CommentCreateRequest;
 import com.otboo.team03.feed.dto.response.AuthorDto;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.dto.response.PrecipitationDto;

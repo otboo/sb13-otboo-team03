@@ -2,14 +2,17 @@ package com.otboo.team03.feed.service;
 
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.repository.ClothesRepository;
+import com.otboo.team03.feed.dto.request.CommentCreateRequest;
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
 import com.otboo.team03.feed.dto.request.FeedUpdateRequest;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.FeedClothes;
+import com.otboo.team03.feed.entity.FeedComment;
 import com.otboo.team03.feed.entity.FeedLike;
 import com.otboo.team03.feed.mapper.FeedDtoAssembler;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
+import com.otboo.team03.feed.repository.FeedCommentRepository;
 import com.otboo.team03.feed.repository.FeedLikeRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedSearchQueryRepository;
@@ -41,6 +44,7 @@ public class FeedService {
   private final FeedDtoAssembler feedDtoAssembler;
   private final FeedSearchQueryRepository feedSearchQueryRepository;
   private final FeedLikeRepository feedLikeRepository;
+  private final FeedCommentRepository feedCommentRepository;
 
   @Transactional
   public FeedDto create(FeedCreateRequest request) {
@@ -156,6 +160,27 @@ public class FeedService {
     }
 
     feedLikeRepository.deleteByFeedIdAndUserId(feedId, userId);
+  }
+
+  @Transactional
+  public void createComment(
+      UUID feedId,
+      UUID authorId,
+      CommentCreateRequest request
+  ) {
+
+    if (!feedRepository.existsById(feedId)) {
+      throw new OtbooException(ErrorCode.NOT_FOUND_RESOURCE);
+    }
+
+
+    FeedComment comment = new FeedComment(
+        feedId,
+        authorId,
+        request.content()
+    );
+
+    feedCommentRepository.save(comment);
   }
 
   @Transactional(readOnly = true)
