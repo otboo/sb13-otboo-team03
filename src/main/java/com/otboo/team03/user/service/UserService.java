@@ -129,4 +129,33 @@ public class UserService {
             }
         });
     }
+
+    @Transactional
+    @PreAuthorize("hasRole('ADMIN') and #userId != authentication.principal.userDto.id")
+    public UserDto updateLock(UUID userId, boolean locked) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(UserNotFoundException::new);
+
+        if (user.isLocked() == locked) {
+            return UserDto.from(user);
+        }
+
+        if (locked && user.getRole() == UserRole.ADMIN
+                && userRepository.countByRoleAndLockedFalse(UserRole.ADMIN) <= 1) {
+            throw new LastAdminException();
+        }
+
+        user.changeLocked(locked);
+
+        if (locked) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    jwtRegistry.invalidateJwtInformationByUserId(userId);
+                }
+            });
+        }
+
+        return UserDto.from(user);
+    }
 }

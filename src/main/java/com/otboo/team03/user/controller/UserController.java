@@ -1,10 +1,7 @@
 package com.otboo.team03.user.controller;
 
 import com.otboo.team03.global.dto.CursorResponse;
-import com.otboo.team03.user.dto.request.ChangePasswordRequest;
-import com.otboo.team03.user.dto.request.UserCreateRequest;
-import com.otboo.team03.user.dto.request.UserRoleUpdateRequest;
-import com.otboo.team03.user.dto.request.UserListRequest;
+import com.otboo.team03.user.dto.request.*;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.service.UserService;
 import jakarta.validation.Valid;
@@ -15,10 +12,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.bind.annotation.*;
 
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/users")
@@ -57,5 +51,11 @@ public class UserController {
         userService.changePassword(userId, request.password());
 
         return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/{userId}/lock")
+    public ResponseEntity<UserDto> updateLock(@PathVariable UUID userId,
+                                              @Valid @RequestBody UserLockUpdateRequest request) {
+        return ResponseEntity.ok(userService.updateLock(userId, request.locked()));
     }
 }
