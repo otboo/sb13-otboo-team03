@@ -15,6 +15,7 @@ import com.otboo.team03.feed.entity.FeedClothes;
 import com.otboo.team03.feed.entity.FeedLike;
 import com.otboo.team03.feed.mapper.FeedDtoAssembler;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
+import com.otboo.team03.feed.repository.FeedCommentRepository;
 import com.otboo.team03.feed.repository.FeedLikeRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
@@ -64,6 +65,9 @@ class FeedServiceTest {
 
   @Mock
   private FeedLikeRepository feedLikeRepository;
+
+  @Mock
+  private FeedCommentRepository feedCommentRepository;
 
   @Test
   void 피드_생성시_의상을_연결하고_FeedDto를_반환한다() {
@@ -677,5 +681,33 @@ class FeedServiceTest {
 
     verify(feedLikeRepository, never())
         .save(any(FeedLike.class));
+  }
+
+  @Test
+  void 사용자가_피드에_댓글을_등록하면_댓글이_저장된다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+
+    CommentCreateRequest request = new CommentCreateRequest(
+        feedId,
+        authorId,
+        "좋은 코디네요!"
+    );
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    // when
+    feedService.createComment(feedId, authorId, request);
+
+    // then
+    verify(feedRepository).existsById(feedId);
+
+    verify(feedCommentRepository).save(argThat(
+        comment -> feedId.equals(comment.getFeedId())
+            && authorId.equals(comment.getAuthorId())
+            && "좋은 코디네요!".equals(comment.getContent())
+    ));
   }
 }
