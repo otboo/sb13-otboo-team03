@@ -1,0 +1,35 @@
+# 빌드 컨텍스트에서 제외 — 빌드 빠르고 이미지 깔끔, 민감/불필요 파일 유출 방지
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+*.iml
+.vscode
+
+# Gradle
+.gradle/
+build/
+out/
+
+# 로그 및 로컬 파일
+logs/
+*.log
+uploads/
+
+# 환경변수 및 민감정보
+.env
+.env.*
+src/main/resources/application-local.yaml
+src/main/resources/application-local.yml
+*.pem
+*.key
+
+# Docker
+Dockerfile
+.dockerignore
+
+# 문서
+README*.md
+HELP.md
