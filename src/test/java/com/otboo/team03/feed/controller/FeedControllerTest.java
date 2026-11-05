@@ -444,4 +444,113 @@ class FeedControllerTest {
 
     verifyNoInteractions(feedService);
   }
+
+  @Test
+  void 피드_좋아요에_성공하면_204를_반환한다()
+      throws Exception {
+    // given
+    UUID targetFeedId = UUID.randomUUID();
+
+    // when
+    var result = mockMvc.perform(
+        post("/api/feeds/{feedId}/like", targetFeedId)
+            .principal(authentication(authorId))
+    );
+
+    // then
+    result.andExpect(status().isNoContent())
+        .andExpect(content().string(""));
+
+    verify(feedService).like(targetFeedId, authorId);
+  }
+
+  @Test
+  void 피드_좋아요_취소에_성공하면_204를_반환한다()
+      throws Exception {
+    // given
+    UUID targetFeedId = UUID.randomUUID();
+
+    // when
+    var result = mockMvc.perform(
+        delete("/api/feeds/{feedId}/like", targetFeedId)
+            .principal(authentication(authorId))
+    );
+
+    // then
+    result.andExpect(status().isNoContent())
+        .andExpect(content().string(""));
+
+    verify(feedService).unlike(targetFeedId, authorId);
+  }
+
+  @Test
+  void 좋아요_등록과_취소에서_유효하지_않은_인증은_401을_반환한다()
+      throws Exception {
+    // given
+    Authentication[] invalidAuthentications = {
+        null,
+        new UsernamePasswordAuthenticationToken("user", null),
+        new UsernamePasswordAuthenticationToken(
+            "user", null, List.of()
+        )
+    };
+
+    // when
+    for (Authentication authentication : invalidAuthentications) {
+      var postRequest = post("/api/feeds/{feedId}/like", feedId);
+      var deleteRequest = delete("/api/feeds/{feedId}/like", feedId);
+
+      if (authentication != null) {
+        postRequest.principal(authentication);
+        deleteRequest.principal(authentication);
+      }
+
+      // then
+      mockMvc.perform(postRequest)
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.exceptionName")
+              .value("AUTHENTICATION_REQUIRED"));
+
+      mockMvc.perform(deleteRequest)
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.exceptionName")
+              .value("AUTHENTICATION_REQUIRED"));
+    }
+
+    verifyNoInteractions(feedService);
+  }
+
+  @Test
+  void 존재하지_않는_피드의_좋아요_등록과_취소는_404를_반환한다()
+      throws Exception {
+    // given
+    doThrow(new OtbooException(ErrorCode.NOT_FOUND_RESOURCE))
+        .when(feedService).like(feedId, authorId);
+
+    doThrow(new OtbooException(ErrorCode.NOT_FOUND_RESOURCE))
+        .when(feedService).unlike(feedId, authorId);
+
+    // when
+    var postResult = mockMvc.perform(
+        post("/api/feeds/{feedId}/like", feedId)
+            .principal(authentication(authorId))
+    );
+
+    var deleteResult = mockMvc.perform(
+        delete("/api/feeds/{feedId}/like", feedId)
+            .principal(authentication(authorId))
+    );
+
+    // then
+    postResult.andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("NOT_FOUND_RESOURCE"));
+
+    deleteResult.andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("NOT_FOUND_RESOURCE"));
+
+    verify(feedService).like(feedId, authorId);
+    verify(feedService).unlike(feedId, authorId);
+  }
 }
