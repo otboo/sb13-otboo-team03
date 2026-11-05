@@ -411,4 +411,157 @@ class UserServiceTest {
             verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
         }
     }
+
+    @Nested
+    @DisplayName("계정 잠금, 해제")
+    class UpdateLockTest {
+
+        @BeforeEach
+        void setUp() {
+            TransactionSynchronizationManager.initSynchronization();
+        }
+
+        @AfterEach
+        void tearDown() {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        @Test
+        @DisplayName("성공 - 계정을 잠그고 변경된 사용자 정보를 반환한다")
+        void updateLock_lock_success() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+            // when
+            UserDto result = userService.updateLock(userId, true);
+
+            // then
+            assertThat(user.isLocked()).isTrue();
+            assertThat(result.locked()).isTrue();
+            verify(userRepository).findById(userId);
+        }
+
+        @Test
+        @DisplayName("성공 - 잠긴 계정을 해제한다")
+        void updateLock_unlock_success() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+            user.changeLocked(true);
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+            // when
+            UserDto result = userService.updateLock(userId, false);
+
+            // then
+            assertThat(user.isLocked()).isFalse();
+            assertThat(result.locked()).isFalse();
+            verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+        }
+
+        @Test
+        @DisplayName("성공 - 동일한 잠금 상태 요청 시 세션 무효화를 실행하지 않는다")
+        void updateLock_sameState_doesNotInvalidateSession() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+            // when
+            UserDto result = userService.updateLock(userId, false);
+
+            // then
+            assertThat(result.locked()).isFalse();
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+            verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+        }
+
+        @Test
+        @DisplayName("실패 - 존재하지 않는 사용자는 예외가 발생한다")
+        void updateLock_userNotFound_throwsException() {
+            // given
+            UUID userId = UUID.randomUUID();
+
+            when(userRepository.findById(userId)).thenReturn(Optional.empty());
+
+            // when & then
+            assertThatThrownBy(() -> userService.updateLock(userId, true))
+                    .isInstanceOf(UserNotFoundException.class);
+
+            verifyNoInteractions(jwtRegistry);
+        }
+
+        @Test
+        @DisplayName("성공 - DB 커밋 이후 기존 JWT 세션을 무효화한다")
+        void updateLock_afterCommit_invalidatesSession() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+            // when
+            userService.updateLock(userId, true);
+
+            // then: 커밋 전
+            verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+
+            // when: 커밋 완료
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+
+            // then
+            verify(jwtRegistry).invalidateJwtInformationByUserId(userId);
+        }
+
+        @Test
+        @DisplayName("성공 - DB 롤백 시 기존 JWT 세션을 유지한다")
+        void updateLock_rollback_keepsSession() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+            // when
+            userService.updateLock(userId, true);
+
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(synchronization ->
+                            synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
+
+            // then
+            verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+        }
+
+        @Test
+        @DisplayName("실패 - 마지막 활성 관리자 계정 잠금 시 예외 발생")
+        void updateLock_lastActiveAdmin_throwsException() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User admin = new User("admin@example.com", "encodedPassword", "관리자");
+            admin.changeRole(UserRole.ADMIN);
+
+            when(userRepository.findById(userId))
+                    .thenReturn(Optional.of(admin));
+
+            when(userRepository.countByRoleAndLockedFalse(UserRole.ADMIN))
+                    .thenReturn(1L);
+
+            // when & then
+            assertThatThrownBy(() -> userService.updateLock(userId, true))
+                    .isInstanceOf(LastAdminException.class);
+
+            assertThat(admin.isLocked()).isFalse();
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+
+            verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+        }
+    }
 }

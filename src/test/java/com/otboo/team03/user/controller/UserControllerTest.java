@@ -29,12 +29,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -368,6 +365,109 @@ class UserControllerTest {
             } finally {
                 validator.close();
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("계정 잠금, 해제")
+    class UpdateLockTest {
+
+        @Test
+        @DisplayName("성공 - 계정 잠금 요청 시 200 OK 반환")
+        void updateLock_lock_returns200() throws Exception {
+            // given
+            UUID userId = UUID.randomUUID();
+            UserDto response = new UserDto(
+                    userId, Instant.now(), "user@example.com",
+                    "일반 사용자", UserRole.USER, true
+            );
+
+            given(userService.updateLock(userId, true)).willReturn(response);
+
+            MockMvc mockMvc = MockMvcBuilders.standaloneSetup(userController).build();
+
+            // when & then
+            mockMvc.perform(patch("/api/users/{userId}/lock", userId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                {"locked": true}
+                                """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.locked").value(true));
+
+            verify(userService).updateLock(userId, true);
+        }
+
+        @Test
+        @DisplayName("성공 - 계정 잠금 해제 시 200 OK 반환")
+        void updateLock_unlock_returns200() throws Exception {
+            // given
+            UUID userId = UUID.randomUUID();
+            UserDto response = new UserDto(
+                    userId, Instant.now(), "user@example.com",
+                    "일반 사용자", UserRole.USER, false
+            );
+
+            given(userService.updateLock(userId, false)).willReturn(response);
+
+            MockMvc mockMvc = MockMvcBuilders.standaloneSetup(userController).build();
+
+            // when & then
+            mockMvc.perform(patch("/api/users/{userId}/lock", userId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                {"locked": false}
+                                """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.locked").value(false));
+
+            verify(userService).updateLock(userId, false);
+        }
+
+        @Test
+        @DisplayName("실패 - locked 필드 누락 시 400 Bad Request 반환")
+        void updateLock_missingLocked_returns400() throws Exception {
+            // given
+            LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
+            validator.afterPropertiesSet();
+
+            try {
+                MockMvc mockMvc = MockMvcBuilders.standaloneSetup(userController)
+                        .setValidator(validator)
+                        .build();
+
+                // when & then
+                mockMvc.perform(patch("/api/users/{userId}/lock", UUID.randomUUID())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{}"))
+                        .andExpect(status().isBadRequest());
+
+                verifyNoInteractions(userService);
+            } finally {
+                validator.close();
+            }
+        }
+
+        @Test
+        @DisplayName("실패 - 존재하지 않는 사용자면 404 Not Found 반환")
+        void updateLock_userNotFound_returns404() throws Exception {
+            // given
+            UUID userId = UUID.randomUUID();
+
+            given(userService.updateLock(userId, true))
+                    .willThrow(new UserNotFoundException());
+
+            MockMvc mockMvc = MockMvcBuilders.standaloneSetup(userController)
+                    .setControllerAdvice(new GlobalExceptionHandler())
+                    .build();
+
+            // when & then
+            mockMvc.perform(patch("/api/users/{userId}/lock", userId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                {"locked": true}
+                                """))
+                    .andExpect(status().isNotFound());
         }
     }
 
