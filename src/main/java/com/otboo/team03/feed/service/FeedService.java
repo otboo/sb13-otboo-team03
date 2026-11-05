@@ -7,8 +7,10 @@ import com.otboo.team03.feed.dto.request.FeedUpdateRequest;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.FeedClothes;
+import com.otboo.team03.feed.entity.FeedLike;
 import com.otboo.team03.feed.mapper.FeedDtoAssembler;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
+import com.otboo.team03.feed.repository.FeedLikeRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedSearchQueryRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
@@ -38,6 +40,7 @@ public class FeedService {
   private final FeedWeatherLookupRepository weatherRepository;
   private final FeedDtoAssembler feedDtoAssembler;
   private final FeedSearchQueryRepository feedSearchQueryRepository;
+  private final FeedLikeRepository feedLikeRepository;
 
   @Transactional
   public FeedDto create(FeedCreateRequest request) {
@@ -131,6 +134,15 @@ public class FeedService {
     feedRepository.deleteFeedClothesByFeedId(feedId);
 
     feedRepository.delete(feed);
+  }
+
+  @Transactional
+  public void like(UUID feedId, UUID userId) {
+    if (!feedRepository.existsById(feedId)) {
+      throw new OtbooException(ErrorCode.NOT_FOUND_RESOURCE);
+    }
+
+    feedLikeRepository.save(new FeedLike(feedId, userId));
   }
 
   @Transactional(readOnly = true)

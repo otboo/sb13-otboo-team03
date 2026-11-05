@@ -14,6 +14,7 @@ import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.FeedClothes;
 import com.otboo.team03.feed.mapper.FeedDtoAssembler;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
+import com.otboo.team03.feed.repository.FeedLikeRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
 import com.otboo.team03.global.exception.ErrorCode;
@@ -59,6 +60,9 @@ class FeedServiceTest {
 
   @InjectMocks
   private FeedService feedService;
+
+  @Mock
+  private FeedLikeRepository feedLikeRepository;
 
   @Test
   void 피드_생성시_의상을_연결하고_FeedDto를_반환한다() {
