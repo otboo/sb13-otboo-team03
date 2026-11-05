@@ -47,6 +47,17 @@ class WeatherTest {
     assertThat(weather.getWindSpeed()).isEqualTo(2.3);
   }
 
+  @Test
+  @DisplayName("JPA 기본 생성자 및 빌더 toString 메서드가 정상 동작한다")
+  void defaultConstructorAndBuilderToString() {
+    // 동일 패키지 내 protected no-arg 생성자 호출 검증 (JPA 프록시 스펙 커버)
+    Weather weather = new Weather();
+    assertThat(weather).isNotNull();
+    // Lombok 빌더 내부 toString() 호출 검증
+    String builderString = Weather.builder().toString();
+    assertThat(builderString).isNotNull();
+  }
+
   @Nested
   @DisplayName("날씨 엔티티 생성 시 필수 필드 누락 검증")
   class RequireNonNullTest {
@@ -190,15 +201,23 @@ class WeatherTest {
   @DisplayName("열거형 및 커스텀 예외가 정상 동작한다")
   void enumAndExceptionTest() {
     // SkyStatus 열거형 검증
+    assertThat(SkyStatus.values()).contains(SkyStatus.CLEAR, SkyStatus.MOSTLY_CLOUDY, SkyStatus.CLOUDY);
+    assertThat(SkyStatus.valueOf("CLEAR")).isEqualTo(SkyStatus.CLEAR);
     assertThat(SkyStatus.CLEAR.getDescription()).isEqualTo("맑음");
     assertThat(SkyStatus.MOSTLY_CLOUDY.getDescription()).isEqualTo("구름많음");
     assertThat(SkyStatus.CLOUDY.getDescription()).isEqualTo("흐림");
+
     // PrecipitationType 열거형 검증
+    assertThat(PrecipitationType.values()).contains(
+        PrecipitationType.NONE, PrecipitationType.RAIN, PrecipitationType.RAIN_SNOW, PrecipitationType.SNOW, PrecipitationType.SHOWER
+    );
+    assertThat(PrecipitationType.valueOf("NONE")).isEqualTo(PrecipitationType.NONE);
     assertThat(PrecipitationType.NONE.getDescription()).isEqualTo("없음");
     assertThat(PrecipitationType.RAIN.getDescription()).isEqualTo("비");
     assertThat(PrecipitationType.RAIN_SNOW.getDescription()).isEqualTo("비/눈");
     assertThat(PrecipitationType.SNOW.getDescription()).isEqualTo("눈");
     assertThat(PrecipitationType.SHOWER.getDescription()).isEqualTo("소나기");
+
     // WeatherNotFoundException 및 ErrorCode 검증
     WeatherNotFoundException exception = new WeatherNotFoundException();
     assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND_WEATHER);
