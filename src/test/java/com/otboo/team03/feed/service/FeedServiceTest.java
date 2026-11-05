@@ -12,6 +12,7 @@ import com.otboo.team03.feed.dto.response.TemperatureDto;
 import com.otboo.team03.feed.dto.response.WeatherSummaryDto;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.FeedClothes;
+import com.otboo.team03.feed.entity.FeedLike;
 import com.otboo.team03.feed.mapper.FeedDtoAssembler;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
 import com.otboo.team03.feed.repository.FeedLikeRepository;
@@ -605,5 +606,76 @@ class FeedServiceTest {
     verify(feedRepository).existsById(feedId);
     verify(feedLikeRepository)
         .deleteByFeedIdAndUserId(feedId, userId);
+  }
+
+  @Test
+  void 존재하지_않는_피드에는_좋아요를_등록할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID userId = UUID.randomUUID();
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(false);
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.like(feedId, userId)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.NOT_FOUND_RESOURCE,
+        exception.getErrorCode()
+    );
+
+    verifyNoInteractions(feedLikeRepository);
+  }
+
+  @Test
+  void 존재하지_않는_피드의_좋아요는_취소할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID userId = UUID.randomUUID();
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(false);
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.unlike(feedId, userId)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.NOT_FOUND_RESOURCE,
+        exception.getErrorCode()
+    );
+
+    verifyNoInteractions(feedLikeRepository);
+  }
+
+  @Test
+  void 이미_좋아요한_피드에는_좋아요를_중복_저장하지_않는다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID userId = UUID.randomUUID();
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    when(feedLikeRepository.existsByFeedIdAndUserId(feedId, userId))
+        .thenReturn(true);
+
+    // when
+    feedService.like(feedId, userId);
+
+    // then
+    verify(feedLikeRepository)
+        .existsByFeedIdAndUserId(feedId, userId);
+
+    verify(feedLikeRepository, never())
+        .save(any(FeedLike.class));
   }
 }
