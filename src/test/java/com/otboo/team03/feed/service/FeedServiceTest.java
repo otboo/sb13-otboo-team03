@@ -22,6 +22,7 @@ import com.otboo.team03.feed.repository.FeedCommentRepository;
 import com.otboo.team03.feed.repository.FeedLikeRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
+import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.entity.User;
@@ -37,6 +38,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -851,5 +853,92 @@ class FeedServiceTest {
 
     verify(feedCommentRepository).save(any(FeedComment.class));
     verify(feedDtoAssembler).toCommentDto(any(FeedComment.class));
+  }
+
+  @Test
+  void 댓글_최신순_첫_페이지를_조회하면_커서_응답을_반환한다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+
+    Instant firstTime = Instant.parse("2026-11-05T03:00:00Z");
+    Instant secondTime = Instant.parse("2026-11-05T02:00:00Z");
+
+    UUID firstId = UUID.randomUUID();
+    UUID secondId = UUID.randomUUID();
+
+    FeedComment firstComment = mock(FeedComment.class);
+    FeedComment secondComment = mock(FeedComment.class);
+    FeedComment thirdComment = mock(FeedComment.class);
+
+    CommentDto firstDto = new CommentDto(
+        firstId,
+        firstTime,
+        feedId,
+        new AuthorDto(authorId, "작성자", null),
+        "첫 번째 댓글"
+    );
+
+    CommentDto secondDto = new CommentDto(
+        secondId,
+        secondTime,
+        feedId,
+        new AuthorDto(authorId, "작성자", null),
+        "두 번째 댓글"
+    );
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    when(feedCommentRepository.findByFeedIdOrderByCreatedAtDescIdDesc(
+        feedId,
+        PageRequest.of(0, 3)
+    )).thenReturn(List.of(
+        firstComment,
+        secondComment,
+        thirdComment
+    ));
+
+    when(feedCommentRepository.countByFeedId(feedId))
+        .thenReturn(3L);
+
+    when(feedDtoAssembler.toCommentDto(firstComment))
+        .thenReturn(firstDto);
+
+    when(feedDtoAssembler.toCommentDto(secondComment))
+        .thenReturn(secondDto);
+
+    when(secondComment.getCreatedAt())
+        .thenReturn(secondTime);
+
+    when(secondComment.getId())
+        .thenReturn(secondId);
+
+    // when
+    CursorResponse<CommentDto> result = feedService.getFeedComments(
+        feedId,
+        2,
+        null,
+        null
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(List.of(firstDto, secondDto), result.data()),
+        () -> assertEquals(secondTime.toString(), result.nextCursor()),
+        () -> assertEquals(secondId, result.nextIdAfter()),
+        () -> assertTrue(result.hasNext()),
+        () -> assertEquals(3L, result.totalCount()),
+        () -> assertEquals("createdAt", result.sortBy()),
+        () -> assertEquals("DESCENDING", result.sortDirection())
+    );
+
+    verify(feedCommentRepository)
+        .findByFeedIdOrderByCreatedAtDescIdDesc(
+            feedId,
+            PageRequest.of(0, 3)
+        );
+
+    verify(feedDtoAssembler, never()).toCommentDto(thirdComment);
   }
 }
