@@ -444,4 +444,43 @@ class FeedControllerTest {
 
     verifyNoInteractions(feedService);
   }
+
+  @Test
+  void 피드_좋아요에_성공하면_204를_반환한다()
+      throws Exception {
+    // given
+    UUID targetFeedId = UUID.randomUUID();
+
+    // when
+    var result = mockMvc.perform(
+        post("/api/feeds/{feedId}/like", targetFeedId)
+            .principal(authentication(authorId))
+    );
+
+    // then
+    result.andExpect(status().isNoContent())
+        .andExpect(content().string(""));
+
+    verify(feedService).like(targetFeedId, authorId);
+  }
+
+  @Test
+  void 피드_좋아요_취소에_성공하면_204를_반환한다()
+      throws Exception {
+    // given
+    UUID targetFeedId = UUID.randomUUID();
+
+    // when
+    var result = mockMvc.perform(
+        delete("/api/feeds/{feedId}/like", targetFeedId)
+            .principal(authentication(authorId))
+    );
+
+    // then
+    result.andExpect(status().isNoContent())
+        .andExpect(content().string(""));
+
+    verify(feedService).unlike(targetFeedId, authorId);
+  }
+
 }
