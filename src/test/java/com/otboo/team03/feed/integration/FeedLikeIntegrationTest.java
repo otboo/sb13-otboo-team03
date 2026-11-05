@@ -319,4 +319,85 @@ class FeedLikeIntegrationTest extends PostgresTestSupport {
         .andExpect(jsonPath("$.data[0].likeCount").value(1))
         .andExpect(jsonPath("$.data[0].likedByMe").value(true));
   }
+
+  @Test
+  void 인증되지_않은_사용자는_좋아요를_등록하거나_취소할_수_없다()
+      throws Exception {
+    // given
+    UUID feedId = UUID.randomUUID();
+
+    // when
+    var postResult = mockMvc.perform(
+        post("/api/feeds/{feedId}/like", feedId)
+            .with(csrf())
+    );
+
+    var deleteResult = mockMvc.perform(
+        delete("/api/feeds/{feedId}/like", feedId)
+            .with(csrf())
+    );
+
+    // then
+    postResult.andExpect(status().isUnauthorized());
+    deleteResult.andExpect(status().isUnauthorized());
+
+    Long savedCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM feed_likes WHERE feed_id = ?",
+        Long.class,
+        feedId
+    );
+
+    assertEquals(0L, savedCount);
+  }
+
+  @Test
+  void 존재하지_않는_피드의_좋아요_등록과_취소는_404를_반환한다()
+      throws Exception {
+    // given
+    User user = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "테스트 사용자"
+        )
+    );
+
+    UUID nonexistentFeedId = UUID.randomUUID();
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(user.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var postResult = mockMvc.perform(
+        post("/api/feeds/{feedId}/like", nonexistentFeedId)
+            .with(csrf())
+            .header("Authorization", "Bearer " + accessToken)
+    );
+
+    var deleteResult = mockMvc.perform(
+        delete("/api/feeds/{feedId}/like", nonexistentFeedId)
+            .with(csrf())
+            .header("Authorization", "Bearer " + accessToken)
+    );
+
+    // then
+    postResult.andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("NOT_FOUND_RESOURCE"));
+
+    deleteResult.andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("NOT_FOUND_RESOURCE"));
+
+    Long savedCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM feed_likes WHERE feed_id = ?",
+        Long.class,
+        nonexistentFeedId
+    );
+
+    assertEquals(0L, savedCount);
+  }
 }
