@@ -563,4 +563,25 @@ class FeedServiceTest {
 
     verifyNoInteractions(feedDtoAssembler);
   }
+
+  @Test
+  void 사용자가_피드에_좋아요를_누르면_좋아요_관계가_저장된다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID userId = UUID.randomUUID();
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    // when
+    feedService.like(feedId, userId);
+
+    // then
+    verify(feedRepository).existsById(feedId);
+
+    verify(feedLikeRepository).save(argThat(
+        like -> feedId.equals(like.getFeedId())
+            && userId.equals(like.getUserId())
+    ));
+  }
 }
