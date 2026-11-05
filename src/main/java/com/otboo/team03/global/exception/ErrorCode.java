@@ -22,6 +22,9 @@ public enum ErrorCode {
     // profile
     NOT_FOUND_PROFILE(HttpStatus.NOT_FOUND, "프로필이 존재하지 않습니다."),
 
+    // weather
+    NOT_FOUND_WEATHER(HttpStatus.NOT_FOUND, "날씨 정보가 존재하지 않습니다."),
+
     // common
     NOT_FOUND_RESOURCE(HttpStatus.NOT_FOUND, "요청한 리소스가 존재하지 않습니다."),
     INVALID_INPUT_VALUE(HttpStatus.BAD_REQUEST, "입력값이 올바르지 않습니다."),

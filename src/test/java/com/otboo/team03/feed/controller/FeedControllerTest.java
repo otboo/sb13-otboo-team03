@@ -3,6 +3,7 @@ package com.otboo.team03.feed.controller;
 import com.otboo.team03.clothes.dto.response.ClothesAttributeWithDefDto;
 import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
+import com.otboo.team03.feed.dto.request.FeedUpdateRequest;
 import com.otboo.team03.feed.dto.response.AuthorDto;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.dto.response.OotdDto;
@@ -36,7 +37,9 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -332,5 +335,222 @@ class FeedControllerTest {
         0,
         false
     );
+  }
+
+  @Test
+  void 작성자가_피드를_수정하면_200과_FeedDto를_반환한다()
+      throws Exception {
+    // given
+    FeedDto original = createResponse();
+
+    FeedDto updatedResponse = new FeedDto(
+        original.id(),
+        original.createdAt(),
+        original.updatedAt(),
+        original.author(),
+        original.weather(),
+        original.ootds(),
+        "수정 후 내용",
+        original.likeCount(),
+        original.commentCount(),
+        original.likedByMe()
+    );
+
+    when(feedService.update(
+        eq(feedId),
+        eq(authorId),
+        any(FeedUpdateRequest.class)
+    )).thenReturn(updatedResponse);
+
+    // when
+    var result = mockMvc.perform(
+        patch("/api/feeds/{feedId}", feedId)
+            .principal(authentication(authorId))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+              {
+                "content": "수정 후 내용"
+              }
+              """)
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(feedId.toString()))
+        .andExpect(jsonPath("$.content").value("수정 후 내용"));
+
+    verify(feedService).update(
+        feedId,
+        authorId,
+        new FeedUpdateRequest("수정 후 내용")
+    );
+  }
+
+  @Test
+  void 작성자가_피드를_삭제하면_204를_반환한다()
+      throws Exception {
+    // given
+    UUID targetFeedId = UUID.randomUUID();
+
+    // when
+    var result = mockMvc.perform(
+        delete("/api/feeds/{feedId}", targetFeedId)
+            .principal(authentication(authorId))
+    );
+
+    // then
+    result.andExpect(status().isNoContent())
+        .andExpect(content().string(""));
+
+    verify(feedService).delete(targetFeedId, authorId);
+  }
+
+  @Test
+  void 수정과_삭제에서_유효하지_않은_인증은_401을_반환한다()
+      throws Exception {
+    // given
+    Authentication[] invalidAuthentications = {
+        null,
+        new UsernamePasswordAuthenticationToken("user", null),
+        new UsernamePasswordAuthenticationToken(
+            "user", null, List.of()
+        )
+    };
+
+    // when
+    for (Authentication authentication : invalidAuthentications) {
+      var patchRequest = patch("/api/feeds/{feedId}", feedId)
+          .contentType(MediaType.APPLICATION_JSON)
+          .content("""
+            {
+              "content": "수정 내용"
+            }
+            """);
+
+      var deleteRequest = delete("/api/feeds/{feedId}", feedId);
+
+      if (authentication != null) {
+        patchRequest.principal(authentication);
+        deleteRequest.principal(authentication);
+      }
+
+      // then
+      mockMvc.perform(patchRequest)
+          .andExpect(status().isUnauthorized());
+
+      mockMvc.perform(deleteRequest)
+          .andExpect(status().isUnauthorized());
+    }
+
+    verifyNoInteractions(feedService);
+  }
+
+  @Test
+  void 피드_좋아요에_성공하면_204를_반환한다()
+      throws Exception {
+    // given
+    UUID targetFeedId = UUID.randomUUID();
+
+    // when
+    var result = mockMvc.perform(
+        post("/api/feeds/{feedId}/like", targetFeedId)
+            .principal(authentication(authorId))
+    );
+
+    // then
+    result.andExpect(status().isNoContent())
+        .andExpect(content().string(""));
+
+    verify(feedService).like(targetFeedId, authorId);
+  }
+
+  @Test
+  void 피드_좋아요_취소에_성공하면_204를_반환한다()
+      throws Exception {
+    // given
+    UUID targetFeedId = UUID.randomUUID();
+
+    // when
+    var result = mockMvc.perform(
+        delete("/api/feeds/{feedId}/like", targetFeedId)
+            .principal(authentication(authorId))
+    );
+
+    // then
+    result.andExpect(status().isNoContent())
+        .andExpect(content().string(""));
+
+    verify(feedService).unlike(targetFeedId, authorId);
+  }
+
+  @Test
+  void 좋아요_등록과_취소에서_유효하지_않은_인증은_401을_반환한다()
+      throws Exception {
+    // given
+    Authentication[] invalidAuthentications = {
+        null,
+        new UsernamePasswordAuthenticationToken("user", null),
+        new UsernamePasswordAuthenticationToken(
+            "user", null, List.of()
+        )
+    };
+
+    // when
+    for (Authentication authentication : invalidAuthentications) {
+      var postRequest = post("/api/feeds/{feedId}/like", feedId);
+      var deleteRequest = delete("/api/feeds/{feedId}/like", feedId);
+
+      if (authentication != null) {
+        postRequest.principal(authentication);
+        deleteRequest.principal(authentication);
+      }
+
+      // then
+      mockMvc.perform(postRequest)
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.exceptionName")
+              .value("AUTHENTICATION_REQUIRED"));
+
+      mockMvc.perform(deleteRequest)
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.exceptionName")
+              .value("AUTHENTICATION_REQUIRED"));
+    }
+
+    verifyNoInteractions(feedService);
+  }
+
+  @Test
+  void 존재하지_않는_피드의_좋아요_등록과_취소는_404를_반환한다()
+      throws Exception {
+    // given
+    doThrow(new OtbooException(ErrorCode.NOT_FOUND_RESOURCE))
+        .when(feedService).like(feedId, authorId);
+
+    doThrow(new OtbooException(ErrorCode.NOT_FOUND_RESOURCE))
+        .when(feedService).unlike(feedId, authorId);
+
+    // when
+    var postResult = mockMvc.perform(
+        post("/api/feeds/{feedId}/like", feedId)
+            .principal(authentication(authorId))
+    );
+
+    var deleteResult = mockMvc.perform(
+        delete("/api/feeds/{feedId}/like", feedId)
+            .principal(authentication(authorId))
+    );
+
+    // then
+    postResult.andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("NOT_FOUND_RESOURCE"));
+
+    deleteResult.andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("NOT_FOUND_RESOURCE"));
+
+    verify(feedService).like(feedId, authorId);
+    verify(feedService).unlike(feedId, authorId);
   }
 }

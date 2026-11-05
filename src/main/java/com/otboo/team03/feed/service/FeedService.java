@@ -3,11 +3,14 @@ package com.otboo.team03.feed.service;
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.repository.ClothesRepository;
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
+import com.otboo.team03.feed.dto.request.FeedUpdateRequest;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.FeedClothes;
+import com.otboo.team03.feed.entity.FeedLike;
 import com.otboo.team03.feed.mapper.FeedDtoAssembler;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
+import com.otboo.team03.feed.repository.FeedLikeRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedSearchQueryRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
@@ -37,6 +40,7 @@ public class FeedService {
   private final FeedWeatherLookupRepository weatherRepository;
   private final FeedDtoAssembler feedDtoAssembler;
   private final FeedSearchQueryRepository feedSearchQueryRepository;
+  private final FeedLikeRepository feedLikeRepository;
 
   @Transactional
   public FeedDto create(FeedCreateRequest request) {
@@ -83,6 +87,75 @@ public class FeedService {
     }
 
     return feedDtoAssembler.toDto(savedFeed, null);
+  }
+
+  @Transactional
+  public FeedDto update(
+      UUID feedId,
+      UUID requesterId,
+      FeedUpdateRequest request
+  ) {
+
+    Feed feed = feedRepository.findById(feedId)
+        .orElseThrow(
+            () -> new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
+        );
+
+
+    if (!feed.getAuthorId().equals(requesterId)) {
+      throw new OtbooException(ErrorCode.ACCESS_DENIED);
+    }
+
+
+    if (request == null
+        || request.content() == null
+        || request.content().isBlank()) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    feed.updateContent(request.content());
+
+    return feedDtoAssembler.toDto(feed, requesterId);
+  }
+
+  @Transactional
+  public void delete(UUID feedId, UUID requesterId) {
+    Feed feed = feedRepository.findById(feedId)
+        .orElseThrow(
+            () -> new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
+        );
+
+    if (!feed.getAuthorId().equals(requesterId)) {
+      throw new OtbooException(ErrorCode.ACCESS_DENIED);
+    }
+
+    feedRepository.deleteFeedLikesByFeedId(feedId);
+    feedRepository.deleteFeedCommentsByFeedId(feedId);
+    feedRepository.deleteFeedClothesByFeedId(feedId);
+
+    feedRepository.delete(feed);
+  }
+
+  @Transactional
+  public void like(UUID feedId, UUID userId) {
+    if (!feedRepository.existsById(feedId)) {
+      throw new OtbooException(ErrorCode.NOT_FOUND_RESOURCE);
+    }
+
+    if (feedLikeRepository.existsByFeedIdAndUserId(feedId, userId)) {
+      return;
+    }
+
+    feedLikeRepository.save(new FeedLike(feedId, userId));
+  }
+
+  @Transactional
+  public void unlike(UUID feedId, UUID userId) {
+    if (!feedRepository.existsById(feedId)) {
+      throw new OtbooException(ErrorCode.NOT_FOUND_RESOURCE);
+    }
+
+    feedLikeRepository.deleteByFeedIdAndUserId(feedId, userId);
   }
 
   @Transactional(readOnly = true)

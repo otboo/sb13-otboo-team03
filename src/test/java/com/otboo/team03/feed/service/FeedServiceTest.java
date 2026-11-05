@@ -4,6 +4,7 @@ import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.clothes.repository.ClothesRepository;
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
+import com.otboo.team03.feed.dto.request.FeedUpdateRequest;
 import com.otboo.team03.feed.dto.response.AuthorDto;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.dto.response.PrecipitationDto;
@@ -11,14 +12,17 @@ import com.otboo.team03.feed.dto.response.TemperatureDto;
 import com.otboo.team03.feed.dto.response.WeatherSummaryDto;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.FeedClothes;
+import com.otboo.team03.feed.entity.FeedLike;
 import com.otboo.team03.feed.mapper.FeedDtoAssembler;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
+import com.otboo.team03.feed.repository.FeedLikeRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -57,6 +61,9 @@ class FeedServiceTest {
 
   @InjectMocks
   private FeedService feedService;
+
+  @Mock
+  private FeedLikeRepository feedLikeRepository;
 
   @Test
   void 피드_생성시_의상을_연결하고_FeedDto를_반환한다() {
@@ -313,5 +320,362 @@ class FeedServiceTest {
     verify(feedRepository, never()).save(any(Feed.class));
     verify(feedClothesRepository, never()).save(any(FeedClothes.class));
     verifyNoInteractions(feedDtoAssembler);
+  }
+
+  @Test
+  void 작성자가_피드를_수정하면_변경된_내용과_응답을_반환한다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+    UUID weatherId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        weatherId,
+        "수정 전 내용"
+    );
+
+    FeedUpdateRequest request =
+        new FeedUpdateRequest("수정 후 내용");
+
+    FeedDto expectedResponse = mock(FeedDto.class);
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
+    when(feedDtoAssembler.toDto(feed, authorId))
+        .thenReturn(expectedResponse);
+
+    // when
+    FeedDto result = feedService.update(
+        feedId,
+        authorId,
+        request
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals("수정 후 내용", feed.getContent()),
+        () -> assertSame(expectedResponse, result)
+    );
+
+    verify(feedRepository).findById(feedId);
+    verify(feedDtoAssembler).toDto(feed, authorId);
+  }
+
+  @Test
+  void 존재하지_않는_피드는_수정할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID requesterId = UUID.randomUUID();
+    FeedUpdateRequest request = new FeedUpdateRequest("수정 내용");
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.empty());
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.update(feedId, requesterId, request)
+    );
+
+    // then
+    assertEquals(ErrorCode.NOT_FOUND_RESOURCE, exception.getErrorCode());
+    verifyNoInteractions(feedDtoAssembler);
+  }
+
+  @Test
+  void 작성자가_아니면_피드를_수정할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+    UUID requesterId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        UUID.randomUUID(),
+        "수정 전 내용"
+    );
+
+    FeedUpdateRequest request = new FeedUpdateRequest("수정 후 내용");
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.update(feedId, requesterId, request)
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(ErrorCode.ACCESS_DENIED, exception.getErrorCode()),
+        () -> assertEquals("수정 전 내용", feed.getContent())
+    );
+
+    verifyNoInteractions(feedDtoAssembler);
+  }
+
+  @Test
+  void 수정_내용이_공백이면_피드를_수정할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        UUID.randomUUID(),
+        "수정 전 내용"
+    );
+
+    FeedUpdateRequest request = new FeedUpdateRequest("   ");
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.update(feedId, authorId, request)
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(ErrorCode.INVALID_INPUT_VALUE, exception.getErrorCode()),
+        () -> assertEquals("수정 전 내용", feed.getContent())
+    );
+
+    verifyNoInteractions(feedDtoAssembler);
+  }
+
+  @Test
+  void 작성자가_피드를_삭제하면_저장소에서_삭제한다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        UUID.randomUUID(),
+        "삭제할 피드"
+    );
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
+    // when
+    feedService.delete(feedId, authorId);
+
+    // then
+    verify(feedRepository).findById(feedId);
+    verify(feedRepository).delete(feed);
+  }
+
+  @Test
+  void 존재하지_않는_피드는_삭제할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID requesterId = UUID.randomUUID();
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.empty());
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.delete(feedId, requesterId)
+    );
+
+    // then
+    assertEquals(ErrorCode.NOT_FOUND_RESOURCE, exception.getErrorCode());
+
+    verify(feedRepository).findById(feedId);
+    verifyNoMoreInteractions(feedRepository);
+  }
+
+  @Test
+  void 작성자가_아니면_피드를_삭제할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+    UUID requesterId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        UUID.randomUUID(),
+        "삭제하면 안 되는 피드"
+    );
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.delete(feedId, requesterId)
+    );
+
+    // then
+    assertEquals(ErrorCode.ACCESS_DENIED, exception.getErrorCode());
+
+    verify(feedRepository).findById(feedId);
+    verifyNoMoreInteractions(feedRepository);
+  }
+
+  @Test
+  void 수정_요청이나_내용이_null이면_피드를_수정할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        UUID.randomUUID(),
+        "수정 전 내용"
+    );
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
+    // when
+    OtbooException nullRequestException = assertThrows(
+        OtbooException.class,
+        () -> feedService.update(feedId, authorId, null)
+    );
+
+    OtbooException nullContentException = assertThrows(
+        OtbooException.class,
+        () -> feedService.update(
+            feedId,
+            authorId,
+            new FeedUpdateRequest(null)
+        )
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            nullRequestException.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            nullContentException.getErrorCode()
+        ),
+        () -> assertEquals("수정 전 내용", feed.getContent())
+    );
+
+    verifyNoInteractions(feedDtoAssembler);
+  }
+
+  @Test
+  void 사용자가_피드에_좋아요를_누르면_좋아요_관계가_저장된다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID userId = UUID.randomUUID();
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    // when
+    feedService.like(feedId, userId);
+
+    // then
+    verify(feedRepository).existsById(feedId);
+
+    verify(feedLikeRepository).save(argThat(
+        like -> feedId.equals(like.getFeedId())
+            && userId.equals(like.getUserId())
+    ));
+  }
+
+  @Test
+  void 사용자가_피드의_좋아요를_취소하면_좋아요_관계가_삭제된다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID userId = UUID.randomUUID();
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    // when
+    feedService.unlike(feedId, userId);
+
+    // then
+    verify(feedRepository).existsById(feedId);
+    verify(feedLikeRepository)
+        .deleteByFeedIdAndUserId(feedId, userId);
+  }
+
+  @Test
+  void 존재하지_않는_피드에는_좋아요를_등록할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID userId = UUID.randomUUID();
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(false);
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.like(feedId, userId)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.NOT_FOUND_RESOURCE,
+        exception.getErrorCode()
+    );
+
+    verifyNoInteractions(feedLikeRepository);
+  }
+
+  @Test
+  void 존재하지_않는_피드의_좋아요는_취소할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID userId = UUID.randomUUID();
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(false);
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.unlike(feedId, userId)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.NOT_FOUND_RESOURCE,
+        exception.getErrorCode()
+    );
+
+    verifyNoInteractions(feedLikeRepository);
+  }
+
+  @Test
+  void 이미_좋아요한_피드에는_좋아요를_중복_저장하지_않는다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID userId = UUID.randomUUID();
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    when(feedLikeRepository.existsByFeedIdAndUserId(feedId, userId))
+        .thenReturn(true);
+
+    // when
+    feedService.like(feedId, userId);
+
+    // then
+    verify(feedLikeRepository)
+        .existsByFeedIdAndUserId(feedId, userId);
+
+    verify(feedLikeRepository, never())
+        .save(any(FeedLike.class));
   }
 }

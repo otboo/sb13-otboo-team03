@@ -3,6 +3,7 @@ package com.otboo.team03.feed.repository;
 import com.otboo.team03.feed.entity.Feed;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -105,4 +106,25 @@ public interface FeedRepository extends JpaRepository<Feed, UUID> {
       @Param("idAfter") UUID idAfter,
       @Param("pageSize") int pageSize
   );
+
+  @Modifying
+  @Query(
+      value = "DELETE FROM feed_likes WHERE feed_id = :feedId",
+      nativeQuery = true
+  )
+  void deleteFeedLikesByFeedId(@Param("feedId") UUID feedId);
+
+  @Modifying
+  @Query(
+      value = "DELETE FROM feed_comments WHERE feed_id = :feedId",
+      nativeQuery = true
+  )
+  void deleteFeedCommentsByFeedId(@Param("feedId") UUID feedId);
+
+  @Modifying
+  @Query(
+      value = "DELETE FROM feed_clothes WHERE feed_id = :feedId",
+      nativeQuery = true
+  )
+  void deleteFeedClothesByFeedId(@Param("feedId") UUID feedId);
 }
