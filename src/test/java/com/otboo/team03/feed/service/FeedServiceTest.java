@@ -588,4 +588,22 @@ class FeedServiceTest {
             && userId.equals(like.getUserId())
     ));
   }
+
+  @Test
+  void 사용자가_피드의_좋아요를_취소하면_좋아요_관계가_삭제된다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID userId = UUID.randomUUID();
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    // when
+    feedService.unlike(feedId, userId);
+
+    // then
+    verify(feedRepository).existsById(feedId);
+    verify(feedLikeRepository)
+        .deleteByFeedIdAndUserId(feedId, userId);
+  }
 }
