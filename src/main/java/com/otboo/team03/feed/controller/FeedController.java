@@ -1,6 +1,7 @@
 package com.otboo.team03.feed.controller;
 
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
+import com.otboo.team03.feed.dto.request.FeedUpdateRequest;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.service.FeedService;
 import com.otboo.team03.global.dto.CursorResponse;
@@ -12,7 +13,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -51,6 +55,49 @@ public class FeedController {
     return ResponseEntity
         .status(HttpStatus.CREATED)
         .body(response);
+  }
+
+  @PatchMapping("/{feedId}")
+  public ResponseEntity<FeedDto> update(
+      @PathVariable UUID feedId,
+      @RequestBody FeedUpdateRequest request,
+      Authentication authentication
+  ) {
+    if (authentication == null
+        || !authentication.isAuthenticated()
+        || !(authentication.getPrincipal()
+        instanceof OtbooUserDetails userDetails)) {
+      throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
+    }
+
+    UUID requesterId = userDetails.getUserDto().id();
+
+    FeedDto response = feedService.update(
+        feedId,
+        requesterId,
+        request
+    );
+
+    return ResponseEntity.ok(response);
+  }
+
+  @DeleteMapping("/{feedId}")
+  public ResponseEntity<Void> delete(
+      @PathVariable UUID feedId,
+      Authentication authentication
+  ) {
+    if (authentication == null
+        || !authentication.isAuthenticated()
+        || !(authentication.getPrincipal()
+        instanceof OtbooUserDetails userDetails)) {
+      throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
+    }
+
+    UUID requesterId = userDetails.getUserDto().id();
+
+    feedService.delete(feedId, requesterId);
+
+    return ResponseEntity.noContent().build();
   }
 
   @GetMapping

@@ -3,6 +3,7 @@ package com.otboo.team03.feed.service;
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.repository.ClothesRepository;
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
+import com.otboo.team03.feed.dto.request.FeedUpdateRequest;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.FeedClothes;
@@ -83,6 +84,53 @@ public class FeedService {
     }
 
     return feedDtoAssembler.toDto(savedFeed, null);
+  }
+
+  @Transactional
+  public FeedDto update(
+      UUID feedId,
+      UUID requesterId,
+      FeedUpdateRequest request
+  ) {
+
+    Feed feed = feedRepository.findById(feedId)
+        .orElseThrow(
+            () -> new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
+        );
+
+
+    if (!feed.getAuthorId().equals(requesterId)) {
+      throw new OtbooException(ErrorCode.ACCESS_DENIED);
+    }
+
+
+    if (request == null
+        || request.content() == null
+        || request.content().isBlank()) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    feed.updateContent(request.content());
+
+    return feedDtoAssembler.toDto(feed, requesterId);
+  }
+
+  @Transactional
+  public void delete(UUID feedId, UUID requesterId) {
+    Feed feed = feedRepository.findById(feedId)
+        .orElseThrow(
+            () -> new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
+        );
+
+    if (!feed.getAuthorId().equals(requesterId)) {
+      throw new OtbooException(ErrorCode.ACCESS_DENIED);
+    }
+
+    feedRepository.deleteFeedLikesByFeedId(feedId);
+    feedRepository.deleteFeedCommentsByFeedId(feedId);
+    feedRepository.deleteFeedClothesByFeedId(feedId);
+
+    feedRepository.delete(feed);
   }
 
   @Transactional(readOnly = true)
