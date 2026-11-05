@@ -3,10 +3,13 @@ package com.otboo.team03.feed.mapper;
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.clothes.repository.ClothesRepository;
+import com.otboo.team03.feed.dto.response.CommentDto;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.FeedClothes;
+import com.otboo.team03.feed.entity.FeedComment;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
+import com.otboo.team03.feed.repository.FeedCommentRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
@@ -41,6 +44,9 @@ class FeedDtoAssemblerTest extends com.otboo.team03.support.PostgresTestSupport 
 
   @Autowired
   private FeedClothesRepository feedClothesRepository;
+
+  @Autowired
+  private FeedCommentRepository feedCommentRepository;
 
   @Autowired
   private JdbcTemplate jdbcTemplate;
@@ -234,4 +240,89 @@ class FeedDtoAssemblerTest extends com.otboo.team03.support.PostgresTestSupport 
         "SELECT count(*) FROM feed_clothes WHERE feed_id = ?", Integer.class, feedId));
   }
 
+  @Test
+  void 댓글_작성자와_생성시각이_CommentDto에_반영된다() {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "댓글 작성자"
+        )
+    );
+
+    Timestamp now = Timestamp.from(Instant.now());
+
+    jdbcTemplate.update("""
+      INSERT INTO profiles (
+          user_id, profile_image_url,
+          created_at, updated_at
+      ) VALUES (?, ?, ?, ?)
+      """,
+        author.getId(),
+        "/images/profile.png",
+        now,
+        now
+    );
+
+    UUID weatherId = UUID.randomUUID();
+
+    jdbcTemplate.update("""
+      INSERT INTO weathers (
+          id, latitude, longitude,
+          forecasted_at, forecast_at,
+          sky_status, precipitation_type,
+          precipitation_amount, precipitation_probability,
+          temperature, humidity, wind_speed,
+          created_at, updated_at
+      ) VALUES (
+          ?, 35.2, 129.1,
+          ?, ?, 'CLEAR', 'NONE',
+          0, 0, 20, 50, 1,
+          ?, ?
+      )
+      """,
+        weatherId, now, now, now, now
+    );
+
+    Feed feed = feedRepository.saveAndFlush(
+        new Feed(author.getId(), weatherId, "오늘의 코디")
+    );
+
+    FeedComment comment = feedCommentRepository.saveAndFlush(
+        new FeedComment(
+            feed.getId(),
+            author.getId(),
+            "좋은 코디네요!"
+        )
+    );
+
+    // when
+    CommentDto result = assembler.toCommentDto(comment);
+
+    // then
+    assertAll(
+        () -> assertNotNull(result.id()),
+        () -> assertNotNull(result.createdAt()),
+        () -> assertEquals(comment.getId(), result.id()),
+        () -> assertEquals(
+            comment.getCreatedAt(),
+            result.createdAt()
+        ),
+        () -> assertEquals(feed.getId(), result.feedId()),
+        () -> assertEquals(
+            author.getId(),
+            result.author().userId()
+        ),
+        () -> assertEquals(
+            "댓글 작성자",
+            result.author().name()
+        ),
+        () -> assertEquals(
+            "/images/profile.png",
+            result.author().profileImageUrl()
+        ),
+        () -> assertEquals("좋은 코디네요!", result.content())
+    );
+  }
 }
