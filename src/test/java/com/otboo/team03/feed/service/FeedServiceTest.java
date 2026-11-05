@@ -941,4 +941,103 @@ class FeedServiceTest {
 
     verify(feedDtoAssembler, never()).toCommentDto(thirdComment);
   }
+
+  @Test
+  void 댓글_커서_기반_두_번째_페이지를_조회한다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+    UUID idAfter = UUID.randomUUID();
+
+    Instant cursorTime = Instant.parse("2026-11-05T03:00:00Z");
+    Instant firstTime = Instant.parse("2026-11-05T02:00:00Z");
+    Instant secondTime = Instant.parse("2026-11-05T01:00:00Z");
+
+    UUID firstId = UUID.randomUUID();
+    UUID secondId = UUID.randomUUID();
+
+    FeedComment firstComment = mock(FeedComment.class);
+    FeedComment secondComment = mock(FeedComment.class);
+    FeedComment thirdComment = mock(FeedComment.class);
+
+    CommentDto firstDto = new CommentDto(
+        firstId,
+        firstTime,
+        feedId,
+        new AuthorDto(authorId, "작성자", null),
+        "세 번째 댓글"
+    );
+
+    CommentDto secondDto = new CommentDto(
+        secondId,
+        secondTime,
+        feedId,
+        new AuthorDto(authorId, "작성자", null),
+        "네 번째 댓글"
+    );
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    when(feedCommentRepository.findNextPage(
+        feedId,
+        cursorTime,
+        idAfter,
+        3
+    )).thenReturn(List.of(
+        firstComment,
+        secondComment,
+        thirdComment
+    ));
+
+    when(feedCommentRepository.countByFeedId(feedId))
+        .thenReturn(5L);
+
+    when(feedDtoAssembler.toCommentDto(firstComment))
+        .thenReturn(firstDto);
+
+    when(feedDtoAssembler.toCommentDto(secondComment))
+        .thenReturn(secondDto);
+
+    when(secondComment.getCreatedAt())
+        .thenReturn(secondTime);
+
+    when(secondComment.getId())
+        .thenReturn(secondId);
+
+    // when
+    CursorResponse<CommentDto> result = feedService.getFeedComments(
+        feedId,
+        2,
+        cursorTime.toString(),
+        idAfter
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(List.of(firstDto, secondDto), result.data()),
+        () -> assertEquals(secondTime.toString(), result.nextCursor()),
+        () -> assertEquals(secondId, result.nextIdAfter()),
+        () -> assertTrue(result.hasNext()),
+        () -> assertEquals(5L, result.totalCount()),
+        () -> assertEquals("createdAt", result.sortBy()),
+        () -> assertEquals("DESCENDING", result.sortDirection())
+    );
+
+    verify(feedCommentRepository).findNextPage(
+        feedId,
+        cursorTime,
+        idAfter,
+        3
+    );
+
+    verify(feedCommentRepository, never())
+        .findByFeedIdOrderByCreatedAtDescIdDesc(
+            any(UUID.class),
+            any(PageRequest.class)
+        );
+
+    verify(feedDtoAssembler, never())
+        .toCommentDto(thirdComment);
+  }
 }
