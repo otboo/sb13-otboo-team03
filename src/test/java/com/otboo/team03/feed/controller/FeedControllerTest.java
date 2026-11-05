@@ -624,4 +624,170 @@ class FeedControllerTest {
         )
     );
   }
+
+  @Test
+  void 댓글_등록에서_유효하지_않은_인증은_401을_반환한다()
+      throws Exception {
+    // given
+    Authentication[] invalidAuthentications = {
+        null,
+        new UsernamePasswordAuthenticationToken("user", null),
+        new UsernamePasswordAuthenticationToken(
+            "user", null, List.of()
+        )
+    };
+
+    String requestJson = """
+      {
+        "feedId": "%s",
+        "authorId": "%s",
+        "content": "좋은 코디네요!"
+      }
+      """.formatted(feedId, authorId);
+
+    // when
+    for (Authentication authentication : invalidAuthentications) {
+      var request = post("/api/feeds/{feedId}/comments", feedId)
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(requestJson);
+
+      if (authentication != null) {
+        request.principal(authentication);
+      }
+
+      // then
+      mockMvc.perform(request)
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.exceptionName")
+              .value("AUTHENTICATION_REQUIRED"));
+    }
+
+    verifyNoInteractions(feedService);
+  }
+
+  @Test
+  void 댓글_작성자가_인증_사용자와_다르면_403을_반환한다()
+      throws Exception {
+    // given
+    UUID otherAuthorId = UUID.randomUUID();
+
+    CommentCreateRequest request = new CommentCreateRequest(
+        feedId,
+        otherAuthorId,
+        "좋은 코디네요!"
+    );
+
+    when(feedService.createComment(feedId, authorId, request))
+        .thenThrow(new OtbooException(ErrorCode.ACCESS_DENIED));
+
+    String requestJson = """
+      {
+        "feedId": "%s",
+        "authorId": "%s",
+        "content": "좋은 코디네요!"
+      }
+      """.formatted(feedId, otherAuthorId);
+
+    // when
+    var result = mockMvc.perform(
+        post("/api/feeds/{feedId}/comments", feedId)
+            .principal(authentication(authorId))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(requestJson)
+    );
+
+    // then
+    result.andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("ACCESS_DENIED"));
+
+    verify(feedService).createComment(feedId, authorId, request);
+  }
+
+  @Test
+  void 존재하지_않는_피드에_댓글을_등록하면_404를_반환한다()
+      throws Exception {
+    // given
+    UUID nonexistentFeedId = UUID.randomUUID();
+
+    CommentCreateRequest request = new CommentCreateRequest(
+        nonexistentFeedId,
+        authorId,
+        "좋은 코디네요!"
+    );
+
+    when(feedService.createComment(
+        nonexistentFeedId,
+        authorId,
+        request
+    )).thenThrow(
+        new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
+    );
+
+    String requestJson = """
+      {
+        "feedId": "%s",
+        "authorId": "%s",
+        "content": "좋은 코디네요!"
+      }
+      """.formatted(nonexistentFeedId, authorId);
+
+    // when
+    var result = mockMvc.perform(
+        post("/api/feeds/{feedId}/comments", nonexistentFeedId)
+            .principal(authentication(authorId))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(requestJson)
+    );
+
+    // then
+    result.andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("NOT_FOUND_RESOURCE"));
+
+    verify(feedService).createComment(
+        nonexistentFeedId,
+        authorId,
+        request
+    );
+  }
+
+  @Test
+  void 공백_댓글을_등록하면_400을_반환한다()
+      throws Exception {
+    // given
+    CommentCreateRequest request = new CommentCreateRequest(
+        feedId,
+        authorId,
+        "   "
+    );
+
+    when(feedService.createComment(feedId, authorId, request))
+        .thenThrow(
+            new OtbooException(ErrorCode.INVALID_INPUT_VALUE)
+        );
+
+    String requestJson = """
+      {
+        "feedId": "%s",
+        "authorId": "%s",
+        "content": "   "
+      }
+      """.formatted(feedId, authorId);
+
+    // when
+    var result = mockMvc.perform(
+        post("/api/feeds/{feedId}/comments", feedId)
+            .principal(authentication(authorId))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(requestJson)
+    );
+
+    // then
+    result.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    verify(feedService).createComment(feedId, authorId, request);
+  }
 }
