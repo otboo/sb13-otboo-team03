@@ -34,14 +34,7 @@ public class FeedDtoAssembler {
   private final ObjectProvider<ImageStorage> imageStorageProvider;
 
   public FeedDto toDto(Feed feed, UUID viewerId) {
-    User author = userRepository.findById(feed.getAuthorId())
-        .orElseThrow(UserNotFoundException::new);
-
-    AuthorDto authorDto = new AuthorDto(
-        author.getId(),
-        author.getName(),
-        findProfileImageUrl(author.getId())
-    );
+    AuthorDto authorDto = toAuthorDto(feed.getAuthorId());
 
     List<OotdDto> ootds = feedClothesRepository
         .findAllByFeed_Id(feed.getId())
@@ -154,21 +147,23 @@ public class FeedDtoAssembler {
   }
 
   public CommentDto toCommentDto(FeedComment comment) {
-    User author = userRepository.findById(comment.getAuthorId())
-        .orElseThrow(UserNotFoundException::new);
-
-    AuthorDto authorDto = new AuthorDto(
-        author.getId(),
-        author.getName(),
-        findProfileImageUrl(author.getId())
-    );
-
     return new CommentDto(
         comment.getId(),
         comment.getCreatedAt(),
         comment.getFeedId(),
-        authorDto,
+        toAuthorDto(comment.getAuthorId()),
         comment.getContent()
+    );
+  }
+
+  private AuthorDto toAuthorDto(UUID authorId) {
+    User author = userRepository.findById(authorId)
+        .orElseThrow(UserNotFoundException::new);
+
+    return new AuthorDto(
+        author.getId(),
+        author.getName(),
+        findProfileImageUrl(author.getId())
     );
   }
 }
