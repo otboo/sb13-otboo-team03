@@ -25,6 +25,7 @@ import com.otboo.team03.user.repository.UserRepository;
 import java.time.Instant;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -391,5 +392,63 @@ public class FeedService {
         || new HashSet<>(clothesIds).size() != clothesIds.size())) {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
     }
+  }
+
+  @Transactional(readOnly = true)
+  public CursorResponse<CommentDto> getFeedComments(
+      UUID feedId,
+      int limit,
+      String cursor,
+      UUID idAfter
+  ) {
+    if (!feedRepository.existsById(feedId)) {
+      throw new OtbooException(ErrorCode.NOT_FOUND_RESOURCE);
+    }
+
+    if (limit <= 0 || limit == Integer.MAX_VALUE) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if (cursor != null || idAfter != null) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    List<FeedComment> fetched =
+        feedCommentRepository.findByFeedIdOrderByCreatedAtDescIdDesc(
+            feedId,
+            PageRequest.of(0, limit + 1)
+        );
+
+    boolean hasNext = fetched.size() > limit;
+
+    List<FeedComment> page = hasNext
+        ? fetched.subList(0, limit)
+        : fetched;
+
+    List<CommentDto> data = page.stream()
+        .map(feedDtoAssembler::toCommentDto)
+        .toList();
+
+    String nextCursor = null;
+    UUID nextIdAfter = null;
+
+    if (hasNext) {
+      FeedComment lastComment = page.get(page.size() - 1);
+
+      nextCursor = lastComment.getCreatedAt().toString();
+      nextIdAfter = lastComment.getId();
+    }
+
+    long totalCount = feedCommentRepository.countByFeedId(feedId);
+
+    return new CursorResponse<>(
+        data,
+        nextCursor,
+        nextIdAfter,
+        hasNext,
+        totalCount,
+        "createdAt",
+        "DESCENDING"
+    );
   }
 }
