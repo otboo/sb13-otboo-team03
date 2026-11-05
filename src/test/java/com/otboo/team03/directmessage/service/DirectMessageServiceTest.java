@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -64,6 +65,60 @@ class DirectMessageServiceTest {
 
         assertThatThrownBy(() -> directMessageService.send(userId, userId, "메시지"))
                 .isInstanceOf(OtbooException.class);
+    }
+
+    @Test
+    void 발신자_사용자가_없으면_DM을_전송할_수_없다() {
+        UUID senderId = UUID.randomUUID();
+        UUID receiverId = UUID.randomUUID();
+        when(userRepository.findById(senderId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> directMessageService.send(senderId, receiverId, "메시지"))
+                .isInstanceOf(RuntimeException.class);
+
+        verifyNoInteractions(directMessageRepository);
+    }
+
+    @Test
+    void 수신자_사용자가_없으면_DM을_전송할_수_없다() {
+        UUID senderId = UUID.randomUUID();
+        UUID receiverId = UUID.randomUUID();
+        User sender = mock(User.class);
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(receiverId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> directMessageService.send(senderId, receiverId, "메시지"))
+                .isInstanceOf(RuntimeException.class);
+
+        verifyNoInteractions(directMessageRepository);
+    }
+
+    @Test
+    void 비어_있는_메시지는_전송할_수_없다() {
+        assertThatThrownBy(() -> directMessageService.send(
+                UUID.randomUUID(), UUID.randomUUID(), "   "
+        )).isInstanceOf(OtbooException.class);
+    }
+
+    @Test
+    void 발신자_ID가_null이면_DM을_전송할_수_없다() {
+        assertThatThrownBy(() -> directMessageService.send(
+                null, UUID.randomUUID(), "메시지"
+        )).isInstanceOf(OtbooException.class);
+    }
+
+    @Test
+    void 수신자_ID가_null이면_DM을_전송할_수_없다() {
+        assertThatThrownBy(() -> directMessageService.send(
+                UUID.randomUUID(), null, "메시지"
+        )).isInstanceOf(OtbooException.class);
+    }
+
+    @Test
+    void 천_자를_초과한_메시지는_전송할_수_없다() {
+        assertThatThrownBy(() -> directMessageService.send(
+                UUID.randomUUID(), UUID.randomUUID(), "a".repeat(1_001)
+        )).isInstanceOf(OtbooException.class);
     }
 
     @Test
@@ -112,6 +167,59 @@ class DirectMessageServiceTest {
     }
 
     @Test
+    void 다음_페이지가_있으면_다음_커서를_반환한다() {
+        UUID requesterId = UUID.randomUUID();
+        UUID otherUserId = UUID.randomUUID();
+        DirectMessage firstMessage = mockMessage(requesterId, otherUserId, "첫 번째");
+        DirectMessage extraMessage = mock(DirectMessage.class);
+        String dmKey = DirectMessage.createDmKey(requesterId, otherUserId);
+
+        when(directMessageRepository.findByDmKeyOrderByCreatedAtDescIdDesc(
+                eq(dmKey), any(Pageable.class)
+        )).thenReturn(List.of(firstMessage, extraMessage));
+        when(directMessageRepository.countByDmKey(dmKey)).thenReturn(2L);
+
+        var result = directMessageService.getMessages(
+                requesterId, otherUserId, null, null, 1
+        );
+
+        assertThat(result.data()).hasSize(1);
+        assertThat(result.hasNext()).isTrue();
+        assertThat(result.nextCursor()).isEqualTo(firstMessage.getCreatedAt().toString());
+        assertThat(result.nextIdAfter()).isEqualTo(firstMessage.getId());
+    }
+
+    @Test
+    void 조회_limit이_0이면_거부한다() {
+        assertThatThrownBy(() -> directMessageService.getMessages(
+                UUID.randomUUID(), UUID.randomUUID(), null, null, 0
+        )).isInstanceOf(OtbooException.class);
+    }
+
+    @Test
+    void 요청자와_상대방이_같으면_대화를_조회할_수_없다() {
+        UUID userId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> directMessageService.getMessages(
+                userId, userId, null, null, 20
+        )).isInstanceOf(OtbooException.class);
+    }
+
+    @Test
+    void 요청자_ID가_null이면_대화를_조회할_수_없다() {
+        assertThatThrownBy(() -> directMessageService.getMessages(
+                null, UUID.randomUUID(), null, null, 20
+        )).isInstanceOf(OtbooException.class);
+    }
+
+    @Test
+    void 상대방_ID가_null이면_대화를_조회할_수_없다() {
+        assertThatThrownBy(() -> directMessageService.getMessages(
+                UUID.randomUUID(), null, null, null, 20
+        )).isInstanceOf(OtbooException.class);
+    }
+
+    @Test
     void 커서와_ID가_짝지어_전달되지_않으면_거부한다() {
         assertThatThrownBy(() -> directMessageService.getMessages(
                 UUID.randomUUID(), UUID.randomUUID(), Instant.now(), null, 20
@@ -132,6 +240,8 @@ class DirectMessageServiceTest {
         when(message.getReceiver()).thenReturn(receiver);
         when(message.getContent()).thenReturn(content);
         when(message.getDmKey()).thenReturn(DirectMessage.createDmKey(senderId, receiverId));
+        when(message.getId()).thenReturn(UUID.randomUUID());
+        when(message.getCreatedAt()).thenReturn(Instant.now());
         return message;
     }
 }

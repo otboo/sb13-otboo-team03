@@ -27,6 +27,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -113,6 +114,83 @@ class DirectMessageControllerTest {
                         .content("{\"receiverId\":\"" + UUID.randomUUID()
                                 + "\",\"content\":\"메시지\"}"))
                 .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(directMessageService);
+    }
+
+    @Test
+    void 인증되지_않은_사용자는_DM을_조회할_수_없다() throws Exception {
+        mockMvc.perform(get("/api/direct-messages")
+                        .param("userId", UUID.randomUUID().toString())
+                        .param("limit", "20"))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(directMessageService);
+    }
+
+    @Test
+    void 인증되지_않은_Authentication은_거부한다() throws Exception {
+        org.springframework.security.core.Authentication authentication = mock(
+                org.springframework.security.core.Authentication.class
+        );
+        when(authentication.isAuthenticated()).thenReturn(false);
+
+        mockMvc.perform(post("/api/direct-messages")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"receiverId\":\"" + UUID.randomUUID()
+                                + "\",\"content\":\"메시지\"}")
+                        .principal(authentication))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(directMessageService);
+    }
+
+    @Test
+    void 잘못된_인증_주체는_거부한다() throws Exception {
+        org.springframework.security.core.Authentication authentication =
+                new UsernamePasswordAuthenticationToken("wrong-principal", null, List.of());
+
+        mockMvc.perform(post("/api/direct-messages")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"receiverId\":\"" + UUID.randomUUID()
+                                + "\",\"content\":\"메시지\"}")
+                        .principal(authentication))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(directMessageService);
+    }
+
+    @Test
+    void 수신자_ID가_없는_요청은_거부한다() throws Exception {
+        mockMvc.perform(post("/api/direct-messages")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"content\":\"메시지\"}")
+                        .principal(authentication()))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(directMessageService);
+    }
+
+    @Test
+    void 빈_메시지_요청은_거부한다() throws Exception {
+        mockMvc.perform(post("/api/direct-messages")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"receiverId\":\"" + UUID.randomUUID()
+                                + "\",\"content\":\"   \"}")
+                        .principal(authentication()))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(directMessageService);
+    }
+
+    @Test
+    void 천_자를_초과한_메시지_요청은_거부한다() throws Exception {
+        mockMvc.perform(post("/api/direct-messages")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"receiverId\":\"" + UUID.randomUUID()
+                                + "\",\"content\":\"" + "a".repeat(1_001) + "\"}")
+                        .principal(authentication()))
+                .andExpect(status().isBadRequest());
 
         verifyNoInteractions(directMessageService);
     }
