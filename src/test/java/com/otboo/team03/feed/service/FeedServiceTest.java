@@ -741,4 +741,66 @@ class FeedServiceTest {
 
     verifyNoInteractions(feedCommentRepository);
   }
+
+  @Test
+  void 댓글_요청의_피드_ID가_경로와_다르면_등록할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID otherFeedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+
+    CommentCreateRequest request = new CommentCreateRequest(
+        otherFeedId,
+        authorId,
+        "좋은 코디네요!"
+    );
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.createComment(feedId, authorId, request)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.INVALID_INPUT_VALUE,
+        exception.getErrorCode()
+    );
+
+    verifyNoInteractions(feedCommentRepository);
+  }
+
+  @Test
+  void 댓글_작성자_ID가_인증_사용자와_다르면_등록할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+    UUID otherAuthorId = UUID.randomUUID();
+
+    CommentCreateRequest request = new CommentCreateRequest(
+        feedId,
+        otherAuthorId,
+        "좋은 코디네요!"
+    );
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.createComment(feedId, authorId, request)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.ACCESS_DENIED,
+        exception.getErrorCode()
+    );
+
+    verifyNoInteractions(feedCommentRepository);
+  }
 }
