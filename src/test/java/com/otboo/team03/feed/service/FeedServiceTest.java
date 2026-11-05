@@ -7,12 +7,14 @@ import com.otboo.team03.feed.dto.request.FeedCreateRequest;
 import com.otboo.team03.feed.dto.request.FeedUpdateRequest;
 import com.otboo.team03.feed.dto.request.CommentCreateRequest;
 import com.otboo.team03.feed.dto.response.AuthorDto;
+import com.otboo.team03.feed.dto.response.CommentDto;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.dto.response.PrecipitationDto;
 import com.otboo.team03.feed.dto.response.TemperatureDto;
 import com.otboo.team03.feed.dto.response.WeatherSummaryDto;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.FeedClothes;
+import com.otboo.team03.feed.entity.FeedComment;
 import com.otboo.team03.feed.entity.FeedLike;
 import com.otboo.team03.feed.mapper.FeedDtoAssembler;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
@@ -802,5 +804,52 @@ class FeedServiceTest {
     );
 
     verifyNoInteractions(feedCommentRepository);
+  }
+
+  @Test
+  void 댓글_등록에_성공하면_CommentDto를_반환한다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+
+    CommentCreateRequest request = new CommentCreateRequest(
+        feedId,
+        authorId,
+        "좋은 코디네요!"
+    );
+
+    CommentDto expectedResponse = new CommentDto(
+        UUID.randomUUID(),
+        Instant.now(),
+        feedId,
+        new AuthorDto(
+            authorId,
+            "댓글 작성자",
+            "/images/profile.png"
+        ),
+        "좋은 코디네요!"
+    );
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    when(feedCommentRepository.save(any(FeedComment.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    when(feedDtoAssembler.toCommentDto(any(FeedComment.class)))
+        .thenReturn(expectedResponse);
+
+    // when
+    CommentDto result = feedService.createComment(
+        feedId,
+        authorId,
+        request
+    );
+
+    // then
+    assertEquals(expectedResponse, result);
+
+    verify(feedCommentRepository).save(any(FeedComment.class));
+    verify(feedDtoAssembler).toCommentDto(any(FeedComment.class));
   }
 }
