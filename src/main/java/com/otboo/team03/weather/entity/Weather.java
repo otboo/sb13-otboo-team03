@@ -12,6 +12,8 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 // 기상청 / OpenWeatherMap 단기예보 기반 날씨 데이터 엔티티
 @Entity
@@ -42,23 +44,28 @@ public class Weather extends UpdateEntity {
   @Column(name = "precipitation_type", nullable = false, length = 30)
   private PrecipitationType precipitationType;
 
-  // 강수량 (mm)
+  // 강수량 (mm) - DB: NUMERIC(7, 2)
+  @JdbcTypeCode(SqlTypes.NUMERIC)
   @Column(name = "precipitation_amount", nullable = false)
   private Double precipitationAmount;
 
-  // 강수 확률 (%)
+  // 강수 확률 (%) - DB: NUMERIC(5, 2)
+  @JdbcTypeCode(SqlTypes.NUMERIC)
   @Column(name = "precipitation_probability", nullable = false)
   private Double precipitationProbability;
 
-  // 기온 (℃)
+  // 기온 (℃) - DB: NUMERIC(5, 2)
+  @JdbcTypeCode(SqlTypes.NUMERIC)
   @Column(nullable = false)
   private Double temperature;
 
-  // 습도 (%)
+  // 습도 (%) - DB: NUMERIC(5, 2)
+  @JdbcTypeCode(SqlTypes.NUMERIC)
   @Column(nullable = false)
   private Double humidity;
 
-  // 풍속 (m/s)
+  // 풍속 (m/s) - DB: NUMERIC(6, 2)
+  @JdbcTypeCode(SqlTypes.NUMERIC)
   @Column(name = "wind_speed", nullable = false)
   private Double windSpeed;
 
