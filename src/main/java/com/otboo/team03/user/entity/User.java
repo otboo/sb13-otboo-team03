@@ -44,4 +44,8 @@ public class User extends UpdateEntity {
     public void changePassword(String encodedPassword) {
         this.password = encodedPassword;
     }
+
+    public void changeLocked(boolean locked) {
+        this.locked = locked;
+    }
 }
