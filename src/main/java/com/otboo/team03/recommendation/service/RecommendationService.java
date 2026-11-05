@@ -7,6 +7,8 @@ import com.otboo.team03.feed.dto.response.OotdDto;
 import com.otboo.team03.profile.service.ProfileService;
 import com.otboo.team03.recommendation.algorithm.BasicOutfitAlgorithm;
 import com.otboo.team03.recommendation.dto.RecommendationDto;
+import com.otboo.team03.weather.exception.WeatherNotFoundException;
+import com.otboo.team03.weather.repository.WeatherRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,14 +21,16 @@ import java.util.UUID;
 @Transactional(readOnly = true)
 public class RecommendationService {
 
-    private final ProfileService profileService;
     private final ClothesRepository clothesRepository;
+    private final WeatherRepository weatherRepository;
+    private final ProfileService profileService;
     private final ClothesService clothesService;
     private final BasicOutfitAlgorithm algorithm;
 
     public RecommendationDto recommend(UUID weatherId, UUID userId) {
-        // weatherId에 해당하는 날씨 정보 찾음. weather 로직이 추가되면 수정
-        double temperature = 17.0;
+        Double temperature = weatherRepository.findById(weatherId)
+                .orElseThrow(WeatherNotFoundException::new)
+                .getTemperature();
 
         Integer sensitivity = profileService.getProfile(userId).temperatureSensitivity();
         int effectiveSensitivity = sensitivity != null ? sensitivity : 3;
