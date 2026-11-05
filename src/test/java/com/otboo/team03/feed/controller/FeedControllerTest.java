@@ -2,9 +2,11 @@ package com.otboo.team03.feed.controller;
 
 import com.otboo.team03.clothes.dto.response.ClothesAttributeWithDefDto;
 import com.otboo.team03.clothes.entity.ClothesType;
+import com.otboo.team03.feed.dto.request.CommentCreateRequest;
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
 import com.otboo.team03.feed.dto.request.FeedUpdateRequest;
 import com.otboo.team03.feed.dto.response.AuthorDto;
+import com.otboo.team03.feed.dto.response.CommentDto;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.dto.response.OotdDto;
 import com.otboo.team03.feed.dto.response.PrecipitationDto;
@@ -552,5 +554,74 @@ class FeedControllerTest {
 
     verify(feedService).like(feedId, authorId);
     verify(feedService).unlike(feedId, authorId);
+  }
+
+  @Test
+  void 피드_댓글_등록에_성공하면_200과_CommentDto를_반환한다()
+      throws Exception {
+    // given
+    UUID commentId = UUID.randomUUID();
+    Instant createdAt = Instant.parse("2026-11-05T00:00:00Z");
+
+    CommentDto expectedResponse = new CommentDto(
+        commentId,
+        createdAt,
+        feedId,
+        new AuthorDto(
+            authorId,
+            "테스트 사용자",
+            "/images/profile.png"
+        ),
+        "좋은 코디네요!"
+    );
+
+    when(feedService.createComment(
+        eq(feedId),
+        eq(authorId),
+        any(CommentCreateRequest.class)
+    )).thenReturn(expectedResponse);
+
+    String requestJson = """
+      {
+        "feedId": "%s",
+        "authorId": "%s",
+        "content": "좋은 코디네요!"
+      }
+      """.formatted(feedId, authorId);
+
+    // when
+    var result = mockMvc.perform(
+        post("/api/feeds/{feedId}/comments", feedId)
+            .principal(authentication(authorId))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(requestJson)
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.id")
+            .value(commentId.toString()))
+        .andExpect(jsonPath("$.createdAt")
+            .value(createdAt.toString()))
+        .andExpect(jsonPath("$.feedId")
+            .value(feedId.toString()))
+        .andExpect(jsonPath("$.author.userId")
+            .value(authorId.toString()))
+        .andExpect(jsonPath("$.author.name")
+            .value("테스트 사용자"))
+        .andExpect(jsonPath("$.author.profileImageUrl")
+            .value("/images/profile.png"))
+        .andExpect(jsonPath("$.content")
+            .value("좋은 코디네요!"));
+
+    verify(feedService).createComment(
+        feedId,
+        authorId,
+        new CommentCreateRequest(
+            feedId,
+            authorId,
+            "좋은 코디네요!"
+        )
+    );
   }
 }
