@@ -168,11 +168,15 @@ public class FeedService {
       UUID authorId,
       CommentCreateRequest request
   ) {
-
     if (!feedRepository.existsById(feedId)) {
       throw new OtbooException(ErrorCode.NOT_FOUND_RESOURCE);
     }
 
+    if (request == null
+        || request.content() == null
+        || request.content().isBlank()) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
 
     FeedComment comment = new FeedComment(
         feedId,
