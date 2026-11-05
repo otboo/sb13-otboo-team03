@@ -711,4 +711,34 @@ class FeedServiceTest {
             && "좋은 코디네요!".equals(comment.getContent())
     ));
   }
+
+  @Test
+  void 공백으로만_이루어진_댓글은_등록할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+
+    CommentCreateRequest request = new CommentCreateRequest(
+        feedId,
+        authorId,
+        "   "
+    );
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.createComment(feedId, authorId, request)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.INVALID_INPUT_VALUE,
+        exception.getErrorCode()
+    );
+
+    verifyNoInteractions(feedCommentRepository);
+  }
 }
