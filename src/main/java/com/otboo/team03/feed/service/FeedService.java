@@ -145,6 +145,15 @@ public class FeedService {
     feedLikeRepository.save(new FeedLike(feedId, userId));
   }
 
+  @Transactional
+  public void unlike(UUID feedId, UUID userId) {
+    if (!feedRepository.existsById(feedId)) {
+      throw new OtbooException(ErrorCode.NOT_FOUND_RESOURCE);
+    }
+
+    feedLikeRepository.deleteByFeedIdAndUserId(feedId, userId);
+  }
+
   @Transactional(readOnly = true)
   public CursorResponse<FeedDto> getFeedList(
       int limit,

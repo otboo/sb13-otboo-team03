@@ -7,4 +7,6 @@ import java.util.UUID;
 
 public interface FeedLikeRepository
     extends JpaRepository<FeedLike, UUID> {
+
+  void deleteByFeedIdAndUserId(UUID feedId, UUID userId);
 }
