@@ -23,6 +23,7 @@ import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.repository.UserRepository;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -409,15 +410,34 @@ public class FeedService {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
     }
 
-    if (cursor != null || idAfter != null) {
+    if ((cursor == null) != (idAfter == null)) {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
     }
 
-    List<FeedComment> fetched =
-        feedCommentRepository.findByFeedIdOrderByCreatedAtDescIdDesc(
-            feedId,
-            PageRequest.of(0, limit + 1)
-        );
+    List<FeedComment> fetched;
+
+    if (cursor == null) {
+      fetched =
+          feedCommentRepository.findByFeedIdOrderByCreatedAtDescIdDesc(
+              feedId,
+              PageRequest.of(0, limit + 1)
+          );
+    } else {
+      Instant cursorTime;
+
+      try {
+        cursorTime = Instant.parse(cursor);
+      } catch (DateTimeParseException ex) {
+        throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+      }
+
+      fetched = feedCommentRepository.findNextPage(
+          feedId,
+          cursorTime,
+          idAfter,
+          limit + 1
+      );
+    }
 
     boolean hasNext = fetched.size() > limit;
 
