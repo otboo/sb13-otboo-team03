@@ -3,6 +3,8 @@ package com.otboo.team03.global.security.jwt;
 
 import com.otboo.team03.global.config.RetryConfig;
 import com.otboo.team03.global.redis.RedisLockProvider;
+import com.otboo.team03.global.redis.RedisLockProvider.RedisLockAcquisitionException;
+import com.otboo.team03.user.dto.response.UserDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -97,6 +99,64 @@ class RedisJwtRegistryRetryTest {
             verify(listOperations, times(3)).range(userKey, 0, -1);
             verify(redisLockProvider, times(3)).acquireLock(userId.toString());
             verify(redisLockProvider, times(3)).releaseLock(userId.toString(), "lock-value");
+        }
+
+        @Test
+        @DisplayName("분산 락 획득 실패 후 재시도하여 JWT 세션 무효화에 성공한다")
+        void invalidateJwtInformationByUserId_lockAcquisitionFailure_retriesSuccessfully() {
+            // given
+            UUID userId = UUID.randomUUID();
+            String userKey = "jwt:user:" + userId;
+
+            when(redisLockProvider.acquireLock(userId.toString()))
+                    .thenThrow(new RedisLockAcquisitionException("분산 락 획득 실패"))
+                    .thenReturn("lock-value");
+
+            when(redisTemplate.opsForList()).thenReturn(listOperations);
+            when(listOperations.range(userKey, 0, -1)).thenReturn(List.of());
+
+            // when
+            assertThatCode(() -> jwtRegistry.invalidateJwtInformationByUserId(userId))
+                    .doesNotThrowAnyException();
+
+            // then
+            verify(redisLockProvider, times(2)).acquireLock(userId.toString());
+            verify(redisLockProvider).releaseLock(userId.toString(), "lock-value");
+            verify(redisTemplate).delete(userKey);
+        }
+
+        @Test
+        @DisplayName("일부 토큰 인덱스 삭제 후 Redis 장애가 발생하면 재시도하여 무효화를 완료한다")
+        void invalidateJwtInformationByUserId_partialFailure_retriesSuccessfully() {
+            // given
+            UUID userId = UUID.randomUUID();
+            String userKey = "jwt:user:" + userId;
+
+            JwtInformation information = new JwtInformation(
+                    mock(UserDto.class),
+                    "access-token",
+                    "refresh-token"
+            );
+
+            when(redisLockProvider.acquireLock(userId.toString())).thenReturn("lock-value");
+            when(redisTemplate.opsForList()).thenReturn(listOperations);
+            when(listOperations.range(userKey, 0, -1)).thenReturn(List.of(information));
+
+            when(redisTemplate.delete(startsWith("jwt:refresh:")))
+                    .thenThrow(new RedisConnectionFailureException("Refresh Token 인덱스 삭제 실패"))
+                    .thenReturn(true);
+
+            // when
+            assertThatCode(() -> jwtRegistry.invalidateJwtInformationByUserId(userId))
+                    .doesNotThrowAnyException();
+
+            // then
+            verify(redisTemplate, times(2)).delete(startsWith("jwt:access:"));
+            verify(redisTemplate, times(2)).delete(startsWith("jwt:refresh:"));
+            verify(redisTemplate).delete(userKey);
+
+            verify(redisLockProvider, times(2)).acquireLock(userId.toString());
+            verify(redisLockProvider, times(2)).releaseLock(userId.toString(), "lock-value");
         }
     }
 
