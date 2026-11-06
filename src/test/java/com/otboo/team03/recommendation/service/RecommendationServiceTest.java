@@ -3,8 +3,11 @@ package com.otboo.team03.recommendation.service;
 import com.otboo.team03.clothes.dto.response.ClothesAttributeWithDefDto;
 import com.otboo.team03.clothes.dto.response.ClothesDto;
 import com.otboo.team03.clothes.entity.Clothes;
+import com.otboo.team03.clothes.entity.ClothesAttribute;
+import com.otboo.team03.clothes.entity.ClothesAttributeDefinition;
 import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.clothes.repository.ClothesRepository;
+import com.otboo.team03.clothes.repository.ClothesAttributeRepository;
 import com.otboo.team03.clothes.service.ClothesService;
 import com.otboo.team03.profile.dto.ProfileDto;
 import com.otboo.team03.profile.exception.ProfileNotFoundException;
@@ -20,17 +23,20 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import static com.otboo.team03.recommendation.algorithm.ThicknessLevel.*;
 
 @ExtendWith(MockitoExtension.class)
 class RecommendationServiceTest {
 
     @Mock private ProfileService profileService;
     @Mock private ClothesRepository clothesRepository;
+    @Mock private ClothesAttributeRepository clothesAttributeRepository;
     @Mock private ClothesService clothesService;
     @Mock private BasicOutfitAlgorithm algorithm;
     @Mock private WeatherRepository weatherRepository;
@@ -82,6 +88,7 @@ class RecommendationServiceTest {
         assertThat(result.clothes()).isEmpty();
         verify(algorithm).recommend(List.of(), 22.0, 3);
         verifyNoInteractions(clothesService);
+        verifyNoInteractions(clothesAttributeRepository);
     }
 
     @Test
@@ -109,6 +116,62 @@ class RecommendationServiceTest {
         Weather weather = mock(Weather.class);
         when(weatherRepository.findById(weatherId)).thenReturn(Optional.of(weather));
         when(weather.getTemperature()).thenReturn(temperature);
+    }
+
+    @Test
+    void 의상별_속성을_일괄조회하고_해석한_두께를_알고리즘에_전달한다() {
+        givenTemperature(28.0);
+        when(profileService.getProfile(userId)).thenReturn(profile(3));
+        Clothes light = mock(Clothes.class);
+        Clothes heavy = mock(Clothes.class);
+        Clothes conflicting = mock(Clothes.class);
+        Clothes withoutAttributes = mock(Clothes.class);
+        UUID lightId = UUID.randomUUID();
+        UUID heavyId = UUID.randomUUID();
+        UUID conflictingId = UUID.randomUUID();
+        UUID withoutAttributesId = UUID.randomUUID();
+        // RED에서는 아직 서비스가 ID를 조회하지 않으므로 불필요한 stub 오류를 방지한다.
+        lenient().when(light.getId()).thenReturn(lightId);
+        lenient().when(heavy.getId()).thenReturn(heavyId);
+        lenient().when(conflicting.getId()).thenReturn(conflictingId);
+        lenient().when(withoutAttributes.getId()).thenReturn(withoutAttributesId);
+        List<Clothes> clothes = List.of(light, heavy, conflicting, withoutAttributes);
+        when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(clothes);
+        var thickness = new ClothesAttributeDefinition("두께", List.of("얇음", "두꺼움"));
+        var alias = new ClothesAttributeDefinition("두께감", List.of("도톰함"));
+        var color = new ClothesAttributeDefinition("색상", List.of("검정"));
+        List<UUID> ids = List.of(lightId, heavyId, conflictingId, withoutAttributesId);
+        // 조회 순서가 달라도 목록 위치가 아닌 의상 ID로 속성을 연결해야 한다.
+        lenient().when(clothesAttributeRepository.findAllByClothes_IdIn(ids)).thenReturn(List.of(
+                new ClothesAttribute(heavy, alias, "도톰함"),
+                new ClothesAttribute(conflicting, thickness, "얇음"),
+                new ClothesAttribute(light, color, "검정"),
+                new ClothesAttribute(light, thickness, "얇음"),
+                new ClothesAttribute(conflicting, alias, "도톰함")
+        ));
+
+        service.recommend(weatherId, userId);
+
+        verify(clothesAttributeRepository).findAllByClothes_IdIn(ids);
+        verify(algorithm).recommend(clothes,
+                Map.of(lightId, LIGHT, heavyId, HEAVY,
+                        conflictingId, UNKNOWN, withoutAttributesId, UNKNOWN), 28.0, 3);
+    }
+
+    @Test
+    void 속성이_없는_의상도_UNKNOWN으로_전달하고_민감도_기본값을_유지한다() {
+        givenTemperature(20.0);
+        when(profileService.getProfile(userId)).thenReturn(profile(null));
+        Clothes dress = mock(Clothes.class);
+        UUID clothesId = UUID.randomUUID();
+        lenient().when(dress.getId()).thenReturn(clothesId);
+        List<Clothes> clothes = List.of(dress);
+        when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(clothes);
+
+        service.recommend(weatherId, userId);
+
+        verify(clothesAttributeRepository).findAllByClothes_IdIn(List.of(clothesId));
+        verify(algorithm).recommend(clothes, Map.of(clothesId, UNKNOWN), 20.0, 3);
     }
 
     private ProfileDto profile(Integer sensitivity) {
