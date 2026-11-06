@@ -1,5 +1,6 @@
 package com.otboo.team03.user.service;
 
+import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
@@ -13,7 +14,9 @@ import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.RedisTemporaryPasswordRepository;
 import com.otboo.team03.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,9 +27,12 @@ import java.util.UUID;
 
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserService {
+
+    private static final long ADMIN_ADVISORY_LOCK_ID = 720072L;
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -47,9 +53,13 @@ public class UserService {
         return UserDto.from(savedUser);
     }
 
+
     @Transactional
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') and #userId != authentication.principal.userDto.id")
     public UserDto updateRole(UUID userId, UserRole role) {
+        // 관리자 권한 및 잠금 변경을 직렬화
+        userRepository.acquireAdminLock(ADMIN_ADVISORY_LOCK_ID);
+
         User user = userRepository.findById(userId)
                 .orElseThrow(UserNotFoundException::new);
 
@@ -57,22 +67,36 @@ public class UserService {
             return UserDto.from(user);
         }
 
-        if (user.getRole() == UserRole.ADMIN && role == UserRole.USER && userRepository.countByRole(UserRole.ADMIN) <= 1) {
-            throw new LastAdminException();
+        if (user.getRole() == UserRole.ADMIN && role == UserRole.USER) {
+            if (userRepository.countByRole(UserRole.ADMIN) <= 1) {
+                throw new LastAdminException();
+            }
+
+            // 잠금 해제된 마지막 ADMIN도 보호
+            if (!user.isLocked() && userRepository.countByRoleAndLockedFalse(UserRole.ADMIN) <= 1) {
+                throw new LastAdminException();
+            }
         }
 
+        UserRole previousRole = user.getRole();
         user.changeRole(role);
 
-        // db 트랜잭션이 커밋된 이후에 Redis 세션 무효화되도록
+        UUID actorId = getCurrentUserId();
+
+        // DB 트랜잭션 커밋 이후 Redis 세션 무효화
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
+                log.info("User role changed: actorId={}, targetUserId={}, previousRole={}, newRole={}",
+                        actorId, userId, previousRole, role);
+
                 jwtRegistry.invalidateJwtInformationByUserId(userId);
             }
         });
 
         return UserDto.from(user);
     }
+
 
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -133,6 +157,9 @@ public class UserService {
     @Transactional
     @PreAuthorize("hasRole('ADMIN') and #userId != authentication.principal.userDto.id")
     public UserDto updateLock(UUID userId, boolean locked) {
+        // 관리자 권한 및 잠금 변경에 동일한 락 사용
+        userRepository.acquireAdminLock(ADMIN_ADVISORY_LOCK_ID);
+
         User user = userRepository.findById(userId)
                 .orElseThrow(UserNotFoundException::new);
 
@@ -145,17 +172,30 @@ public class UserService {
             throw new LastAdminException();
         }
 
+        boolean previousLocked = user.isLocked();
         user.changeLocked(locked);
+
+        UUID actorId = getCurrentUserId();
 
         if (locked) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
+                    log.info("User lock changed: actorId={}, targetUserId={}, previousLocked={}, newLocked={}",
+                            actorId, userId, previousLocked, locked);
+
                     jwtRegistry.invalidateJwtInformationByUserId(userId);
                 }
             });
         }
 
         return UserDto.from(user);
+    }
+
+    private UUID getCurrentUserId() {
+        OtbooUserDetails principal = (OtbooUserDetails) SecurityContextHolder.getContext()
+                .getAuthentication().getPrincipal();
+
+        return principal.getUserDto().id();
     }
 }
