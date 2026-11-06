@@ -13,28 +13,28 @@ class ThicknessSuitabilityScorerTest {
 
     @ParameterizedTest
     @ValueSource(doubles = {-5.0, 10.0, 14.9})
-    void 추운_구간에서는_두꺼운_옷이_가장_적합하다(double temperature) {
-        int heavyScore = scorer.score(HEAVY, temperature);
-
-        assertThat(heavyScore).isGreaterThan(scorer.score(MEDIUM, temperature));
-        assertThat(heavyScore).isGreaterThan(scorer.score(LIGHT, temperature));
+    void 추운_구간에서는_HEAVY만_1점이고_나머지는_0점이다(double temperature) {
+        assertThat(scorer.score(HEAVY, temperature)).isEqualTo(1);
+        assertThat(scorer.score(MEDIUM, temperature)).isZero();
+        assertThat(scorer.score(LIGHT, temperature)).isZero();
+        assertThat(scorer.score(UNKNOWN, temperature)).isZero();
     }
 
     @ParameterizedTest
     @ValueSource(doubles = {15.0, 20.0, 24.9})
-    void 중간_구간에서는_보통_두께가_가장_적합하다(double temperature) {
-        int mediumScore = scorer.score(MEDIUM, temperature);
-
-        assertThat(mediumScore).isGreaterThan(scorer.score(LIGHT, temperature));
-        assertThat(mediumScore).isGreaterThan(scorer.score(HEAVY, temperature));
+    void 중간_구간에서는_MEDIUM만_1점이고_나머지는_0점이다(double temperature) {
+        assertThat(scorer.score(MEDIUM, temperature)).isEqualTo(1);
+        assertThat(scorer.score(LIGHT, temperature)).isZero();
+        assertThat(scorer.score(HEAVY, temperature)).isZero();
+        assertThat(scorer.score(UNKNOWN, temperature)).isZero();
     }
 
     @ParameterizedTest
     @ValueSource(doubles = {25.0, 28.0, 35.0})
-    void 더운_구간에서는_얇은_옷이_가장_적합하다(double temperature) {
-        int lightScore = scorer.score(LIGHT, temperature);
-
-        assertThat(lightScore).isGreaterThan(scorer.score(MEDIUM, temperature));
-        assertThat(lightScore).isGreaterThan(scorer.score(HEAVY, temperature));
+    void 더운_구간에서는_LIGHT만_1점이고_나머지는_0점이다(double temperature) {
+        assertThat(scorer.score(LIGHT, temperature)).isEqualTo(1);
+        assertThat(scorer.score(MEDIUM, temperature)).isZero();
+        assertThat(scorer.score(HEAVY, temperature)).isZero();
+        assertThat(scorer.score(UNKNOWN, temperature)).isZero();
     }
 }
