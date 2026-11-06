@@ -48,7 +48,7 @@ public class UserService {
     }
 
     @Transactional
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') and #userId != authentication.principal.userDto.id")
     public UserDto updateRole(UUID userId, UserRole role) {
         User user = userRepository.findById(userId)
                 .orElseThrow(UserNotFoundException::new);
@@ -57,6 +57,7 @@ public class UserService {
             return UserDto.from(user);
         }
 
+        // 변경하려는 게 마지막 Admin일 시 예외
         if (user.getRole() == UserRole.ADMIN && role == UserRole.USER && userRepository.countByRole(UserRole.ADMIN) <= 1) {
             throw new LastAdminException();
         }
