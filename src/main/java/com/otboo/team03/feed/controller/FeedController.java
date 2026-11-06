@@ -201,4 +201,30 @@ public class FeedController {
 
     return ResponseEntity.ok(response);
   }
+
+  @GetMapping("/{feedId}/comments")
+  public ResponseEntity<CursorResponse<CommentDto>> getFeedComments(
+      @PathVariable UUID feedId,
+      @RequestParam int limit,
+      @RequestParam(required = false) String cursor,
+      @RequestParam(required = false) UUID idAfter,
+      Authentication authentication
+  ) {
+    if (authentication == null
+        || !authentication.isAuthenticated()
+        || !(authentication.getPrincipal()
+        instanceof OtbooUserDetails)) {
+      throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
+    }
+
+    CursorResponse<CommentDto> response =
+        feedService.getFeedComments(
+            feedId,
+            limit,
+            cursor,
+            idAfter
+        );
+
+    return ResponseEntity.ok(response);
+  }
 }
