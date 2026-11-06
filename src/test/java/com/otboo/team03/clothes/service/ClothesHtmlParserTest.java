@@ -10,6 +10,24 @@ class ClothesHtmlParserTest {
     private final ClothesHtmlParser parser = new ClothesHtmlParser();
     private static final String PAGE_URL = "https://www.musinsa.com/products/123";
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"", "   ", "\t\n", "\u2003"})
+    void 빈_이미지_값을_상품_페이지_URL로_반환하지_않는다(String content) {
+        var result = parser.parse("""
+                <title>셔츠</title>
+                <meta property="og:image" content="%s">
+                """.formatted(content), PAGE_URL);
+
+        assertEquals("셔츠", result.name());
+        assertNull(result.imageUrl());
+    }
+
+    @Test
+    void 이미지_content_속성이_없으면_반환하지_않는다() {
+        var result = parser.parse("<title>셔츠</title><meta property='og:image'>", PAGE_URL);
+        assertNull(result.imageUrl());
+    }
+
     @Test
     void 잘못된_URI_이미지는_반환하지_않는다() {
         var result = parser.parse("""

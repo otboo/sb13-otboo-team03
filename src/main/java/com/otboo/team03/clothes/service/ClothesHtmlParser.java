@@ -54,6 +54,11 @@ public class ClothesHtmlParser {
             return null;
         }
 
+        // 빈 값은 absUrl 변환 시 상품 페이지 주소가 될 수 있으므로 먼저 거부한다.
+        if (element.attr("content").isBlank()) {
+            return null;
+        }
+
         // /images/item.jpg 같은 상대 경로도 절대 URL로 변환한다.
         String absoluteUrl = element.absUrl("content");
 
