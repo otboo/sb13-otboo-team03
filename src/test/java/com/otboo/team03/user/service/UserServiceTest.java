@@ -1,5 +1,6 @@
 package com.otboo.team03.user.service;
 
+import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
@@ -22,6 +23,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -122,11 +125,13 @@ class UserServiceTest {
         @BeforeEach
         void setUp() {
             TransactionSynchronizationManager.initSynchronization();
+            setTestAuthentication();
         }
 
         @AfterEach
         void tearDown() {
             TransactionSynchronizationManager.clearSynchronization();
+            SecurityContextHolder.clearContext();
         }
 
         @Test
@@ -439,11 +444,13 @@ class UserServiceTest {
         @BeforeEach
         void setUp() {
             TransactionSynchronizationManager.initSynchronization();
+            setTestAuthentication();
         }
 
         @AfterEach
         void tearDown() {
             TransactionSynchronizationManager.clearSynchronization();
+            SecurityContextHolder.clearContext();
         }
 
         @Test
@@ -583,5 +590,26 @@ class UserServiceTest {
 
             verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
         }
+    }
+
+    private void setTestAuthentication() {
+        UserDto userDto = new UserDto(
+                UUID.randomUUID(),
+                Instant.now(),
+                "admin@example.com",
+                "관리자",
+                UserRole.ADMIN,
+                false
+        );
+
+        OtbooUserDetails principal = new OtbooUserDetails(userDto, "encodedPassword");
+
+        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                principal,
+                null,
+                principal.getAuthorities()
+        );
+
+        SecurityContextHolder.getContext().setAuthentication(authentication);
     }
 }

@@ -1,5 +1,6 @@
 package com.otboo.team03.user.service;
 
+import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
@@ -13,7 +14,9 @@ import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.RedisTemporaryPasswordRepository;
 import com.otboo.team03.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +27,7 @@ import java.util.UUID;
 
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserService {
@@ -72,12 +76,18 @@ public class UserService {
             }
         }
 
+        UserRole previousRole = user.getRole();
         user.changeRole(role);
+
+        UUID actorId = getCurrentUserId();
 
         // DB 트랜잭션 커밋 이후 Redis 세션 무효화
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
+                log.info("User role changed: actorId={}, targetUserId={}, previousRole={}, newRole={}",
+                        actorId, userId, previousRole, role);
+
                 jwtRegistry.invalidateJwtInformationByUserId(userId);
             }
         });
@@ -160,17 +170,30 @@ public class UserService {
             throw new LastAdminException();
         }
 
+        boolean previousLocked = user.isLocked();
         user.changeLocked(locked);
+
+        UUID actorId = getCurrentUserId();
 
         if (locked) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
+                    log.info("User lock changed: actorId={}, targetUserId={}, previousLocked={}, newLocked={}",
+                            actorId, userId, previousLocked, locked);
+
                     jwtRegistry.invalidateJwtInformationByUserId(userId);
                 }
             });
         }
 
         return UserDto.from(user);
+    }
+
+    private UUID getCurrentUserId() {
+        OtbooUserDetails principal = (OtbooUserDetails) SecurityContextHolder.getContext()
+                .getAuthentication().getPrincipal();
+
+        return principal.getUserDto().id();
     }
 }
