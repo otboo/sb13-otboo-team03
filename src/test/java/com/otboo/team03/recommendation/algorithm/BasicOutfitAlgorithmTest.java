@@ -7,10 +7,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
+import static com.otboo.team03.recommendation.algorithm.ThicknessLevel.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
 
 class BasicOutfitAlgorithmTest {
 
@@ -19,7 +25,7 @@ class BasicOutfitAlgorithmTest {
 
     @BeforeEach
     void setUp() {
-        algorithm = new BasicOutfitAlgorithm();
+        algorithm = new BasicOutfitAlgorithm(new ThicknessSuitabilityScorer());
         owner = new User("user@example.com", "encoded-password", "사용자");
     }
 
@@ -348,6 +354,100 @@ class BasicOutfitAlgorithmTest {
 
             // then
             assertThat(result).containsExactlyInAnyOrder(dress, outer);
+        }
+    }
+
+    @Nested
+    @DisplayName("속성 기반 의상 추천")
+    class AttributeBasedRecommendation {
+
+        @ParameterizedTest
+        @CsvSource({"28.0, 3, LIGHT", "10.0, 3, HEAVY", "17.0, 1, HEAVY", "20.0, 5, MEDIUM"})
+        void 입력_순서보다_보정_온도에_적합한_상의를_우선한다(
+                double temperature, int sensitivity, ThicknessLevel preferred) {
+            Clothes light = clothes(ClothesType.TOP);
+            Clothes medium = clothes(ClothesType.TOP);
+            Clothes heavy = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+            Clothes expected = switch (preferred) {
+                case LIGHT -> light;
+                case MEDIUM -> medium;
+                case HEAVY -> heavy;
+                default -> throw new IllegalArgumentException();
+            };
+            // 적합한 후보가 맨 앞에 있을 때만 통과하는 구현을 방지한다.
+            List<Clothes> candidates = preferred == HEAVY
+                    ? List.of(light, medium, heavy, bottom)
+                    : List.of(heavy, light, medium, bottom);
+
+            var result = algorithm.recommend(candidates,
+                    Map.of(light.getId(), LIGHT, medium.getId(), MEDIUM, heavy.getId(), HEAVY),
+                    temperature, sensitivity);
+
+            assertThat(result).containsExactlyInAnyOrder(expected, bottom);
+        }
+
+        @Test
+        void 더운_날에는_적합한_하의를_선택한다() {
+            Clothes top = clothes(ClothesType.TOP);
+            Clothes heavy = clothes(ClothesType.BOTTOM);
+            Clothes light = clothes(ClothesType.BOTTOM);
+
+            var result = algorithm.recommend(List.of(top, heavy, light),
+                    Map.of(heavy.getId(), HEAVY, light.getId(), LIGHT), 28.0, 3);
+
+            assertThat(result).containsExactlyInAnyOrder(top, light);
+        }
+
+        @Test
+        void 기본_조합이_없으면_적합한_원피스를_선택한다() {
+            Clothes heavy = clothes(ClothesType.DRESS);
+            Clothes light = clothes(ClothesType.DRESS);
+
+            var result = algorithm.recommend(List.of(heavy, light),
+                    Map.of(heavy.getId(), HEAVY, light.getId(), LIGHT), 28.0, 3);
+
+            assertThat(result).containsExactly(light);
+        }
+
+        @Test
+        void 추운_날에는_기본_조합에_적합한_아우터를_추가한다() {
+            Clothes top = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+            Clothes light = clothes(ClothesType.OUTER);
+            Clothes heavy = clothes(ClothesType.OUTER);
+
+            var result = algorithm.recommend(List.of(top, bottom, light, heavy),
+                    Map.of(light.getId(), LIGHT, heavy.getId(), HEAVY), 10.0, 3);
+
+            assertThat(result).containsExactlyInAnyOrder(top, bottom, heavy);
+        }
+
+        @Test
+        void 두께_정보가_없어도_기본_조합을_구성한다() {
+            Clothes top = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+
+            var result = algorithm.recommend(List.of(top, bottom), Map.of(), 20.0, 3);
+
+            assertThat(result).containsExactlyInAnyOrder(top, bottom);
+        }
+
+        @Test
+        void 두께_정보가_있어도_기본_조합_없이_아우터만_추천하지_않는다() {
+            Clothes outer = clothes(ClothesType.OUTER);
+
+            var result = algorithm.recommend(List.of(outer),
+                    Map.of(outer.getId(), HEAVY), 10.0, 3);
+
+            assertThat(result).isEmpty();
+        }
+
+        private Clothes clothes(ClothesType type) {
+            Clothes clothes = mock(Clothes.class);
+            when(clothes.getType()).thenReturn(type);
+            when(clothes.getId()).thenReturn(UUID.randomUUID());
+            return clothes;
         }
     }
 }
