@@ -1,5 +1,6 @@
 package com.otboo.team03.user.service;
 
+import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
@@ -22,6 +23,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -122,11 +125,13 @@ class UserServiceTest {
         @BeforeEach
         void setUp() {
             TransactionSynchronizationManager.initSynchronization();
+            setTestAuthentication();
         }
 
         @AfterEach
         void tearDown() {
             TransactionSynchronizationManager.clearSynchronization();
+            SecurityContextHolder.clearContext();
         }
 
         @Test
@@ -196,6 +201,26 @@ class UserServiceTest {
 
             when(userRepository.findById(userId)).thenReturn(Optional.of(admin));
             when(userRepository.countByRole(UserRole.ADMIN)).thenReturn(1L);
+
+            // when & then
+            assertThatThrownBy(() -> userService.updateRole(userId, UserRole.USER))
+                    .isInstanceOf(LastAdminException.class);
+
+            assertThat(admin.getRole()).isEqualTo(UserRole.ADMIN);
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("실패 - 다른 ADMIN이 잠겨 있다면 마지막 활성 ADMIN 강등을 차단한다")
+        void updateRole_lastActiveAdmin_throwsException() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User admin = new User("admin@example.com", "encodedPassword", "관리자");
+            admin.changeRole(UserRole.ADMIN);
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(admin));
+            when(userRepository.countByRole(UserRole.ADMIN)).thenReturn(2L);
+            when(userRepository.countByRoleAndLockedFalse(UserRole.ADMIN)).thenReturn(1L);
 
             // when & then
             assertThatThrownBy(() -> userService.updateRole(userId, UserRole.USER))
@@ -419,11 +444,13 @@ class UserServiceTest {
         @BeforeEach
         void setUp() {
             TransactionSynchronizationManager.initSynchronization();
+            setTestAuthentication();
         }
 
         @AfterEach
         void tearDown() {
             TransactionSynchronizationManager.clearSynchronization();
+            SecurityContextHolder.clearContext();
         }
 
         @Test
@@ -563,5 +590,26 @@ class UserServiceTest {
 
             verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
         }
+    }
+
+    private void setTestAuthentication() {
+        UserDto userDto = new UserDto(
+                UUID.randomUUID(),
+                Instant.now(),
+                "admin@example.com",
+                "관리자",
+                UserRole.ADMIN,
+                false
+        );
+
+        OtbooUserDetails principal = new OtbooUserDetails(userDto, "encodedPassword");
+
+        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                principal,
+                null,
+                principal.getAuthorities()
+        );
+
+        SecurityContextHolder.getContext().setAuthentication(authentication);
     }
 }
