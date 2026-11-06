@@ -13,6 +13,8 @@ import com.otboo.team03.profile.dto.ProfileDto;
 import com.otboo.team03.profile.exception.ProfileNotFoundException;
 import com.otboo.team03.profile.service.ProfileService;
 import com.otboo.team03.recommendation.algorithm.BasicOutfitAlgorithm;
+import com.otboo.team03.recommendation.algorithm.AttributeSemanticAnalyzer;
+import com.otboo.team03.recommendation.algorithm.ClothesThermalEstimator;
 import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.exception.WeatherNotFoundException;
 import com.otboo.team03.weather.repository.WeatherRepository;
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
@@ -40,6 +43,8 @@ class RecommendationServiceTest {
     @Mock private ClothesService clothesService;
     @Mock private BasicOutfitAlgorithm algorithm;
     @Mock private WeatherRepository weatherRepository;
+    @Spy private AttributeSemanticAnalyzer attributeAnalyzer = new AttributeSemanticAnalyzer();
+    @Spy private ClothesThermalEstimator thermalEstimator = new ClothesThermalEstimator();
     @InjectMocks private RecommendationService service;
 
     private final UUID userId = UUID.randomUUID();
@@ -57,7 +62,7 @@ class RecommendationServiceTest {
         List<Clothes> clothes = List.of(dress);
         when(profileService.getProfile(userId)).thenReturn(profile(1));
         when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(clothes);
-        when(algorithm.recommend(clothes, 10.0, 1)).thenReturn(clothes);
+        when(algorithm.recommend(clothes, Map.of(clothesId, UNKNOWN), 10.0, 1)).thenReturn(clothes);
         when(dress.getId()).thenReturn(clothesId);
         when(clothesService.findById(clothesId)).thenReturn(dto);
 
@@ -73,7 +78,7 @@ class RecommendationServiceTest {
             assertThat(ootd.attributes()).containsExactly(attribute);
         });
         verify(weatherRepository).findById(weatherId);
-        verify(algorithm).recommend(clothes, 10.0, 1);
+        verify(algorithm).recommend(clothes, Map.of(clothesId, UNKNOWN), 10.0, 1);
     }
 
     @Test
@@ -130,11 +135,10 @@ class RecommendationServiceTest {
         UUID heavyId = UUID.randomUUID();
         UUID conflictingId = UUID.randomUUID();
         UUID withoutAttributesId = UUID.randomUUID();
-        // RED에서는 아직 서비스가 ID를 조회하지 않으므로 불필요한 stub 오류를 방지한다.
-        lenient().when(light.getId()).thenReturn(lightId);
-        lenient().when(heavy.getId()).thenReturn(heavyId);
-        lenient().when(conflicting.getId()).thenReturn(conflictingId);
-        lenient().when(withoutAttributes.getId()).thenReturn(withoutAttributesId);
+        when(light.getId()).thenReturn(lightId);
+        when(heavy.getId()).thenReturn(heavyId);
+        when(conflicting.getId()).thenReturn(conflictingId);
+        when(withoutAttributes.getId()).thenReturn(withoutAttributesId);
         List<Clothes> clothes = List.of(light, heavy, conflicting, withoutAttributes);
         when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(clothes);
         var thickness = new ClothesAttributeDefinition("두께", List.of("얇음", "두꺼움"));
@@ -142,7 +146,7 @@ class RecommendationServiceTest {
         var color = new ClothesAttributeDefinition("색상", List.of("검정"));
         List<UUID> ids = List.of(lightId, heavyId, conflictingId, withoutAttributesId);
         // 조회 순서가 달라도 목록 위치가 아닌 의상 ID로 속성을 연결해야 한다.
-        lenient().when(clothesAttributeRepository.findAllByClothes_IdIn(ids)).thenReturn(List.of(
+        when(clothesAttributeRepository.findAllByClothes_IdIn(ids)).thenReturn(List.of(
                 new ClothesAttribute(heavy, alias, "도톰함"),
                 new ClothesAttribute(conflicting, thickness, "얇음"),
                 new ClothesAttribute(light, color, "검정"),
@@ -164,7 +168,7 @@ class RecommendationServiceTest {
         when(profileService.getProfile(userId)).thenReturn(profile(null));
         Clothes dress = mock(Clothes.class);
         UUID clothesId = UUID.randomUUID();
-        lenient().when(dress.getId()).thenReturn(clothesId);
+        when(dress.getId()).thenReturn(clothesId);
         List<Clothes> clothes = List.of(dress);
         when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(clothes);
 
