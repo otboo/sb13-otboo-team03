@@ -2,6 +2,8 @@ package com.otboo.team03.feed.mapper;
 
 import com.otboo.team03.clothes.dto.response.ClothesAttributeWithDefDto;
 import com.otboo.team03.clothes.entity.Clothes;
+import com.otboo.team03.feed.dto.response.CommentDto;
+import com.otboo.team03.feed.entity.FeedComment;
 import com.otboo.team03.global.storage.ImageStorage;
 import org.springframework.beans.factory.ObjectProvider;
 import com.otboo.team03.feed.dto.response.AuthorDto;
@@ -32,14 +34,7 @@ public class FeedDtoAssembler {
   private final ObjectProvider<ImageStorage> imageStorageProvider;
 
   public FeedDto toDto(Feed feed, UUID viewerId) {
-    User author = userRepository.findById(feed.getAuthorId())
-        .orElseThrow(UserNotFoundException::new);
-
-    AuthorDto authorDto = new AuthorDto(
-        author.getId(),
-        author.getName(),
-        findProfileImageUrl(author.getId())
-    );
+    AuthorDto authorDto = toAuthorDto(feed.getAuthorId());
 
     List<OotdDto> ootds = feedClothesRepository
         .findAllByFeed_Id(feed.getId())
@@ -148,6 +143,27 @@ public class FeedDtoAssembler {
           );
         },
         clothesId
+    );
+  }
+
+  public CommentDto toCommentDto(FeedComment comment) {
+    return new CommentDto(
+        comment.getId(),
+        comment.getCreatedAt(),
+        comment.getFeedId(),
+        toAuthorDto(comment.getAuthorId()),
+        comment.getContent()
+    );
+  }
+
+  private AuthorDto toAuthorDto(UUID authorId) {
+    User author = userRepository.findById(authorId)
+        .orElseThrow(UserNotFoundException::new);
+
+    return new AuthorDto(
+        author.getId(),
+        author.getName(),
+        findProfileImageUrl(author.getId())
     );
   }
 }
