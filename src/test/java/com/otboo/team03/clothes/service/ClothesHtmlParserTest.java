@@ -11,6 +11,15 @@ class ClothesHtmlParserTest {
     private static final String PAGE_URL = "https://www.musinsa.com/products/123";
 
     @Test
+    void 잘못된_URI_이미지는_반환하지_않는다() {
+        var result = parser.parse("""
+                <title>셔츠</title>
+                <meta property="og:image" content="https://cdn.example.com/[photo].jpg">
+                """, PAGE_URL);
+        assertNull(result.imageUrl());
+    }
+
+    @Test
     void HTML_제목보다_OpenGraph_상품명을_우선한다() {
         var result = parser.parse("""
                 <html><head>
