@@ -206,6 +206,26 @@ class UserServiceTest {
         }
 
         @Test
+        @DisplayName("실패 - 다른 ADMIN이 잠겨 있다면 마지막 활성 ADMIN 강등을 차단한다")
+        void updateRole_lastActiveAdmin_throwsException() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User admin = new User("admin@example.com", "encodedPassword", "관리자");
+            admin.changeRole(UserRole.ADMIN);
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(admin));
+            when(userRepository.countByRole(UserRole.ADMIN)).thenReturn(2L);
+            when(userRepository.countByRoleAndLockedFalse(UserRole.ADMIN)).thenReturn(1L);
+
+            // when & then
+            assertThatThrownBy(() -> userService.updateRole(userId, UserRole.USER))
+                    .isInstanceOf(LastAdminException.class);
+
+            assertThat(admin.getRole()).isEqualTo(UserRole.ADMIN);
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+        }
+
+        @Test
         @DisplayName("성공 - DB 커밋 후 기존 JWT 세션 무효화")
         void updateRole_roleChanged_invalidatesJwtSession() {
             // given
