@@ -12,8 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.convert.ApplicationConversionService;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.ListOperations;
@@ -160,7 +160,7 @@ class RedisJwtRegistryRetryTest {
         }
     }
 
-    @Configuration
+    @TestConfiguration
     static class TestConfig {
 
         @Bean
