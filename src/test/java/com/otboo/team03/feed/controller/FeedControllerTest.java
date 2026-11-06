@@ -13,6 +13,7 @@ import com.otboo.team03.feed.dto.response.PrecipitationDto;
 import com.otboo.team03.feed.dto.response.TemperatureDto;
 import com.otboo.team03.feed.dto.response.WeatherSummaryDto;
 import com.otboo.team03.feed.service.FeedService;
+import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.GlobalExceptionHandler;
 import com.otboo.team03.global.exception.OtbooException;
@@ -42,6 +43,7 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -789,5 +791,129 @@ class FeedControllerTest {
             .value("INVALID_INPUT_VALUE"));
 
     verify(feedService).createComment(feedId, authorId, request);
+  }
+
+  @Test
+  void 피드_댓글_첫_페이지_조회에_성공하면_200과_커서_응답을_반환한다()
+      throws Exception {
+    // given
+    UUID commentId = UUID.randomUUID();
+    Instant createdAt = Instant.parse("2026-11-05T03:00:00Z");
+
+    CommentDto commentDto = new CommentDto(
+        commentId,
+        createdAt,
+        feedId,
+        new AuthorDto(
+            authorId,
+            "테스트 사용자",
+            "/images/profile.png"
+        ),
+        "좋은 코디네요!"
+    );
+
+    CursorResponse<CommentDto> expectedResponse =
+        new CursorResponse<>(
+            List.of(commentDto),
+            createdAt.toString(),
+            commentId,
+            true,
+            2L,
+            "createdAt",
+            "DESCENDING"
+        );
+
+    when(feedService.getFeedComments(feedId, 1, null, null))
+        .thenReturn(expectedResponse);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/feeds/{feedId}/comments", feedId)
+            .param("limit", "1")
+            .principal(authentication(authorId))
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[0].id")
+            .value(commentId.toString()))
+        .andExpect(jsonPath("$.data[0].feedId")
+            .value(feedId.toString()))
+        .andExpect(jsonPath("$.data[0].author.userId")
+            .value(authorId.toString()))
+        .andExpect(jsonPath("$.data[0].author.name")
+            .value("테스트 사용자"))
+        .andExpect(jsonPath("$.data[0].author.profileImageUrl")
+            .value("/images/profile.png"))
+        .andExpect(jsonPath("$.data[0].content")
+            .value("좋은 코디네요!"))
+        .andExpect(jsonPath("$.nextCursor")
+            .value(createdAt.toString()))
+        .andExpect(jsonPath("$.nextIdAfter")
+            .value(commentId.toString()))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andExpect(jsonPath("$.totalCount").value(2))
+        .andExpect(jsonPath("$.sortBy").value("createdAt"))
+        .andExpect(jsonPath("$.sortDirection")
+            .value("DESCENDING"));
+
+    verify(feedService).getFeedComments(
+        feedId, 1, null, null
+    );
+  }
+
+  @Test
+  void 피드_댓글_조회에서_커서와_ID를_서비스에_전달한다()
+      throws Exception {
+    // given
+    UUID cursorId = UUID.randomUUID();
+    UUID commentId = UUID.randomUUID();
+
+    String cursor = "2026-11-05T03:00:00Z";
+
+    CommentDto commentDto = new CommentDto(
+        commentId,
+        Instant.parse("2026-11-05T02:00:00Z"),
+        feedId,
+        new AuthorDto(authorId, "테스트 사용자", null),
+        "다음 페이지 댓글"
+    );
+
+    CursorResponse<CommentDto> expectedResponse =
+        new CursorResponse<>(
+            List.of(commentDto),
+            null,
+            null,
+            false,
+            2L,
+            "createdAt",
+            "DESCENDING"
+        );
+
+    when(feedService.getFeedComments(
+        feedId, 1, cursor, cursorId
+    )).thenReturn(expectedResponse);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/feeds/{feedId}/comments", feedId)
+            .param("limit", "1")
+            .param("cursor", cursor)
+            .param("idAfter", cursorId.toString())
+            .principal(authentication(authorId))
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.data[0].id")
+            .value(commentId.toString()))
+        .andExpect(jsonPath("$.data[0].content")
+            .value("다음 페이지 댓글"))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.totalCount").value(2));
+
+    verify(feedService).getFeedComments(
+        feedId, 1, cursor, cursorId
+    );
   }
 }
