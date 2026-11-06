@@ -38,6 +38,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -914,6 +915,255 @@ class FeedControllerTest {
 
     verify(feedService).getFeedComments(
         feedId, 1, cursor, cursorId
+    );
+  }
+
+  @Test
+  void 댓글_조회에서_유효하지_않은_인증은_401을_반환한다()
+      throws Exception {
+    // given
+    Authentication[] invalidAuthentications = {
+        null,
+        new UsernamePasswordAuthenticationToken("user", null),
+        new UsernamePasswordAuthenticationToken(
+            "user", null, List.of()
+        )
+    };
+
+    // when
+    for (Authentication authentication : invalidAuthentications) {
+      var request = get("/api/feeds/{feedId}/comments", feedId)
+          .param("limit", "10");
+
+      if (authentication != null) {
+        request.principal(authentication);
+      }
+
+      // then
+      mockMvc.perform(request)
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.exceptionName")
+              .value("AUTHENTICATION_REQUIRED"));
+    }
+
+    verifyNoInteractions(feedService);
+  }
+
+  @Test
+  void 댓글_조회에서_limit이_없거나_숫자가_아니면_400을_반환한다()
+      throws Exception {
+    // given
+    String invalidLimit = "invalid";
+
+    // when
+    var missingResult = mockMvc.perform(
+        get("/api/feeds/{feedId}/comments", feedId)
+            .principal(authentication(authorId))
+    );
+
+    var invalidResult = mockMvc.perform(
+        get("/api/feeds/{feedId}/comments", feedId)
+            .param("limit", invalidLimit)
+            .principal(authentication(authorId))
+    );
+
+    // then
+    missingResult.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    invalidResult.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    verifyNoInteractions(feedService);
+  }
+
+  @Test
+  void 댓글_조회_limit이_0_또는_음수면_400을_반환한다()
+      throws Exception {
+    // given
+    when(feedService.getFeedComments(feedId, 0, null, null))
+        .thenThrow(
+            new OtbooException(ErrorCode.INVALID_INPUT_VALUE)
+        );
+
+    when(feedService.getFeedComments(feedId, -1, null, null))
+        .thenThrow(
+            new OtbooException(ErrorCode.INVALID_INPUT_VALUE)
+        );
+
+    // when
+    var zeroResult = mockMvc.perform(
+        get("/api/feeds/{feedId}/comments", feedId)
+            .param("limit", "0")
+            .principal(authentication(authorId))
+    );
+
+    var negativeResult = mockMvc.perform(
+        get("/api/feeds/{feedId}/comments", feedId)
+            .param("limit", "-1")
+            .principal(authentication(authorId))
+    );
+
+    // then
+    zeroResult.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    negativeResult.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    verify(feedService).getFeedComments(feedId, 0, null, null);
+    verify(feedService).getFeedComments(feedId, -1, null, null);
+  }
+
+  @Test
+  void 댓글_조회에서_커서_형식이나_조합이_잘못되면_400을_반환한다()
+      throws Exception {
+    // given
+    UUID idAfter = UUID.randomUUID();
+    String cursor = "2026-11-05T03:00:00Z";
+
+    when(feedService.getFeedComments(
+        feedId, 10, cursor, null
+    )).thenThrow(
+        new OtbooException(ErrorCode.INVALID_INPUT_VALUE)
+    );
+
+    when(feedService.getFeedComments(
+        feedId, 10, null, idAfter
+    )).thenThrow(
+        new OtbooException(ErrorCode.INVALID_INPUT_VALUE)
+    );
+
+    when(feedService.getFeedComments(
+        feedId, 10, "invalid-cursor", idAfter
+    )).thenThrow(
+        new OtbooException(ErrorCode.INVALID_INPUT_VALUE)
+    );
+
+    // when
+    var missingIdResult = mockMvc.perform(
+        get("/api/feeds/{feedId}/comments", feedId)
+            .param("limit", "10")
+            .param("cursor", cursor)
+            .principal(authentication(authorId))
+    );
+
+    var missingCursorResult = mockMvc.perform(
+        get("/api/feeds/{feedId}/comments", feedId)
+            .param("limit", "10")
+            .param("idAfter", idAfter.toString())
+            .principal(authentication(authorId))
+    );
+
+    var invalidCursorResult = mockMvc.perform(
+        get("/api/feeds/{feedId}/comments", feedId)
+            .param("limit", "10")
+            .param("cursor", "invalid-cursor")
+            .param("idAfter", idAfter.toString())
+            .principal(authentication(authorId))
+    );
+
+    // then
+    missingIdResult.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    missingCursorResult.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    invalidCursorResult.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    verify(feedService).getFeedComments(
+        feedId, 10, cursor, null
+    );
+
+    verify(feedService).getFeedComments(
+        feedId, 10, null, idAfter
+    );
+
+    verify(feedService).getFeedComments(
+        feedId, 10, "invalid-cursor", idAfter
+    );
+  }
+
+  @Test
+  void 존재하지_않는_피드의_댓글_조회는_404를_반환한다()
+      throws Exception {
+    // given
+    UUID nonexistentFeedId = UUID.randomUUID();
+
+    when(feedService.getFeedComments(
+        nonexistentFeedId, 10, null, null
+    )).thenThrow(
+        new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
+    );
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/feeds/{feedId}/comments", nonexistentFeedId)
+            .param("limit", "10")
+            .principal(authentication(authorId))
+    );
+
+    // then
+    result.andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("NOT_FOUND_RESOURCE"));
+
+    verify(feedService).getFeedComments(
+        nonexistentFeedId, 10, null, null
+    );
+  }
+
+  @Test
+  void 댓글이_없는_피드는_200과_빈_커서_응답을_반환한다()
+      throws Exception {
+    // given
+    CursorResponse<CommentDto> emptyResponse =
+        new CursorResponse<>(
+            List.of(),
+            null,
+            null,
+            false,
+            0L,
+            "createdAt",
+            "DESCENDING"
+        );
+
+    when(feedService.getFeedComments(
+        feedId, 10, null, null
+    )).thenReturn(emptyResponse);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/feeds/{feedId}/comments", feedId)
+            .param("limit", "10")
+            .principal(authentication(authorId))
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.data").isArray())
+        .andExpect(jsonPath("$.data").isEmpty())
+        .andExpect(jsonPath("$.nextCursor")
+            .value(nullValue()))
+        .andExpect(jsonPath("$.nextIdAfter")
+            .value(nullValue()))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.totalCount").value(0))
+        .andExpect(jsonPath("$.sortBy").value("createdAt"))
+        .andExpect(jsonPath("$.sortDirection")
+            .value("DESCENDING"));
+
+    verify(feedService).getFeedComments(
+        feedId, 10, null, null
     );
   }
 }
