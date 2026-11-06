@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -255,5 +256,37 @@ class RecommendationServiceTest {
         when(clothes.getId()).thenReturn(UUID.randomUUID());
         when(clothes.getType()).thenReturn(type);
         return clothes;
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"선택값 변경", "속성명 변경"})
+    void 속성_수정_후_다음_추천에서_최신_두께를_다시_분석한다(String change) {
+        givenTemperature(28.0);
+        when(profileService.getProfile(userId)).thenReturn(profile(3));
+        Clothes dress = mock(Clothes.class);
+        UUID clothesId = UUID.randomUUID();
+        when(dress.getId()).thenReturn(clothesId);
+        List<Clothes> clothes = List.of(dress);
+        when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(clothes);
+        var definition = new ClothesAttributeDefinition("두께", List.of("얇음", "두꺼움"));
+        var attribute = new ClothesAttribute(dress, definition, "얇음");
+        when(clothesAttributeRepository.findAllByClothes_IdIn(List.of(clothesId)))
+                .thenReturn(List.of(attribute));
+
+        service.recommend(weatherId, userId);
+        if (change.equals("선택값 변경")) {
+            attribute.updateValue("두꺼움");
+        } else {
+            definition.update("미지원 속성", null);
+        }
+        service.recommend(weatherId, userId);
+
+        ThicknessLevel updatedLevel = change.equals("선택값 변경") ? HEAVY : UNKNOWN;
+        var order = inOrder(clothesAttributeRepository, algorithm);
+        order.verify(clothesAttributeRepository).findAllByClothes_IdIn(List.of(clothesId));
+        order.verify(algorithm).recommend(clothes, Map.of(clothesId, LIGHT), 28.0, 3);
+        order.verify(clothesAttributeRepository).findAllByClothes_IdIn(List.of(clothesId));
+        order.verify(algorithm).recommend(clothes, Map.of(clothesId, updatedLevel), 28.0, 3);
+        order.verifyNoMoreInteractions();
     }
 }
