@@ -47,9 +47,13 @@ public class UserService {
         return UserDto.from(savedUser);
     }
 
+
     @Transactional
     @PreAuthorize("hasRole('ADMIN') and #userId != authentication.principal.userDto.id")
     public UserDto updateRole(UUID userId, UserRole role) {
+        // 관리자 권한 및 잠금 변경을 직렬화
+        userRepository.acquireAdminLock();
+
         User user = userRepository.findById(userId)
                 .orElseThrow(UserNotFoundException::new);
 
@@ -57,14 +61,20 @@ public class UserService {
             return UserDto.from(user);
         }
 
-        // 변경하려는 게 마지막 Admin일 시 예외
-        if (user.getRole() == UserRole.ADMIN && role == UserRole.USER && userRepository.countByRole(UserRole.ADMIN) <= 1) {
-            throw new LastAdminException();
+        if (user.getRole() == UserRole.ADMIN && role == UserRole.USER) {
+            if (userRepository.countByRole(UserRole.ADMIN) <= 1) {
+                throw new LastAdminException();
+            }
+
+            // 잠금 해제된 마지막 ADMIN도 보호
+            if (!user.isLocked() && userRepository.countByRoleAndLockedFalse(UserRole.ADMIN) <= 1) {
+                throw new LastAdminException();
+            }
         }
 
         user.changeRole(role);
 
-        // db 트랜잭션이 커밋된 이후에 Redis 세션 무효화되도록
+        // DB 트랜잭션 커밋 이후 Redis 세션 무효화
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
@@ -74,6 +84,7 @@ public class UserService {
 
         return UserDto.from(user);
     }
+
 
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -134,6 +145,9 @@ public class UserService {
     @Transactional
     @PreAuthorize("hasRole('ADMIN') and #userId != authentication.principal.userDto.id")
     public UserDto updateLock(UUID userId, boolean locked) {
+        // 관리자 권한 및 잠금 변경에 동일한 락 사용
+        userRepository.acquireAdminLock();
+
         User user = userRepository.findById(userId)
                 .orElseThrow(UserNotFoundException::new);
 
