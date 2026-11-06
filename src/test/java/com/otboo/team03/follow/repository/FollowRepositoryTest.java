@@ -8,6 +8,7 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
@@ -67,5 +68,63 @@ class FollowRepositoryTest extends PostgresTestSupport {
         () -> assertEquals(followee.getId(), foundFollow.getFolloweeId()),
         () -> assertNotNull(foundFollow.getCreatedAt())
     );
+  }
+
+  @Test
+  void 동일한_사용자를_중복_팔로우하면_DB_제약조건으로_실패한다() {
+    // given
+    User follower = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "팔로워"
+        )
+    );
+
+    User followee = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "팔로우 대상"
+        )
+    );
+
+    followRepository.saveAndFlush(
+        new Follow(follower.getId(), followee.getId())
+    );
+
+    // when
+    DataIntegrityViolationException exception = assertThrows(
+        DataIntegrityViolationException.class,
+        () -> followRepository.saveAndFlush(
+            new Follow(follower.getId(), followee.getId())
+        )
+    );
+
+    // then
+    assertNotNull(exception);
+  }
+
+  @Test
+  void 자기_자신을_팔로우하면_DB_제약조건으로_실패한다() {
+    // given
+    User user = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "테스트 사용자"
+        )
+    );
+
+    Follow follow = new Follow(user.getId(), user.getId());
+
+    // when
+    DataIntegrityViolationException exception = assertThrows(
+        DataIntegrityViolationException.class,
+        () -> followRepository.saveAndFlush(follow)
+    );
+
+    // then
+    assertNotNull(exception);
   }
 }
