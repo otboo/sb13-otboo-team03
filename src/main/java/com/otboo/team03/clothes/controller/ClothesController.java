@@ -107,4 +107,32 @@ public class ClothesController {
         clothesService.delete(clothesId, userDetails.getUserDto().id());
         return ResponseEntity.noContent().build();
     }
+
+    //구매링크로 불러오기
+    @GetMapping("/extractions")
+    public ResponseEntity<ClothesDto> extractByurl(
+            @RequestParam("url") String url,
+            Authentication authentication){
+        if(authentication == null || !authentication.isAuthenticated()
+        || !(authentication.getPrincipal() instanceof OtbooUserDetails userDetails)){
+            throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
+
+        if(url.isBlank()){
+            throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+
+        //임시 응답 : 다음 단계에서 실제 추출 서비스 호출로 교체
+        ClothesDto response = new ClothesDto(
+                null,
+                userDetails.getUserDto().id(),
+                "추출 API 연결 확인",
+                null,
+                null,
+                java.util.List.of()
+        );
+
+        return ResponseEntity.ok(response);
+    }
+
 }

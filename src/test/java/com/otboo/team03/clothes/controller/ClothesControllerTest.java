@@ -266,6 +266,47 @@ class ClothesControllerTest {
         verify(service).create(any(), org.mockito.ArgumentMatchers.eq(image));
     }
 
+    @Test
+    void extractionReturnsDraftForAuthenticatedUser() throws Exception {
+        mvc.perform(get("/api/clothes/extractions").principal(auth(ownerId))
+                        .param("url", "https://www.musinsa.com/products/123"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ownerId").value(ownerId.toString()))
+                .andExpect(jsonPath("$.name").value("추출 API 연결 확인"))
+                .andExpect(jsonPath("$.id").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.imageUrl").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.type").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.attributes").isEmpty());
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void extractionRejectsMissingOrBlankUrl() throws Exception {
+        mvc.perform(get("/api/clothes/extractions").principal(auth(ownerId)))
+                .andExpect(status().isBadRequest());
+        for (String url : List.of("", "   ")) {
+            mvc.perform(get("/api/clothes/extractions").principal(auth(ownerId)).param("url", url))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.exceptionName").value("INVALID_INPUT_VALUE"));
+        }
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void extractionRejectsInvalidAuthentication() throws Exception {
+        var authentications = java.util.Arrays.<org.springframework.security.core.Authentication>asList(
+                null,
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("user", "password"),
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("wrong principal", null, List.of()));
+        for (var authentication : authentications) {
+            var request = get("/api/clothes/extractions").param("url", "https://www.musinsa.com/products/123");
+            if (authentication != null) request.principal(authentication);
+            mvc.perform(request).andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.exceptionName").value("AUTHENTICATION_REQUIRED"));
+        }
+        verifyNoInteractions(service);
+    }
+
     private ClothesDto response() {
         return new ClothesDto(clothesId, ownerId, "반팔", null, ClothesType.TOP, List.of());
     }
