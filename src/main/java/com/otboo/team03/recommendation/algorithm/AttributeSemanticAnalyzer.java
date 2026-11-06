@@ -1,9 +1,12 @@
 package com.otboo.team03.recommendation.algorithm;
 
+import org.springframework.stereotype.Component;
+
 import java.util.Map;
 import java.util.Set;
 
 /** 두께 관련 표현을 해석하며, 사전에 없는 표현은 추측하지 않는다. */
+@Component
 public class AttributeSemanticAnalyzer {
 
     private static final Set<String> THICKNESS_NAMES = Set.of("두께", "두께감");

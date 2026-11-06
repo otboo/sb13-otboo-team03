@@ -361,6 +361,63 @@ class BasicOutfitAlgorithmTest {
     @DisplayName("속성 기반 의상 추천")
     class AttributeBasedRecommendation {
 
+        @Test
+        void 적합도가_같으면_입력_순서를_유지한다() {
+            Clothes heavy = clothes(ClothesType.TOP);
+            Clothes firstLight = clothes(ClothesType.TOP);
+            Clothes secondLight = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+            Map<UUID, ThicknessLevel> levels = Map.of(
+                    heavy.getId(), HEAVY, firstLight.getId(), LIGHT, secondLight.getId(), LIGHT);
+
+            var firstResult = algorithm.recommend(
+                    List.of(heavy, firstLight, secondLight, bottom), levels, 28.0, 3);
+            var reversedResult = algorithm.recommend(
+                    List.of(heavy, secondLight, firstLight, bottom), levels, 28.0, 3);
+
+            assertThat(firstResult).containsExactlyInAnyOrder(firstLight, bottom);
+            assertThat(reversedResult).containsExactlyInAnyOrder(secondLight, bottom);
+        }
+
+        @Test
+        void 보정_온도를_두께_선택과_아우터_추가에_함께_적용한다() {
+            Clothes light = clothes(ClothesType.TOP);
+            Clothes heavy = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+            Clothes outer = clothes(ClothesType.OUTER);
+
+            var result = algorithm.recommend(List.of(light, heavy, bottom, outer),
+                    Map.of(light.getId(), LIGHT, heavy.getId(), HEAVY, outer.getId(), HEAVY),
+                    17.0, 1);
+
+            // 보정 온도 13도에서 두꺼운 상의를 선택하고 아우터도 추가해야 한다.
+            assertThat(result).containsExactlyInAnyOrder(heavy, bottom, outer);
+        }
+
+        @Test
+        void ID가_없는_의상은_UNKNOWN으로_평가한다() {
+            Clothes withoutId = new Clothes("ID 없는 상의", ClothesType.TOP, null, owner);
+            Clothes light = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+
+            var result = algorithm.recommend(List.of(withoutId, light, bottom),
+                    Map.of(light.getId(), LIGHT), 28.0, 3);
+
+            assertThat(result).containsExactlyInAnyOrder(light, bottom);
+        }
+
+        @Test
+        void ID가_없는_상의와_하의도_후보에_유지하여_기본_조합을_반환한다() {
+            Clothes top = new Clothes("ID 없는 상의", ClothesType.TOP, null, owner);
+            Clothes bottom = new Clothes("ID 없는 하의", ClothesType.BOTTOM, null, owner);
+            assertThat(top.getId()).isNull();
+            assertThat(bottom.getId()).isNull();
+
+            var result = algorithm.recommend(List.of(top, bottom), Map.of(), 28.0, 3);
+
+            assertThat(result).containsExactlyInAnyOrder(top, bottom);
+        }
+
         @ParameterizedTest
         @CsvSource({"28.0, 3, LIGHT", "10.0, 3, HEAVY", "17.0, 1, HEAVY", "20.0, 5, MEDIUM"})
         void 입력_순서보다_보정_온도에_적합한_상의를_우선한다(
