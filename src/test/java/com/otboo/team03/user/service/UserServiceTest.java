@@ -23,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -35,8 +36,7 @@ import java.util.UUID;
 import java.time.Instant;
 import java.util.List;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -279,6 +279,31 @@ class UserServiceTest {
             // then: Redis 세션 유지
             verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
         }
+
+        @Test
+        @DisplayName("Redis 세션 무효화 실패 시 커밋 후 예외를 전파하지 않는다")
+        void updateRole_afterCommit_redisFailureDoesNotPropagate() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+            doThrow(new RedisConnectionFailureException("Redis 연결 실패"))
+                    .when(jwtRegistry).invalidateJwtInformationByUserId(userId);
+
+            // when
+            UserDto result = userService.updateRole(userId, UserRole.ADMIN);
+
+            // then
+            assertThat(result.role()).isEqualTo(UserRole.ADMIN);
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+
+            assertThatCode(() -> TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit))
+                    .doesNotThrowAnyException();
+
+            verify(jwtRegistry).invalidateJwtInformationByUserId(userId);
+        }
     }
 
     @Nested
@@ -435,6 +460,34 @@ class UserServiceTest {
             verify(temporaryPasswordRepository, never()).delete(email);
             verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
         }
+
+        @Test
+        @DisplayName("Redis 세션 무효화 실패 시 커밋 후 예외를 전파하지 않는다")
+        void changePassword_afterCommit_redisFailureDoesNotPropagate() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedOldPassword", "일반 사용자");
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+            when(passwordEncoder.encode("newPassword123!")).thenReturn("encodedNewPassword");
+
+            doThrow(new RedisConnectionFailureException("Redis 연결 실패"))
+                    .when(jwtRegistry).invalidateJwtInformationByUserId(userId);
+
+            // when
+            userService.changePassword(userId, "newPassword123!");
+
+            // then
+            assertThat(user.getPassword()).isEqualTo("encodedNewPassword");
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+
+            assertThatCode(() -> TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit))
+                    .doesNotThrowAnyException();
+
+            verify(temporaryPasswordRepository).delete(user.getEmail());
+            verify(jwtRegistry).invalidateJwtInformationByUserId(userId);
+        }
     }
 
     @Nested
@@ -589,6 +642,31 @@ class UserServiceTest {
             assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
 
             verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+        }
+
+        @Test
+        @DisplayName("Redis 세션 무효화 실패 시 커밋 후 예외를 전파하지 않는다")
+        void updateLock_afterCommit_redisFailureDoesNotPropagate() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+            doThrow(new RedisConnectionFailureException("Redis 연결 실패"))
+                    .when(jwtRegistry).invalidateJwtInformationByUserId(userId);
+
+            // when
+            UserDto result = userService.updateLock(userId, true);
+
+            // then
+            assertThat(result.locked()).isTrue();
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+
+            assertThatCode(() -> TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit))
+                    .doesNotThrowAnyException();
+
+            verify(jwtRegistry).invalidateJwtInformationByUserId(userId);
         }
     }
 
