@@ -406,6 +406,18 @@ class BasicOutfitAlgorithmTest {
             assertThat(result).containsExactlyInAnyOrder(light, bottom);
         }
 
+        @Test
+        void ID가_없는_상의와_하의도_후보에_유지하여_기본_조합을_반환한다() {
+            Clothes top = new Clothes("ID 없는 상의", ClothesType.TOP, null, owner);
+            Clothes bottom = new Clothes("ID 없는 하의", ClothesType.BOTTOM, null, owner);
+            assertThat(top.getId()).isNull();
+            assertThat(bottom.getId()).isNull();
+
+            var result = algorithm.recommend(List.of(top, bottom), Map.of(), 28.0, 3);
+
+            assertThat(result).containsExactlyInAnyOrder(top, bottom);
+        }
+
         @ParameterizedTest
         @CsvSource({"28.0, 3, LIGHT", "10.0, 3, HEAVY", "17.0, 1, HEAVY", "20.0, 5, MEDIUM"})
         void 입력_순서보다_보정_온도에_적합한_상의를_우선한다(
