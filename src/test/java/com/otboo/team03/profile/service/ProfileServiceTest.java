@@ -1,7 +1,9 @@
 package com.otboo.team03.profile.service;
 
+import com.otboo.team03.global.storage.ImageStorage;
 import com.otboo.team03.profile.dto.ProfileDto;
 import com.otboo.team03.profile.dto.Gender;
+import com.otboo.team03.profile.dto.ProfileUpdateRequest;
 import com.otboo.team03.profile.entity.Profile;
 import com.otboo.team03.profile.exception.ProfileNotFoundException;
 import com.otboo.team03.profile.mapper.ProfileDtoAssembler;
@@ -18,10 +20,14 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.mock.web.MockMultipartFile;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class ProfileServiceTest {
@@ -31,6 +37,9 @@ class ProfileServiceTest {
 
   @Mock
   private ProfileDtoAssembler profileDtoAssembler;
+
+  @Mock
+  private ImageStorage imageStorage;
 
   @InjectMocks
   private ProfileServiceImpl profileService;
@@ -76,4 +85,86 @@ class ProfileServiceTest {
     assertThatThrownBy(() -> profileService.getProfile(nonExistentUserId))
         .isInstanceOf(ProfileNotFoundException.class);
   }
+
+  @Test
+  @DisplayName("이미지와 수정 요청이 주어지면 S3에 업로드하고 프로필을 정상 수정한다")
+  void updateProfile_withImage_success() {
+    // given
+    UUID userId = UUID.randomUUID();
+    User user = new User("woody@otboo.io", "pass1234!", "우디");
+    Profile profile = new Profile(user);
+    // 수정 요청 DTO 준비
+    ProfileUpdateRequest request = new ProfileUpdateRequest(
+        "우디새이름", Gender.FEMALE, LocalDate.of(1995, 5, 5), null, 4
+    );
+    // 가짜 이미지 파일 준비
+    MockMultipartFile image = new MockMultipartFile(
+        "image", "test.jpg", "image/jpeg", "image-content".getBytes()
+    );
+    // 반환될 기대 DTO
+    ProfileDto expectedDto = ProfileDto.from(profile, "profile/new-key.jpg");
+    // 가짜 객체들이 정상 동작하도록 길을 열어주는 설정
+    given(profileRepository.findById(userId)).willReturn(Optional.of(profile));
+    given(imageStorage.upload(image)).willReturn("profile/new-key.jpg");
+    given(profileDtoAssembler.toDto(profile)).willReturn(expectedDto);
+
+    //when
+    ProfileDto result = profileService.updateProfile(userId, request, image);
+
+    //then
+    assertThat(result).isNotNull();
+    assertThat(profile.getProfileImageUrl()).isEqualTo("profile/new-key.jpg");
+    assertThat(profile.getGender()).isEqualTo(Gender.FEMALE);
+    // S3 업로드가 실제로 실행되었는지 확인하는 핵심 검증
+    verify(imageStorage).upload(image);
+  }
+
+  @Test
+  @DisplayName("이미지 없이 텍스트 정보만 주어지면 S3 업로드 없이 프로필 정보를 정상 수정한다")
+  void updateProfile_withoutImage_success() {
+    // given
+    UUID userId = UUID.randomUUID();
+    User user = new User("woody@otboo.io", "pass1234!", "우디");
+    // 기존에 이미지가 있던 프로필 준비
+    Profile profile = new Profile(
+        user, "https://cdn.otboo.io/profiles/old.png", Gender.MALE,
+        LocalDate.of(1995, 5, 20), 37.5, 126.9, 3, List.of("서울시")
+    );
+    // 텍스트 수정 요청 준비
+    ProfileUpdateRequest request = new ProfileUpdateRequest(
+        "우디", Gender.FEMALE, LocalDate.of(1995, 5, 20), null, 5
+    );
+    ProfileDto expectedDto = ProfileDto.from(profile, "https://cdn.otboo.io/profiles/old.png");
+    given(profileRepository.findById(userId)).willReturn(Optional.of(profile));
+    given(profileDtoAssembler.toDto(profile)).willReturn(expectedDto);
+
+    // When (실행 - image 파라미터에 null 전달)
+    ProfileDto result = profileService.updateProfile(userId, request, null);
+    // Then
+    assertThat(result).isNotNull();
+    assertThat(profile.getGender()).isEqualTo(Gender.FEMALE); // 성별 변경 확인
+    assertThat(profile.getTemperatureSensitivity()).isEqualTo(5); // 민감도 변경 확인
+    assertThat(profile.getProfileImageUrl()).isEqualTo("https://cdn.otboo.io/profiles/old.png"); // 기존 이미지 유지 확인
+    // imageStorage.upload()가 절대(never) 한 번도 호출되지 않았는지 검증.
+    verify(imageStorage, never()).upload(any());
+  }
+
+  @Test
+  @DisplayName("존재하지 않는 사용자의 ID로 수정을 시도하면 ProfileNotFoundException이 발생한다")
+  void updateProfile_notFound() {
+    // given
+    UUID nonExistentUserId = UUID.randomUUID();
+    ProfileUpdateRequest request = new ProfileUpdateRequest(
+        "우디", Gender.MALE, LocalDate.of(1995, 5, 20), null, 3
+    );
+
+    // 조회 시 빈 Optional 반환 설정
+    given(profileRepository.findById(nonExistentUserId)).willReturn(Optional.empty());
+
+    //when & then
+    assertThatThrownBy(() -> profileService.updateProfile(nonExistentUserId, request, null))
+        .isInstanceOf(ProfileNotFoundException.class);
+  }
+
+
 }
