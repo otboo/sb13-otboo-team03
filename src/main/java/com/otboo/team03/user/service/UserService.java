@@ -90,7 +90,11 @@ public class UserService {
                 log.info("User role changed: actorId={}, targetUserId={}, previousRole={}, newRole={}",
                         actorId, userId, previousRole, role);
 
-                jwtRegistry.invalidateJwtInformationByUserId(userId);
+                try {
+                    jwtRegistry.invalidateJwtInformationByUserId(userId);
+                } catch (RuntimeException e) {
+                    log.error("Failed to invalidate JWT session after role change: userId={}", userId, e);
+                }
             }
         });
 
@@ -144,12 +148,17 @@ public class UserService {
         String encodedPassword = passwordEncoder.encode(newPassword);
         user.changePassword(encodedPassword);
 
-        // db 트랜잭션이 커밋된 이후에 Redis 세션 무효화되도록
+        // DB 트랜잭션이 커밋된 이후 Redis 세션 무효화
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 temporaryPasswordRepository.delete(user.getEmail());
-                jwtRegistry.invalidateJwtInformationByUserId(userId);
+
+                try {
+                    jwtRegistry.invalidateJwtInformationByUserId(userId);
+                } catch (RuntimeException e) {
+                    log.error("Failed to invalidate JWT session after password change: userId={}", userId, e);
+                }
             }
         });
     }
@@ -184,7 +193,11 @@ public class UserService {
                     log.info("User lock changed: actorId={}, targetUserId={}, previousLocked={}, newLocked={}",
                             actorId, userId, previousLocked, locked);
 
-                    jwtRegistry.invalidateJwtInformationByUserId(userId);
+                    try {
+                        jwtRegistry.invalidateJwtInformationByUserId(userId);
+                    } catch (RuntimeException e) {
+                        log.error("Failed to invalidate JWT session after account lock: userId={}", userId, e);
+                    }
                 }
             });
         }
