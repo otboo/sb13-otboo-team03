@@ -78,6 +78,9 @@ dependencies {
         implementation 'org.springframework.retry:spring-retry:2.0.12'
         implementation 'org.springframework.boot:spring-boot-starter-aspectj'
 
+        // 구매 링크 HTML 분석
+        implementation 'org.jsoup:jsoup:1.18.3'
+
         // Mail
         implementation 'org.springframework.boot:spring-boot-starter-mail'
 }
