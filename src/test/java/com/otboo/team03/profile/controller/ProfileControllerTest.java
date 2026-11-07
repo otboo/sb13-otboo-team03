@@ -16,7 +16,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.test.web.servlet.MockMvc;
@@ -27,9 +29,12 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -155,6 +160,74 @@ class ProfileControllerTest {
             .contentType(MediaType.APPLICATION_JSON))
         .andDo(print())
         .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @DisplayName("PATCH /api/users/{userId}/profiles 요청 시 본인 인증 성공하면 HTTP 200과 ProfileDto를 반환한다")
+  void updateProfile_success() throws Exception {
+    // given
+    UUID userId = UUID.randomUUID();
+    // 가짜 이미지 파일 준비
+    MockMultipartFile image = new MockMultipartFile(
+        "image", "avatar.png", "image/png", "fake-image".getBytes()
+    );
+    // 가짜 JSON 요청 준비 (JSON 문자열을 바이트로 변환)
+    String jsonContent = """
+        {
+          "name": "우디",
+          "gender": "FEMALE",
+          "birthDate": "1998-01-01",
+          "temperatureSensitivity": 4
+        }
+        """;
+    MockMultipartFile requestPart = new MockMultipartFile(
+        "request", "", "application/json", jsonContent.getBytes()
+    );
+    // 서비스가 반환해 줄 기대 DTO 준비
+    ProfileDto responseDto = new ProfileDto(
+        userId, "우디", Gender.FEMALE, LocalDate.of(1998, 1, 1),
+        null, 4, "https://cdn.otboo.io/profiles/avatar.png"
+    );
+    // 서비스 Mock 동작 정의
+    given(profileService.updateProfile(eq(userId), any(), any())).willReturn(responseDto);
+
+    // when & then (멀티파트 PATCH 요청 전송 및 200 OK 검증)
+    mockMvc.perform(multipart(HttpMethod.PATCH, "/api/users/{userId}/profiles", userId)
+            .file(image)
+            .file(requestPart)
+            .principal(createAuth(userId)))
+        .andDo(print())
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.userId").value(userId.toString()))
+        .andExpect(jsonPath("$.gender").value("FEMALE"));
+  }
+
+  @Test
+  @DisplayName("타인의 userId로 수정을 시도하면 HTTP 403 FORBIDDEN을 반환하고 서비스를 호출하지 않는다")
+  void updateProfile_forbidden_differentUser() throws Exception {
+    // given (준비: 로그인한 유저 ID와 타인 유저 ID 생성)
+    UUID loggedInUserId = UUID.randomUUID();
+    UUID otherUserId = UUID.randomUUID();
+    // when & then (타인 ID로 PATCH 멀티파트 요청 전송 및 403 검증)
+    mockMvc.perform(multipart(HttpMethod.PATCH, "/api/users/{userId}/profiles", otherUserId)
+            .principal(createAuth(loggedInUserId)))
+        .andDo(print())
+        .andExpect(status().isForbidden());
+    // 핵심 보안 검증: 타인 요청이므로 서비스가 절대 호출되지 않았는지 확인
+    verifyNoInteractions(profileService);
+  }
+
+  @Test
+  @DisplayName("인증 정보 없이 프로필 수정을 시도하면 HTTP 401 UNAUTHORIZED를 반환하고 서비스를 호출하지 않는다")
+  void updateProfile_unauthenticated() throws Exception {
+    // given
+    UUID userId = UUID.randomUUID();
+    // when & then (인증 principal 없이 요청 전송 시 401 검증)
+    mockMvc.perform(multipart(HttpMethod.PATCH, "/api/users/{userId}/profiles", userId))
+        .andDo(print())
+        .andExpect(status().isUnauthorized());
+    // 서비스가 호출되지 않았는지 검증
+    verifyNoInteractions(profileService);
   }
 
 }
