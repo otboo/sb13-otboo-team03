@@ -1,5 +1,7 @@
 package com.otboo.team03.profile.service;
 
+import com.otboo.team03.global.exception.ErrorCode;
+import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.global.storage.ImageStorage;
 import com.otboo.team03.profile.dto.ProfileDto;
 import com.otboo.team03.profile.dto.ProfileUpdateRequest;
@@ -9,6 +11,7 @@ import com.otboo.team03.profile.exception.ProfileNotFoundException;
 import com.otboo.team03.profile.mapper.ProfileDtoAssembler;
 import com.otboo.team03.profile.repository.ProfileRepository;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,7 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class ProfileServiceImpl implements ProfileService {
   private final ProfileRepository profileRepository;
   private final ProfileDtoAssembler profileDtoAssembler;
-  private final ImageStorage imageStorage;
+  private final Optional<ImageStorage> imageStorage;
 
   @Override
   public ProfileDto getProfile(UUID userId) {
@@ -43,7 +46,9 @@ public class ProfileServiceImpl implements ProfileService {
 
     //  2. 새 이미지 파일이 들어온 경우에만 S3 업로드 후 엔티티 반영
     if (image != null && !image.isEmpty()) {
-      String imageKey = imageStorage.upload(image);
+      ImageStorage storage = imageStorage.orElseThrow(() ->
+          new OtbooException(ErrorCode.INTERNAL_SERVER_ERROR));
+      String imageKey = storage.upload(image);
       profile.updateProfileImageUrl(imageKey);
     }
 

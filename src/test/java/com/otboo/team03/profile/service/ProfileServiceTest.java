@@ -1,5 +1,6 @@
 package com.otboo.team03.profile.service;
 
+import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.global.storage.ImageStorage;
 import com.otboo.team03.profile.dto.ProfileDto;
 import com.otboo.team03.profile.dto.Gender;
@@ -9,10 +10,10 @@ import com.otboo.team03.profile.exception.ProfileNotFoundException;
 import com.otboo.team03.profile.mapper.ProfileDtoAssembler;
 import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.user.entity.User;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -41,8 +42,15 @@ class ProfileServiceTest {
   @Mock
   private ImageStorage imageStorage;
 
-  @InjectMocks
   private ProfileServiceImpl profileService;
+  @BeforeEach
+  void setUp() {
+    profileService = new ProfileServiceImpl(
+        profileRepository,
+        profileDtoAssembler,
+        Optional.of(imageStorage)
+    );
+  }
 
   @Test
   @DisplayName("존재하는 사용자의 ID로 조회하면 정상적으로 ProfileDto를 반환한다")
@@ -164,6 +172,25 @@ class ProfileServiceTest {
     //when & then
     assertThatThrownBy(() -> profileService.updateProfile(nonExistentUserId, request, null))
         .isInstanceOf(ProfileNotFoundException.class);
+  }
+
+  @Test
+  @DisplayName("스토리지 빈이 없는 환경(Optional.empty())에서 이미지 업로드를 시도하면 INTERNAL_SERVER_ERROR 예외가 발생한다")
+  void updateProfile_withoutImageStorage_throwsException() {
+    // given
+    ProfileServiceImpl noStorageService = new ProfileServiceImpl(
+        profileRepository, profileDtoAssembler, Optional.empty()
+    );
+    UUID userId = UUID.randomUUID();
+    User user = new User("woody@otboo.io", "pass1234!", "우디");
+    Profile profile = new Profile(user);
+    MockMultipartFile image = new MockMultipartFile(
+        "image", "test.jpg", "image/jpeg", "image-content".getBytes()
+    );
+    given(profileRepository.findById(userId)).willReturn(Optional.of(profile));
+    // when & then
+    assertThatThrownBy(() -> noStorageService.updateProfile(userId, null, image))
+        .isInstanceOf(OtbooException.class);
   }
 
 
