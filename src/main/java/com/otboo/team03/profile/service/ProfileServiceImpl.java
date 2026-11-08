@@ -77,7 +77,7 @@ public class ProfileServiceImpl implements ProfileService {
 
     // 4. 엔티티 부분 수정 호출 (request가 null이 아닐 때만 값 전달)
     if (request != null) {
-      if (request.name() != null && profile.getUser() != null) {
+      if (request.name() != null) {
         profile.getUser().changeName(request.name());
       }
 

@@ -214,7 +214,7 @@ class ProfileServiceTest {
     // 위치 정보(WeatherAPILocation)가 포함된 요청 준비!
     WeatherAPILocation location = new WeatherAPILocation(37.5665, 126.9780, 60, 127, List.of("서울특별시", "중구"));
     ProfileUpdateRequest request = new ProfileUpdateRequest(
-        "우디", Gender.MALE, LocalDate.of(1995, 5, 20), location, 3
+        null, Gender.MALE, LocalDate.of(1995, 5, 20), location, 3
     );
     ProfileDto expectedDto = ProfileDto.from(profile, null);
     given(profileRepository.findById(userId)).willReturn(Optional.of(profile));
@@ -298,6 +298,28 @@ class ProfileServiceTest {
     // when
     profileService.updateProfile(userId, null, newImage);
     // then: delete가 절대(never) 호출되지 않았는지 검증!
+    verify(imageStorage, never()).delete(any());
+  }
+
+  @Test
+  @DisplayName("기존 이미지가 http://로 시작하는 외부 URL인 경우에도 기존 이미지 삭제를 호출하지 않는다")
+  void updateProfile_withHttpExternalImageUrl_doesNotDeleteOldImage() {
+    // given: 기존 이미지가 http:// 외부 URL인 프로필 준비
+    UUID userId = UUID.randomUUID();
+    User user = new User("woody@otboo.io", "pass1234!", "우디");
+    Profile profile = new Profile(
+        user, "http://cdn.otboo.io/default-avatar.png", Gender.MALE, LocalDate.of(1995, 5, 20),
+        37.5, 126.9, 3, List.of("서울시")
+    );
+    MockMultipartFile newImage = new MockMultipartFile(
+        "image", "new.jpg", "image/jpeg", "new-content".getBytes()
+    );
+    given(profileRepository.findById(userId)).willReturn(Optional.of(profile));
+    given(imageStorage.upload(newImage)).willReturn("profiles/new-key.jpg");
+    given(profileDtoAssembler.toDto(profile)).willReturn(ProfileDto.from(profile, "profiles/new-key.jpg"));
+    // when
+    profileService.updateProfile(userId, null, newImage);
+    // then
     verify(imageStorage, never()).delete(any());
   }
 
