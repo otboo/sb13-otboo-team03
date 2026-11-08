@@ -60,16 +60,12 @@ public class ProfileServiceImpl implements ProfileService {
           && !oldImageKey.startsWith("http://")
           && !oldImageKey.startsWith("https://")) {
         // 트랜잭션이 활성화된 상태라면 DB 커밋이 완료된 직후(afterCommit)에 삭제 실행
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-          TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-              storage.delete(oldImageKey);
-            }
-          });
-        } else {
-          storage.delete(oldImageKey);
-        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+          @Override
+          public void afterCommit() {
+            storage.delete(oldImageKey);
+          }
+        });
       }
     }
 
