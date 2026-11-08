@@ -3,6 +3,8 @@ package com.otboo.team03.user.service;
 import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.dto.CursorResponse;
+import com.otboo.team03.profile.entity.Profile;
+import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
 import com.otboo.team03.user.dto.request.UserListRequest;
 import com.otboo.team03.user.dto.response.UserDto;
@@ -35,6 +37,7 @@ public class UserService {
     private static final long ADMIN_ADVISORY_LOCK_ID = 720072L;
 
     private final UserRepository userRepository;
+    private final ProfileRepository profileRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtRegistry jwtRegistry;
     private final RedisTemporaryPasswordRepository temporaryPasswordRepository;
@@ -49,6 +52,9 @@ public class UserService {
 
         User user = new User(request.email(), encodedPassword, request.name());
         User savedUser = userRepository.save(user);
+
+        Profile profile = new Profile(savedUser);
+        profileRepository.save(profile);
 
         return UserDto.from(savedUser);
     }
