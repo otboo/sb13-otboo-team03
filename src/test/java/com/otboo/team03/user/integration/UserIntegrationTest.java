@@ -1,6 +1,8 @@
 
 package com.otboo.team03.user.integration;
 
+import com.otboo.team03.profile.entity.Profile;
+import com.otboo.team03.profile.repository.ProfileRepository;
 import tools.jackson.databind.ObjectMapper;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
 import com.otboo.team03.user.entity.User;
@@ -59,10 +61,13 @@ class UserIntegrationTest {
     private UserRepository userRepository;
 
     @Autowired
+    private ProfileRepository profileRepository;
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
 
     @Test
-    @DisplayName("회원가입 성공 - 사용자 DB 저장 및 비밀번호 암호화")
+    @DisplayName("회원가입 성공 - 사용자 및 기본 프로필 저장, 비밀번호 암호화")
     void createUser_success() throws Exception {
         // given
         String email = "integration-" + UUID.randomUUID() + "@example.com";
@@ -91,5 +96,9 @@ class UserIntegrationTest {
         // 비밀번호 암호화 검증
         assertThat(savedUser.getPassword()).isNotEqualTo(rawPassword);
         assertThat(passwordEncoder.matches(rawPassword, savedUser.getPassword())).isTrue();
+
+        // 기본 프로필 저장 및 사용자 연결 검증
+        Profile savedProfile = profileRepository.findById(savedUser.getId()).orElseThrow();
+        assertThat(savedProfile.getUserId()).isEqualTo(savedUser.getId());
     }
 }

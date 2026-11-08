@@ -6,6 +6,8 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.domain.Persistable;
@@ -47,7 +49,7 @@ public class Profile implements Persistable<UUID> {
   @Column(name = "temperature_sensitivity")
   private Integer temperatureSensitivity;
 
-  @Convert(converter = StringListJsonConverter.class)
+  @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "location_names", columnDefinition = "jsonb")
   private List<String> locationNames = new ArrayList<>();
 
