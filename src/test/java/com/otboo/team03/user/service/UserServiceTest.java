@@ -1,7 +1,9 @@
 package com.otboo.team03.user.service;
 
+import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.dto.CursorResponse;
+import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
 import com.otboo.team03.user.dto.request.UserListRequest;
 import com.otboo.team03.user.dto.response.UserDto;
@@ -22,6 +24,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -32,8 +37,7 @@ import java.util.UUID;
 import java.time.Instant;
 import java.util.List;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -45,6 +49,9 @@ class UserServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private ProfileRepository profileRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -63,7 +70,7 @@ class UserServiceTest {
     class CreateUserTest {
 
         @Test
-        @DisplayName("성공")
+        @DisplayName("성공 - 회원가입 시 사용자와 기본 프로필 생성")
         void createUser_success() {
             // given
             UserCreateRequest request = new UserCreateRequest(
@@ -91,6 +98,10 @@ class UserServiceTest {
             assertThat(result.locked()).isFalse();
 
             then(userRepository).should().save(any(User.class));
+            then(profileRepository).should().save(argThat(profile ->
+                    profile.getUser() != null
+                            && profile.getUser().getEmail().equals(request.email())
+            ));
         }
 
         @Test
@@ -122,11 +133,13 @@ class UserServiceTest {
         @BeforeEach
         void setUp() {
             TransactionSynchronizationManager.initSynchronization();
+            setTestAuthentication();
         }
 
         @AfterEach
         void tearDown() {
             TransactionSynchronizationManager.clearSynchronization();
+            SecurityContextHolder.clearContext();
         }
 
         @Test
@@ -206,6 +219,26 @@ class UserServiceTest {
         }
 
         @Test
+        @DisplayName("실패 - 다른 ADMIN이 잠겨 있다면 마지막 활성 ADMIN 강등을 차단한다")
+        void updateRole_lastActiveAdmin_throwsException() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User admin = new User("admin@example.com", "encodedPassword", "관리자");
+            admin.changeRole(UserRole.ADMIN);
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(admin));
+            when(userRepository.countByRole(UserRole.ADMIN)).thenReturn(2L);
+            when(userRepository.countByRoleAndLockedFalse(UserRole.ADMIN)).thenReturn(1L);
+
+            // when & then
+            assertThatThrownBy(() -> userService.updateRole(userId, UserRole.USER))
+                    .isInstanceOf(LastAdminException.class);
+
+            assertThat(admin.getRole()).isEqualTo(UserRole.ADMIN);
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+        }
+
+        @Test
         @DisplayName("성공 - DB 커밋 후 기존 JWT 세션 무효화")
         void updateRole_roleChanged_invalidatesJwtSession() {
             // given
@@ -253,6 +286,31 @@ class UserServiceTest {
 
             // then: Redis 세션 유지
             verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+        }
+
+        @Test
+        @DisplayName("Redis 세션 무효화 실패 시 커밋 후 예외를 전파하지 않는다")
+        void updateRole_afterCommit_redisFailureDoesNotPropagate() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+            doThrow(new RedisConnectionFailureException("Redis 연결 실패"))
+                    .when(jwtRegistry).invalidateJwtInformationByUserId(userId);
+
+            // when
+            UserDto result = userService.updateRole(userId, UserRole.ADMIN);
+
+            // then
+            assertThat(result.role()).isEqualTo(UserRole.ADMIN);
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+
+            assertThatCode(() -> TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit))
+                    .doesNotThrowAnyException();
+
+            verify(jwtRegistry).invalidateJwtInformationByUserId(userId);
         }
     }
 
@@ -410,6 +468,34 @@ class UserServiceTest {
             verify(temporaryPasswordRepository, never()).delete(email);
             verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
         }
+
+        @Test
+        @DisplayName("Redis 세션 무효화 실패 시 커밋 후 예외를 전파하지 않는다")
+        void changePassword_afterCommit_redisFailureDoesNotPropagate() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedOldPassword", "일반 사용자");
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+            when(passwordEncoder.encode("newPassword123!")).thenReturn("encodedNewPassword");
+
+            doThrow(new RedisConnectionFailureException("Redis 연결 실패"))
+                    .when(jwtRegistry).invalidateJwtInformationByUserId(userId);
+
+            // when
+            userService.changePassword(userId, "newPassword123!");
+
+            // then
+            assertThat(user.getPassword()).isEqualTo("encodedNewPassword");
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+
+            assertThatCode(() -> TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit))
+                    .doesNotThrowAnyException();
+
+            verify(temporaryPasswordRepository).delete(user.getEmail());
+            verify(jwtRegistry).invalidateJwtInformationByUserId(userId);
+        }
     }
 
     @Nested
@@ -419,11 +505,13 @@ class UserServiceTest {
         @BeforeEach
         void setUp() {
             TransactionSynchronizationManager.initSynchronization();
+            setTestAuthentication();
         }
 
         @AfterEach
         void tearDown() {
             TransactionSynchronizationManager.clearSynchronization();
+            SecurityContextHolder.clearContext();
         }
 
         @Test
@@ -563,5 +651,51 @@ class UserServiceTest {
 
             verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
         }
+
+        @Test
+        @DisplayName("Redis 세션 무효화 실패 시 커밋 후 예외를 전파하지 않는다")
+        void updateLock_afterCommit_redisFailureDoesNotPropagate() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedPassword", "일반 사용자");
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+            doThrow(new RedisConnectionFailureException("Redis 연결 실패"))
+                    .when(jwtRegistry).invalidateJwtInformationByUserId(userId);
+
+            // when
+            UserDto result = userService.updateLock(userId, true);
+
+            // then
+            assertThat(result.locked()).isTrue();
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+
+            assertThatCode(() -> TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit))
+                    .doesNotThrowAnyException();
+
+            verify(jwtRegistry).invalidateJwtInformationByUserId(userId);
+        }
+    }
+
+    private void setTestAuthentication() {
+        UserDto userDto = new UserDto(
+                UUID.randomUUID(),
+                Instant.now(),
+                "admin@example.com",
+                "관리자",
+                UserRole.ADMIN,
+                false
+        );
+
+        OtbooUserDetails principal = new OtbooUserDetails(userDto, "encodedPassword");
+
+        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                principal,
+                null,
+                principal.getAuthorities()
+        );
+
+        SecurityContextHolder.getContext().setAuthentication(authentication);
     }
 }

@@ -2,14 +2,18 @@ package com.otboo.team03.feed.service;
 
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.repository.ClothesRepository;
+import com.otboo.team03.feed.dto.request.CommentCreateRequest;
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
 import com.otboo.team03.feed.dto.request.FeedUpdateRequest;
+import com.otboo.team03.feed.dto.response.CommentDto;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.FeedClothes;
+import com.otboo.team03.feed.entity.FeedComment;
 import com.otboo.team03.feed.entity.FeedLike;
 import com.otboo.team03.feed.mapper.FeedDtoAssembler;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
+import com.otboo.team03.feed.repository.FeedCommentRepository;
 import com.otboo.team03.feed.repository.FeedLikeRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedSearchQueryRepository;
@@ -19,8 +23,10 @@ import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.repository.UserRepository;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,6 +47,7 @@ public class FeedService {
   private final FeedDtoAssembler feedDtoAssembler;
   private final FeedSearchQueryRepository feedSearchQueryRepository;
   private final FeedLikeRepository feedLikeRepository;
+  private final FeedCommentRepository feedCommentRepository;
 
   @Transactional
   public FeedDto create(FeedCreateRequest request) {
@@ -156,6 +163,43 @@ public class FeedService {
     }
 
     feedLikeRepository.deleteByFeedIdAndUserId(feedId, userId);
+  }
+
+  @Transactional
+  public CommentDto createComment(
+      UUID feedId,
+      UUID authorId,
+      CommentCreateRequest request
+  ) {
+    if (!feedRepository.existsById(feedId)) {
+      throw new OtbooException(ErrorCode.NOT_FOUND_RESOURCE);
+    }
+
+    if (request == null
+        || request.feedId() == null
+        || request.authorId() == null
+        || request.content() == null
+        || request.content().isBlank()) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if (!feedId.equals(request.feedId())) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if (!authorId.equals(request.authorId())) {
+      throw new OtbooException(ErrorCode.ACCESS_DENIED);
+    }
+
+    FeedComment comment = new FeedComment(
+        feedId,
+        authorId,
+        request.content()
+    );
+
+    FeedComment savedComment = feedCommentRepository.save(comment);
+
+    return feedDtoAssembler.toCommentDto(savedComment);
   }
 
   @Transactional(readOnly = true)
@@ -349,5 +393,82 @@ public class FeedService {
         || new HashSet<>(clothesIds).size() != clothesIds.size())) {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
     }
+  }
+
+  @Transactional(readOnly = true)
+  public CursorResponse<CommentDto> getFeedComments(
+      UUID feedId,
+      int limit,
+      String cursor,
+      UUID idAfter
+  ) {
+    if (!feedRepository.existsById(feedId)) {
+      throw new OtbooException(ErrorCode.NOT_FOUND_RESOURCE);
+    }
+
+    if (limit <= 0 || limit == Integer.MAX_VALUE) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if ((cursor == null) != (idAfter == null)) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    List<FeedComment> fetched;
+
+    if (cursor == null) {
+      fetched =
+          feedCommentRepository.findByFeedIdOrderByCreatedAtDescIdDesc(
+              feedId,
+              PageRequest.of(0, limit + 1)
+          );
+    } else {
+      Instant cursorTime;
+
+      try {
+        cursorTime = Instant.parse(cursor);
+      } catch (DateTimeParseException ex) {
+        throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+      }
+
+      fetched = feedCommentRepository.findNextPage(
+          feedId,
+          cursorTime,
+          idAfter,
+          limit + 1
+      );
+    }
+
+    boolean hasNext = fetched.size() > limit;
+
+    List<FeedComment> page = hasNext
+        ? fetched.subList(0, limit)
+        : fetched;
+
+    List<CommentDto> data = page.stream()
+        .map(feedDtoAssembler::toCommentDto)
+        .toList();
+
+    String nextCursor = null;
+    UUID nextIdAfter = null;
+
+    if (hasNext) {
+      FeedComment lastComment = page.get(page.size() - 1);
+
+      nextCursor = lastComment.getCreatedAt().toString();
+      nextIdAfter = lastComment.getId();
+    }
+
+    long totalCount = feedCommentRepository.countByFeedId(feedId);
+
+    return new CursorResponse<>(
+        data,
+        nextCursor,
+        nextIdAfter,
+        hasNext,
+        totalCount,
+        "createdAt",
+        "DESCENDING"
+    );
   }
 }

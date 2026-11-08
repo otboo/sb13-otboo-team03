@@ -8,6 +8,7 @@ import com.otboo.team03.recommendation.dto.RecommendationDto;
 import com.otboo.team03.recommendation.service.RecommendationService;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.UserRole;
+import com.otboo.team03.weather.exception.WeatherNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -109,6 +110,19 @@ class RecommendationControllerTest {
                 .andExpect(jsonPath("$.details.weatherId")
                         .value("요청 값의 형식 또는 허용 범위가 올바르지 않습니다."));
         verifyNoInteractions(service);
+    }
+
+    @Test
+    void 해당_날씨가_없으면_404와_날씨_미존재_오류를_반환한다() throws Exception {
+        when(service.recommend(weatherId, userId)).thenThrow(new WeatherNotFoundException());
+
+        mvc.perform(get("/api/recommendations").param("weatherId", weatherId.toString())
+                        .principal(authentication()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.exceptionName").value("NOT_FOUND_WEATHER"))
+                .andExpect(jsonPath("$.message").value("날씨 정보가 존재하지 않습니다."));
+
+        verify(service).recommend(weatherId, userId);
     }
 
     private Authentication authentication() {

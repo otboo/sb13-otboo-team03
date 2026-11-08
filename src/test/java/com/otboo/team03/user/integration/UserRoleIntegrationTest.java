@@ -161,6 +161,37 @@ class UserRoleIntegrationTest {
                                     """))
                     .andExpect(status().isUnauthorized());
         }
+
+        @Test
+        @DisplayName("ADMIN은 자기 자신의 권한을 변경할 수 없다 - 403")
+        void updateRole_selfChange_returns403() throws Exception {
+            // given
+            User admin = userRepository.findByEmail(adminProperties.email()).orElseThrow();
+            User anotherAdmin = createUser();
+            anotherAdmin.changeRole(UserRole.ADMIN);
+            userRepository.saveAndFlush(anotherAdmin);
+
+            try {
+                String adminAccessToken = getAccessToken(login(adminProperties.email(), adminProperties.password()));
+                Cookie csrfCookie = getCsrfCookie();
+
+                // when & then
+                mockMvc.perform(patch("/api/users/{userId}/role", admin.getId())
+                                .header("Authorization", "Bearer " + adminAccessToken)
+                                .cookie(csrfCookie)
+                                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                {"role": "USER"}
+                                """))
+                        .andExpect(status().isForbidden());
+
+                assertThat(userRepository.findById(admin.getId()).orElseThrow().getRole()).isEqualTo(UserRole.ADMIN);
+
+            } finally {
+                userRepository.deleteById(anotherAdmin.getId());
+            }
+        }
     }
 
     @Nested

@@ -86,11 +86,7 @@ public class RedisJwtRegistry implements JwtRegistry {
     }
 
     // 사용자 ID 기준 JWT 무효화
-    @Retryable(
-            retryFor = RedisLockAcquisitionException.class,
-            maxAttempts = 10,
-            backoff = @Backoff(delay = 100, multiplier = 2)
-    )
+    @Retryable(interceptor = "jwtInvalidationRetryInterceptor")
     @Override
     public void invalidateJwtInformationByUserId(UUID userId) {
         String userKey = getUserKey(userId);
