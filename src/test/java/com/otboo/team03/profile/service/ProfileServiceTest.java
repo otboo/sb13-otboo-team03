@@ -11,6 +11,7 @@ import com.otboo.team03.profile.exception.ProfileNotFoundException;
 import com.otboo.team03.profile.mapper.ProfileDtoAssembler;
 import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.user.entity.User;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -51,6 +54,12 @@ class ProfileServiceTest {
         profileDtoAssembler,
         Optional.of(imageStorage)
     );
+    TransactionSynchronizationManager.initSynchronization();
+  }
+
+  @AfterEach
+  void tearDown() {
+    TransactionSynchronizationManager.clearSynchronization();
   }
 
   @Test
@@ -262,6 +271,8 @@ class ProfileServiceTest {
 
     // when (새 이미지로 프로필 수정 실행)
     profileService.updateProfile(userId, null, newImage);
+    TransactionSynchronizationManager.getSynchronizations()
+        .forEach(TransactionSynchronization::afterCommit);
     // then
     // 새 이미지가 정상 업로드되었는지 확인
     verify(imageStorage).upload(newImage);
