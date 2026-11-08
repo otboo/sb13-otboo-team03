@@ -27,12 +27,12 @@ class UserTest {
 
     @Test
     @DisplayName("사용자 이름을 변경할 수 있다")
-    void updateName_success() {
+    void changeName_success() {
         // given
         User user = new User("test@example.com", "encodedPassword", "기존 이름");
 
         // when
-        user.updateName("변경된 이름");
+        user.changeName("변경된 이름");
 
         // then
         assertThat(user.getName()).isEqualTo("변경된 이름");

@@ -48,4 +48,8 @@ public class User extends UpdateEntity {
     public void changeLocked(boolean locked) {
         this.locked = locked;
     }
+
+    public void changeName(String name) {
+        this.name = name;
+    }
 }
