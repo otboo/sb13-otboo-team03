@@ -24,6 +24,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -181,7 +182,7 @@ class ProfileControllerTest {
         }
         """;
     MockMultipartFile requestPart = new MockMultipartFile(
-        "request", "", "application/json", jsonContent.getBytes()
+        "request", "", "application/json", jsonContent.getBytes(StandardCharsets.UTF_8)
     );
     // 서비스가 반환해 줄 기대 DTO 준비
     ProfileDto responseDto = new ProfileDto(
