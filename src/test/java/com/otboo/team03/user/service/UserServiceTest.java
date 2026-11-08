@@ -3,6 +3,7 @@ package com.otboo.team03.user.service;
 import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.dto.CursorResponse;
+import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
 import com.otboo.team03.user.dto.request.UserListRequest;
 import com.otboo.team03.user.dto.response.UserDto;
@@ -50,6 +51,9 @@ class UserServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private ProfileRepository profileRepository;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     @Mock
@@ -66,7 +70,7 @@ class UserServiceTest {
     class CreateUserTest {
 
         @Test
-        @DisplayName("성공")
+        @DisplayName("성공 - 회원가입 시 사용자와 기본 프로필 생성")
         void createUser_success() {
             // given
             UserCreateRequest request = new UserCreateRequest(
@@ -94,6 +98,10 @@ class UserServiceTest {
             assertThat(result.locked()).isFalse();
 
             then(userRepository).should().save(any(User.class));
+            then(profileRepository).should().save(argThat(profile ->
+                    profile.getUser() != null
+                            && profile.getUser().getEmail().equals(request.email())
+            ));
         }
 
         @Test
