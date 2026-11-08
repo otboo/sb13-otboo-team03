@@ -219,5 +219,54 @@ class ProfileServiceTest {
     assertThat(profile.getLocationNames()).containsExactly("서울특별시", "중구");
   }
 
+  @Test
+  @DisplayName("수정 요청에 새 이름이 포함되어 있으면 유저의 이름이 정상 변경된다")
+  void updateProfile_withName_changesUserName() {
+    // given
+    UUID userId = UUID.randomUUID();
+    User user = new User("woody@otboo.io", "pass1234!", "원래이름");
+    Profile profile = new Profile(user);
+
+    ProfileUpdateRequest request = new ProfileUpdateRequest("우디01", null,  null, null, null);
+    ProfileDto expectedDto = ProfileDto.from(profile, null);
+
+    given(profileRepository.findById(userId)).willReturn(Optional.of(profile));
+    given(profileDtoAssembler.toDto(profile)).willReturn(expectedDto);
+
+    // when
+    ProfileDto result = profileService.updateProfile(userId, request, null);
+
+    // then
+    assertThat(result).isNotNull();
+    assertThat(user.getName()).isEqualTo(result.name());
+  }
+
+  @Test
+  @DisplayName("기존 S3 이미지가 있던 프로필에 새 이미지를 업로드하면 기존 S3 이미지가 삭제된다")
+  void updateProfile_replacesImage_deletesOldS3Image() {
+    // given (기존에 S3 이미지 "profiles/old-key.jpg"를 가지고 있던 프로필 준비)
+    UUID userId = UUID.randomUUID();
+    User user = new User("woody@otboo.io", "pass1234!", "우디");
+    Profile profile = new Profile(
+        user, "profiles/old-key.jpg", Gender.MALE, LocalDate.of(1995, 5, 20),
+        37.5, 126.9, 3, List.of("서울시")
+    );
+    // 새 업로드용 가짜 이미지 준비
+    MockMultipartFile newImage = new MockMultipartFile(
+        "image", "new.jpg", "image/jpeg", "new-content".getBytes()
+    );
+    ProfileDto expectedDto = ProfileDto.from(profile, "profiles/new-key.jpg");
+    given(profileRepository.findById(userId)).willReturn(Optional.of(profile));
+    given(imageStorage.upload(newImage)).willReturn("profiles/new-key.jpg");
+    given(profileDtoAssembler.toDto(profile)).willReturn(expectedDto);
+
+    // when (새 이미지로 프로필 수정 실행)
+    profileService.updateProfile(userId, null, newImage);
+    // then
+    // 새 이미지가 정상 업로드되었는지 확인
+    verify(imageStorage).upload(newImage);
+    verify(imageStorage).delete("profiles/old-key.jpg");
+  }
+
 
 }
