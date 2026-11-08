@@ -238,7 +238,7 @@ class ProfileServiceTest {
 
     // then
     assertThat(result).isNotNull();
-    assertThat(user.getName()).isEqualTo(result.name());
+    assertThat(user.getName()).isEqualTo(request.name());
   }
 
   @Test
