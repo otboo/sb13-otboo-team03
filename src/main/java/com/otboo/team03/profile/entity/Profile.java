@@ -62,6 +62,10 @@ public class Profile implements Persistable<UUID> {
   @Transient
   private boolean isNew = true;
 
+  public Profile(User user) {
+    this(user, null, null, null, null, null, null, new ArrayList<>());
+  }
+
   public Profile(
       User user,
       String profileImageUrl,
@@ -105,6 +109,40 @@ public class Profile implements Persistable<UUID> {
     if (sensitivity != null && (sensitivity < 1 || sensitivity > 5)) {
       throw new IllegalArgumentException("온도 민감도는 1에서 5 사이여야 합니다.");
     }
+  }
+
+  // 1. 프로필 정보 부분 수정 (PATCH)
+  public void update(
+      Gender gender,
+      LocalDate birthDate,
+      Double latitude,
+      Double longitude,
+      Integer temperatureSensitivity,
+      List<String> locationNames
+  ) {
+    if (gender != null) {
+      this.gender = gender;
+    }
+    if (birthDate != null) {
+      this.birthDate = birthDate;
+    }
+    if (latitude != null) {
+      this.latitude = latitude;
+    }
+    if (longitude != null) {
+      this.longitude = longitude;
+    }
+    if (temperatureSensitivity != null) {
+      validateTemperatureSensitivity(temperatureSensitivity);
+      this.temperatureSensitivity = temperatureSensitivity;
+    }
+    if (locationNames != null) {
+      this.locationNames = locationNames;
+    }
+  }
+  // 2. 프로필 이미지 URL(Object Key) 수정 메서드
+  public void updateProfileImageUrl(String profileImageUrl) {
+    this.profileImageUrl = profileImageUrl;
   }
 
 }
