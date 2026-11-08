@@ -16,6 +16,8 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
@@ -57,7 +59,17 @@ public class ProfileServiceImpl implements ProfileService {
       if (oldImageKey != null
           && !oldImageKey.startsWith("http://")
           && !oldImageKey.startsWith("https://")) {
-        storage.delete(oldImageKey);
+        // 트랜잭션이 활성화된 상태라면 DB 커밋이 완료된 직후(afterCommit)에 삭제 실행
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+          TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+              storage.delete(oldImageKey);
+            }
+          });
+        } else {
+          storage.delete(oldImageKey);
+        }
       }
     }
 

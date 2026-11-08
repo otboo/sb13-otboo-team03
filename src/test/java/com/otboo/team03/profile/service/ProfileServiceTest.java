@@ -268,5 +268,27 @@ class ProfileServiceTest {
     verify(imageStorage).delete("profiles/old-key.jpg");
   }
 
+  @Test
+  @DisplayName("기존 이미지가 외부 URL(https://)인 경우 새 이미지를 올려도 기존 이미지 삭제를 호출하지 않는다")
+  void updateProfile_withExternalImageUrl_doesNotDeleteOldImage() {
+    // given: 기존 이미지가 외부 URL인 프로필 준비
+    UUID userId = UUID.randomUUID();
+    User user = new User("woody@otboo.io", "pass1234!", "우디");
+    Profile profile = new Profile(
+        user, "https://cdn.otboo.io/default-avatar.png", Gender.MALE, LocalDate.of(1995, 5, 20),
+        37.5, 126.9, 3, List.of("서울시")
+    );
+    MockMultipartFile newImage = new MockMultipartFile(
+        "image", "new.jpg", "image/jpeg", "new-content".getBytes()
+    );
+    given(profileRepository.findById(userId)).willReturn(Optional.of(profile));
+    given(imageStorage.upload(newImage)).willReturn("profiles/new-key.jpg");
+    given(profileDtoAssembler.toDto(profile)).willReturn(ProfileDto.from(profile, "profiles/new-key.jpg"));
+    // when
+    profileService.updateProfile(userId, null, newImage);
+    // then: delete가 절대(never) 호출되지 않았는지 검증!
+    verify(imageStorage, never()).delete(any());
+  }
+
 
 }
