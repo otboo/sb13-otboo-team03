@@ -31,6 +31,7 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -256,6 +257,61 @@ class RecommendationServiceTest {
         when(clothes.getId()).thenReturn(UUID.randomUUID());
         when(clothes.getType()).thenReturn(type);
         return clothes;
+    }
+
+    @ParameterizedTest
+    @CsvSource(value = {
+            "28.0, 3, HEAVY, MEDIUM",
+            "10.0, 3, LIGHT, MEDIUM",
+            "21.0, 1, LIGHT, HEAVY",
+            "19.0, 5, HEAVY, LIGHT",
+            "19.9, 3, LIGHT, HEAVY",
+            "20.0, 3, HEAVY, LIGHT",
+            "19.9, NULL, LIGHT, HEAVY",
+            "20.0, NULL, HEAVY, LIGHT",
+            "28.0, 3, HEAVY, UNKNOWN",
+            "10.0, 3, LIGHT, UNKNOWN"
+    }, nullValues = "NULL")
+    void 선호_두께가_없으면_실제_알고리즘으로_차선_의상을_응답한다(
+            double temperature, Integer sensitivity,
+            ThicknessLevel lowerPriority, ThicknessLevel higherPriority) {
+        RecommendationService connectedService = new RecommendationService(
+                clothesRepository, clothesAttributeRepository, weatherRepository,
+                profileService, clothesService,
+                new BasicOutfitAlgorithm(new ThicknessSuitabilityScorer()),
+                new AttributeSemanticAnalyzer(), new ClothesThermalEstimator());
+        givenTemperature(temperature);
+        when(profileService.getProfile(userId)).thenReturn(profile(sensitivity));
+        Clothes first = candidate(ClothesType.TOP);
+        Clothes alternative = candidate(ClothesType.TOP);
+        Clothes bottom = candidate(ClothesType.BOTTOM);
+        List<Clothes> clothes = List.of(first, alternative, bottom);
+        when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(clothes);
+
+        var definition = new ClothesAttributeDefinition("두께", List.of("얇음", "보통", "두꺼움"));
+        Map<ThicknessLevel, String> values = Map.of(LIGHT, "얇음", MEDIUM, "보통", HEAVY, "두꺼움");
+        List<ClothesAttribute> attributes = new ArrayList<>();
+        attributes.add(new ClothesAttribute(first, definition, values.get(lowerPriority)));
+        if (higherPriority != UNKNOWN) {
+            attributes.add(new ClothesAttribute(alternative, definition, values.get(higherPriority)));
+        }
+        List<UUID> ids = clothes.stream().map(Clothes::getId).toList();
+        when(clothesAttributeRepository.findAllByClothes_IdIn(ids)).thenReturn(attributes);
+
+        var topDto = new ClothesDto(alternative.getId(), userId, "차선 상의", null,
+                ClothesType.TOP, List.of());
+        var bottomDto = new ClothesDto(bottom.getId(), userId, "하의", null,
+                ClothesType.BOTTOM, List.of());
+        when(clothesService.findById(alternative.getId())).thenReturn(topDto);
+        when(clothesService.findById(bottom.getId())).thenReturn(bottomDto);
+
+        var result = connectedService.recommend(weatherId, userId);
+
+        assertThat(result.clothes()).extracting(ootd -> ootd.clothesId())
+                .containsExactly(alternative.getId(), bottom.getId());
+        verify(clothesAttributeRepository).findAllByClothes_IdIn(ids);
+        verify(clothesService, never()).findById(first.getId());
+        verifyNoInteractions(algorithm);
     }
 
     @ParameterizedTest
