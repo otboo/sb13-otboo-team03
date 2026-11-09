@@ -9,6 +9,7 @@ import com.otboo.team03.follow.repository.FollowRepository;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.repository.UserRepository;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -319,5 +320,80 @@ class FollowServiceTest {
         followDtoAssembler,
         userRepository
     );
+  }
+
+  @Test
+  void 본인의_팔로우를_취소하면_팔로우_관계가_삭제된다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+    UUID followId = UUID.randomUUID();
+
+    Follow follow = new Follow(followerId, followeeId);
+
+    when(followRepository.findById(followId))
+        .thenReturn(Optional.of(follow));
+
+    // when
+    followService.delete(followId, followerId);
+
+    // then
+    verify(followRepository).findById(followId);
+    verify(followRepository).delete(follow);
+    verifyNoInteractions(followDtoAssembler, userRepository);
+  }
+
+  @Test
+  void 존재하지_않는_팔로우는_취소할_수_없다() {
+    // given
+    UUID requesterId = UUID.randomUUID();
+    UUID followId = UUID.randomUUID();
+
+    when(followRepository.findById(followId))
+        .thenReturn(Optional.empty());
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> followService.delete(followId, requesterId)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.NOT_FOUND_RESOURCE,
+        exception.getErrorCode()
+    );
+
+    verify(followRepository, never()).delete(any(Follow.class));
+    verifyNoInteractions(followDtoAssembler, userRepository);
+  }
+
+  @Test
+  void 다른_사용자의_팔로우를_취소할_수_없다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+    UUID requesterId = UUID.randomUUID();
+    UUID followId = UUID.randomUUID();
+
+    Follow follow = new Follow(followerId, followeeId);
+
+    when(followRepository.findById(followId))
+        .thenReturn(Optional.of(follow));
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> followService.delete(followId, requesterId)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.ACCESS_DENIED,
+        exception.getErrorCode()
+    );
+
+    verify(followRepository, never()).delete(any(Follow.class));
+    verifyNoInteractions(followDtoAssembler, userRepository);
   }
 }
