@@ -16,6 +16,8 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
@@ -48,8 +50,23 @@ public class ProfileServiceImpl implements ProfileService {
     if (image != null && !image.isEmpty()) {
       ImageStorage storage = imageStorage.orElseThrow(() ->
           new OtbooException(ErrorCode.INTERNAL_SERVER_ERROR));
+      // 1단계: 기존 이미지 key를 변수에 미리 보관해 둡니다.
+      String oldImageKey = profile.getProfileImageUrl();
+      // 2단계: 새 이미지를 S3에 업로드하고 프로필에 반영합니다.
       String imageKey = storage.upload(image);
       profile.updateProfileImageUrl(imageKey);
+      // 3단계: 기존 이미지가 존재하고, 외부 URL(http/https)이 아닌 S3 키 형태일 때만 삭제!
+      if (oldImageKey != null
+          && !oldImageKey.startsWith("http://")
+          && !oldImageKey.startsWith("https://")) {
+        // 트랜잭션이 활성화된 상태라면 DB 커밋이 완료된 직후(afterCommit)에 삭제 실행
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+          @Override
+          public void afterCommit() {
+            storage.delete(oldImageKey);
+          }
+        });
+      }
     }
 
     //  3. 위치 정보 꺼내기 (request가 null이어도 안전하게 방어)
@@ -60,6 +77,10 @@ public class ProfileServiceImpl implements ProfileService {
 
     // 4. 엔티티 부분 수정 호출 (request가 null이 아닐 때만 값 전달)
     if (request != null) {
+      if (request.name() != null) {
+        profile.getUser().changeName(request.name());
+      }
+
       profile.update(request.gender(), request.birthDate(), latitude, longitude,
           request.temperatureSensitivity(), locationNames);
     }
