@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
@@ -17,10 +18,11 @@ public class KakaoLocalClient {
   private static final String BASE_URL = "https://dapi.kakao.com";
   private final RestClient restClient;
   public KakaoLocalClient(
-      RestClient.Builder restClientBuilder,
+      @Autowired(required = false) RestClient.Builder restClientBuilder,
       @Value("${kakao.api.key:}") String apiKey
   ) {
-    this.restClient = restClientBuilder
+    RestClient.Builder builder = (restClientBuilder != null) ? restClientBuilder : RestClient.builder();
+    this.restClient = builder
         .baseUrl(BASE_URL)
         .defaultHeader(HttpHeaders.AUTHORIZATION, "KakaoAK " + apiKey)
         .build();

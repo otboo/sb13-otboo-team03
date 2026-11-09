@@ -51,3 +51,7 @@ otboo:
     bucket: ${S3_BUCKET_NAME}
     region: ${AWS_REGION:ap-northeast-2}
     presign-minutes: 5
+
+kakao:
+  api:
+    key: ${KAKAO_API_KEY:}
