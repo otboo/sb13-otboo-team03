@@ -9,7 +9,9 @@ import com.otboo.team03.follow.repository.FollowRepository;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.repository.UserRepository;
+import java.sql.SQLException;
 import java.util.Optional;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -18,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -395,5 +398,92 @@ class FollowServiceTest {
 
     verify(followRepository, never()).delete(any(Follow.class));
     verifyNoInteractions(followDtoAssembler, userRepository);
+  }
+
+  @Test
+  void 동시_중복_팔로우의_UNIQUE_충돌은_400_예외로_변환한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+
+    FollowCreateRequest request = new FollowCreateRequest(
+        followerId,
+        followeeId
+    );
+
+    when(userRepository.existsById(followeeId))
+        .thenReturn(true);
+
+    DataIntegrityViolationException dbException =
+        new DataIntegrityViolationException(
+            "Duplicate follow",
+            new ConstraintViolationException(
+                "Unique constraint violation",
+                new SQLException("Duplicate key", "23505"),
+                "uq_follows_follower_followee"
+            )
+        );
+
+    doThrow(dbException)
+        .when(followRepository)
+        .flush();
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> followService.create(followerId, request)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.INVALID_INPUT_VALUE,
+        exception.getErrorCode()
+    );
+
+    verify(followRepository).save(any(Follow.class));
+    verify(followRepository).flush();
+    verifyNoInteractions(followDtoAssembler);
+  }
+
+  @Test
+  void 다른_DB_제약조건_위반은_중복_팔로우_오류로_변환하지_않는다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+
+    FollowCreateRequest request = new FollowCreateRequest(
+        followerId,
+        followeeId
+    );
+
+    when(userRepository.existsById(followeeId))
+        .thenReturn(true);
+
+    DataIntegrityViolationException dbException =
+        new DataIntegrityViolationException(
+            "Foreign key violation",
+            new ConstraintViolationException(
+                "Foreign key constraint violation",
+                new SQLException("Foreign key violation", "23503"),
+                "fk_users_to_follows_followee"
+            )
+        );
+
+    doThrow(dbException)
+        .when(followRepository)
+        .flush();
+
+    // when
+    DataIntegrityViolationException exception = assertThrows(
+        DataIntegrityViolationException.class,
+        () -> followService.create(followerId, request)
+    );
+
+    // then
+    assertSame(dbException, exception);
+
+    verify(followRepository).save(any(Follow.class));
+    verify(followRepository).flush();
+    verifyNoInteractions(followDtoAssembler);
   }
 }
