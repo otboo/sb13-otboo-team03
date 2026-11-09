@@ -7,6 +7,7 @@ import com.otboo.team03.follow.mapper.FollowDtoAssembler;
 import com.otboo.team03.follow.repository.FollowRepository;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +20,7 @@ public class FollowService {
 
   private final FollowRepository followRepository;
   private final FollowDtoAssembler followDtoAssembler;
+  private final UserRepository userRepository;
 
   @Transactional
   public FollowDto create(
@@ -38,6 +40,10 @@ public class FollowService {
         request.followeeId()
     )) {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if (!userRepository.existsById(request.followeeId())) {
+      throw new OtbooException(ErrorCode.NOT_FOUND_USER);
     }
 
     Follow follow = new Follow(

@@ -70,6 +70,9 @@ class FollowServiceTest {
         followeeId
     );
 
+    when(userRepository.existsById(followeeId))
+        .thenReturn(true);
+
     // when
     followService.create(followerId, request);
 
@@ -114,6 +117,9 @@ class FollowServiceTest {
             "follower.png"
         )
     );
+
+    when(userRepository.existsById(followeeId))
+        .thenReturn(true);
 
     when(followRepository.save(any(Follow.class)))
         .thenReturn(savedFollow);
