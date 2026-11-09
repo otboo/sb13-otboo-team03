@@ -41,6 +41,7 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.spa())
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.GET, "/actuator/health/readiness").permitAll()
                         .requestMatchers(
                                 "/api/auth/csrf-token",
                                 "/api/auth/sign-in",
