@@ -137,4 +137,36 @@ class FollowServiceTest {
 
     verify(followDtoAssembler).toDto(savedFollow);
   }
+
+  @Test
+  void 이미_팔로우한_사용자를_중복_팔로우할_수_없다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+
+    FollowCreateRequest request = new FollowCreateRequest(
+        followerId,
+        followeeId
+    );
+
+    when(followRepository.existsByFollowerIdAndFolloweeId(
+        followerId,
+        followeeId
+    )).thenReturn(true);
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> followService.create(followerId, request)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.INVALID_INPUT_VALUE,
+        exception.getErrorCode()
+    );
+
+    verify(followRepository, never()).save(any(Follow.class));
+    verifyNoInteractions(followDtoAssembler);
+  }
 }
