@@ -11,6 +11,7 @@ import com.otboo.team03.profile.exception.ProfileNotFoundException;
 import com.otboo.team03.profile.mapper.ProfileDtoAssembler;
 import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.user.entity.User;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -51,6 +54,12 @@ class ProfileServiceTest {
         profileDtoAssembler,
         Optional.of(imageStorage)
     );
+    TransactionSynchronizationManager.initSynchronization();
+  }
+
+  @AfterEach
+  void tearDown() {
+    TransactionSynchronizationManager.clearSynchronization();
   }
 
   @Test
@@ -205,7 +214,7 @@ class ProfileServiceTest {
     // 위치 정보(WeatherAPILocation)가 포함된 요청 준비!
     WeatherAPILocation location = new WeatherAPILocation(37.5665, 126.9780, 60, 127, List.of("서울특별시", "중구"));
     ProfileUpdateRequest request = new ProfileUpdateRequest(
-        "우디", Gender.MALE, LocalDate.of(1995, 5, 20), location, 3
+        null, Gender.MALE, LocalDate.of(1995, 5, 20), location, 3
     );
     ProfileDto expectedDto = ProfileDto.from(profile, null);
     given(profileRepository.findById(userId)).willReturn(Optional.of(profile));
@@ -217,6 +226,101 @@ class ProfileServiceTest {
     assertThat(profile.getLatitude()).isEqualTo(37.5665);
     assertThat(profile.getLongitude()).isEqualTo(126.9780);
     assertThat(profile.getLocationNames()).containsExactly("서울특별시", "중구");
+  }
+
+  @Test
+  @DisplayName("수정 요청에 새 이름이 포함되어 있으면 유저의 이름이 정상 변경된다")
+  void updateProfile_withName_changesUserName() {
+    // given
+    UUID userId = UUID.randomUUID();
+    User user = new User("woody@otboo.io", "pass1234!", "원래이름");
+    Profile profile = new Profile(user);
+
+    ProfileUpdateRequest request = new ProfileUpdateRequest("우디01", null,  null, null, null);
+    ProfileDto expectedDto = ProfileDto.from(profile, null);
+
+    given(profileRepository.findById(userId)).willReturn(Optional.of(profile));
+    given(profileDtoAssembler.toDto(profile)).willReturn(expectedDto);
+
+    // when
+    ProfileDto result = profileService.updateProfile(userId, request, null);
+
+    // then
+    assertThat(result).isNotNull();
+    assertThat(user.getName()).isEqualTo(request.name());
+  }
+
+  @Test
+  @DisplayName("기존 S3 이미지가 있던 프로필에 새 이미지를 업로드하면 기존 S3 이미지가 삭제된다")
+  void updateProfile_replacesImage_deletesOldS3Image() {
+    // given (기존에 S3 이미지 "profiles/old-key.jpg"를 가지고 있던 프로필 준비)
+    UUID userId = UUID.randomUUID();
+    User user = new User("woody@otboo.io", "pass1234!", "우디");
+    Profile profile = new Profile(
+        user, "profiles/old-key.jpg", Gender.MALE, LocalDate.of(1995, 5, 20),
+        37.5, 126.9, 3, List.of("서울시")
+    );
+    // 새 업로드용 가짜 이미지 준비
+    MockMultipartFile newImage = new MockMultipartFile(
+        "image", "new.jpg", "image/jpeg", "new-content".getBytes()
+    );
+    ProfileDto expectedDto = ProfileDto.from(profile, "profiles/new-key.jpg");
+    given(profileRepository.findById(userId)).willReturn(Optional.of(profile));
+    given(imageStorage.upload(newImage)).willReturn("profiles/new-key.jpg");
+    given(profileDtoAssembler.toDto(profile)).willReturn(expectedDto);
+
+    // when (새 이미지로 프로필 수정 실행)
+    profileService.updateProfile(userId, null, newImage);
+    TransactionSynchronizationManager.getSynchronizations()
+        .forEach(TransactionSynchronization::afterCommit);
+    // then
+    // 새 이미지가 정상 업로드되었는지 확인
+    verify(imageStorage).upload(newImage);
+    verify(imageStorage).delete("profiles/old-key.jpg");
+  }
+
+  @Test
+  @DisplayName("기존 이미지가 외부 URL(https://)인 경우 새 이미지를 올려도 기존 이미지 삭제를 호출하지 않는다")
+  void updateProfile_withExternalImageUrl_doesNotDeleteOldImage() {
+    // given: 기존 이미지가 외부 URL인 프로필 준비
+    UUID userId = UUID.randomUUID();
+    User user = new User("woody@otboo.io", "pass1234!", "우디");
+    Profile profile = new Profile(
+        user, "https://cdn.otboo.io/default-avatar.png", Gender.MALE, LocalDate.of(1995, 5, 20),
+        37.5, 126.9, 3, List.of("서울시")
+    );
+    MockMultipartFile newImage = new MockMultipartFile(
+        "image", "new.jpg", "image/jpeg", "new-content".getBytes()
+    );
+    given(profileRepository.findById(userId)).willReturn(Optional.of(profile));
+    given(imageStorage.upload(newImage)).willReturn("profiles/new-key.jpg");
+    given(profileDtoAssembler.toDto(profile)).willReturn(ProfileDto.from(profile, "profiles/new-key.jpg"));
+    // when
+    profileService.updateProfile(userId, null, newImage);
+    // then: delete가 절대(never) 호출되지 않았는지 검증!
+    verify(imageStorage, never()).delete(any());
+  }
+
+  @Test
+  @DisplayName("기존 이미지가 http://로 시작하는 외부 URL인 경우에도 기존 이미지 삭제를 호출하지 않는다")
+  void updateProfile_withHttpExternalImageUrl_doesNotDeleteOldImage() {
+    // given: 기존 이미지가 http:// 외부 URL인 프로필 준비
+    UUID userId = UUID.randomUUID();
+    User user = new User("woody@otboo.io", "pass1234!", "우디");
+    Profile profile = new Profile(
+        user, "http://cdn.otboo.io/default-avatar.png", Gender.MALE, LocalDate.of(1995, 5, 20),
+        37.5, 126.9, 3, List.of("서울시")
+    );
+    MockMultipartFile newImage = new MockMultipartFile(
+        "image", "new.jpg", "image/jpeg", "new-content".getBytes()
+    );
+    given(profileRepository.findById(userId)).willReturn(Optional.of(profile));
+    given(imageStorage.upload(newImage)).willReturn("profiles/new-key.jpg");
+    given(profileDtoAssembler.toDto(profile)).willReturn(ProfileDto.from(profile, "profiles/new-key.jpg"));
+    // when
+    profileService.updateProfile(userId, null, newImage);
+    // then
+    verify(imageStorage, never()).delete(any());
   }
 
 
