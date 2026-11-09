@@ -4,6 +4,7 @@ import com.otboo.team03.follow.dto.request.FollowCreateRequest;
 import com.otboo.team03.follow.dto.response.FollowDto;
 import com.otboo.team03.follow.dto.response.UserSummary;
 import com.otboo.team03.follow.entity.Follow;
+import com.otboo.team03.follow.mapper.FollowDtoAssembler;
 import com.otboo.team03.follow.repository.FollowRepository;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;

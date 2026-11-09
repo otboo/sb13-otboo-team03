@@ -3,6 +3,7 @@ package com.otboo.team03.follow.service;
 import com.otboo.team03.follow.dto.request.FollowCreateRequest;
 import com.otboo.team03.follow.dto.response.FollowDto;
 import com.otboo.team03.follow.entity.Follow;
+import com.otboo.team03.follow.mapper.FollowDtoAssembler;
 import com.otboo.team03.follow.repository.FollowRepository;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
@@ -17,6 +18,7 @@ import java.util.UUID;
 public class FollowService {
 
   private final FollowRepository followRepository;
+  private final FollowDtoAssembler followDtoAssembler;
 
   @Transactional
   public FollowDto create(
@@ -32,8 +34,8 @@ public class FollowService {
         request.followeeId()
     );
 
-    followRepository.save(follow);
+    Follow savedFollow = followRepository.save(follow);
 
-    return null;
+    return followDtoAssembler.toDto(savedFollow);
   }
 }
