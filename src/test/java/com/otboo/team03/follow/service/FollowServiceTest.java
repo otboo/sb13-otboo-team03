@@ -169,4 +169,30 @@ class FollowServiceTest {
     verify(followRepository, never()).save(any(Follow.class));
     verifyNoInteractions(followDtoAssembler);
   }
+
+  @Test
+  void 자기_자신을_팔로우할_수_없다() {
+    // given
+    UUID userId = UUID.randomUUID();
+
+    FollowCreateRequest request = new FollowCreateRequest(
+        userId,
+        userId
+    );
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> followService.create(userId, request)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.INVALID_INPUT_VALUE,
+        exception.getErrorCode()
+    );
+
+    verify(followRepository, never()).save(any(Follow.class));
+    verifyNoInteractions(followDtoAssembler);
+  }
 }
