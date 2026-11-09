@@ -11,6 +11,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.UUID;
 
@@ -360,6 +361,41 @@ class BasicOutfitAlgorithmTest {
     @Nested
     @DisplayName("속성 기반 의상 추천")
     class AttributeBasedRecommendation {
+
+        @ParameterizedTest
+        @CsvSource({"TOP", "BOTTOM", "DRESS", "OUTER"})
+        void 같은_종류의_차선_후보가_동점이면_입력_순서를_유지한다(ClothesType type) {
+            Clothes lowerPriority = clothes(type);
+            Clothes firstAlternative = clothes(type);
+            Clothes secondAlternative = clothes(type);
+            List<Clothes> base = switch (type) {
+                case TOP -> List.of(clothes(ClothesType.BOTTOM));
+                case BOTTOM -> List.of(clothes(ClothesType.TOP));
+                case DRESS -> List.of();
+                case OUTER -> List.of(clothes(ClothesType.TOP), clothes(ClothesType.BOTTOM));
+                default -> throw new IllegalArgumentException();
+            };
+            Map<UUID, ThicknessLevel> levels = Map.of(
+                    lowerPriority.getId(), LIGHT,
+                    firstAlternative.getId(), MEDIUM,
+                    secondAlternative.getId(), MEDIUM);
+            List<Clothes> candidates = new ArrayList<>(
+                    List.of(lowerPriority, firstAlternative, secondAlternative));
+            candidates.addAll(base);
+            List<Clothes> reversedCandidates = new ArrayList<>(
+                    List.of(lowerPriority, secondAlternative, firstAlternative));
+            reversedCandidates.addAll(base);
+
+            var firstResult = algorithm.recommend(candidates, levels, 10.0, 3);
+            var reversedResult = algorithm.recommend(reversedCandidates, levels, 10.0, 3);
+
+            List<Clothes> firstExpected = new ArrayList<>(base);
+            firstExpected.add(firstAlternative);
+            List<Clothes> reversedExpected = new ArrayList<>(base);
+            reversedExpected.add(secondAlternative);
+            assertThat(firstResult).containsExactlyInAnyOrderElementsOf(firstExpected);
+            assertThat(reversedResult).containsExactlyInAnyOrderElementsOf(reversedExpected);
+        }
 
         @ParameterizedTest
         @CsvSource({
