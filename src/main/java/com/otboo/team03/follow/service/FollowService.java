@@ -5,12 +5,15 @@ import com.otboo.team03.follow.dto.response.FollowDto;
 import com.otboo.team03.follow.entity.Follow;
 import com.otboo.team03.follow.mapper.FollowDtoAssembler;
 import com.otboo.team03.follow.repository.FollowRepository;
+import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.repository.UserRepository;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -112,5 +115,60 @@ public class FollowService {
     }
 
     followRepository.delete(follow);
+  }
+
+  @Transactional(readOnly = true)
+  public CursorResponse<FollowDto> getFollowers(
+      UUID followeeId,
+      int limit,
+      String cursor,
+      UUID idAfter,
+      String nameLike
+  ) {
+
+    if (followeeId == null
+        || limit <= 0
+        || limit == Integer.MAX_VALUE) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    List<Follow> fetched =
+        followRepository.findByFolloweeIdOrderByCreatedAtDescIdDesc(
+            followeeId,
+            PageRequest.of(0, limit + 1)
+        );
+
+    boolean hasNext = fetched.size() > limit;
+
+    List<Follow> page = hasNext
+        ? fetched.subList(0, limit)
+        : fetched;
+
+    List<FollowDto> data = page.stream()
+        .map(followDtoAssembler::toDto)
+        .toList();
+
+    String nextCursor = null;
+    UUID nextIdAfter = null;
+
+    if (hasNext) {
+      Follow lastFollow = page.get(page.size() - 1);
+
+      nextCursor = lastFollow.getCreatedAt().toString();
+      nextIdAfter = lastFollow.getId();
+    }
+
+    long totalCount =
+        followRepository.countByFolloweeId(followeeId);
+
+    return new CursorResponse<>(
+        data,
+        nextCursor,
+        nextIdAfter,
+        hasNext,
+        totalCount,
+        "createdAt",
+        "DESCENDING"
+    );
   }
 }

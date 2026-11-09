@@ -1,9 +1,10 @@
 package com.otboo.team03.follow.repository;
 
 import com.otboo.team03.follow.entity.Follow;
-import org.springframework.data.jpa.repository.JpaRepository;
-
+import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface FollowRepository extends JpaRepository<Follow, UUID> {
 
@@ -11,4 +12,11 @@ public interface FollowRepository extends JpaRepository<Follow, UUID> {
       UUID followerId,
       UUID followeeId
   );
+
+  List<Follow> findByFolloweeIdOrderByCreatedAtDescIdDesc(
+      UUID followeeId,
+      Pageable pageable
+  );
+
+  long countByFolloweeId(UUID followeeId);
 }
