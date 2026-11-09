@@ -353,4 +353,89 @@ class FollowControllerTest {
 
     verifyNoInteractions(followService);
   }
+
+  @Test
+  void 인증되지_않은_Authentication_객체는_팔로우_생성과_취소를_거부한다()
+      throws Exception {
+    // given
+    Authentication unauthenticated =
+        new UsernamePasswordAuthenticationToken(
+            authentication(followerId).getPrincipal(),
+            null
+        );
+
+    String requestJson = """
+      {
+          "followerId": "%s",
+          "followeeId": "%s"
+      }
+      """.formatted(followerId, followeeId);
+
+    // when
+    var createResult = mockMvc.perform(
+        post("/api/follows")
+            .principal(unauthenticated)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(requestJson)
+    );
+
+    var deleteResult = mockMvc.perform(
+        delete("/api/follows/{followId}", followId)
+            .principal(unauthenticated)
+    );
+
+    // then
+    createResult.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    deleteResult.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    verifyNoInteractions(followService);
+  }
+
+  @Test
+  void 잘못된_Principal_타입은_팔로우_생성과_취소를_거부한다()
+      throws Exception {
+    // given
+    Authentication invalidPrincipal =
+        new UsernamePasswordAuthenticationToken(
+            "invalid-principal",
+            null,
+            authentication(followerId).getAuthorities()
+        );
+
+    String requestJson = """
+      {
+          "followerId": "%s",
+          "followeeId": "%s"
+      }
+      """.formatted(followerId, followeeId);
+
+    // when
+    var createResult = mockMvc.perform(
+        post("/api/follows")
+            .principal(invalidPrincipal)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(requestJson)
+    );
+
+    var deleteResult = mockMvc.perform(
+        delete("/api/follows/{followId}", followId)
+            .principal(invalidPrincipal)
+    );
+
+    // then
+    createResult.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    deleteResult.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    verifyNoInteractions(followService);
+  }
 }
