@@ -61,4 +61,18 @@ public class FollowService {
 
     return followDtoAssembler.toDto(savedFollow);
   }
+
+  @Transactional
+  public void delete(UUID followId, UUID requesterId) {
+    Follow follow = followRepository.findById(followId)
+        .orElseThrow(
+            () -> new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
+        );
+
+    if (!follow.getFollowerId().equals(requesterId)) {
+      throw new OtbooException(ErrorCode.ACCESS_DENIED);
+    }
+
+    followRepository.delete(follow);
+  }
 }
