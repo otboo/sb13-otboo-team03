@@ -66,14 +66,7 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
         Clothes alternative = saveClothes("보통 상의", ClothesType.TOP, owner, definition, "보통");
         Clothes bottom = saveClothes("하의", ClothesType.BOTTOM, owner, definition, "보통");
         saveClothes("다른 사용자 선호 상의", ClothesType.TOP, other, definition, otherOwnerPreferredValue);
-        Instant now = Instant.parse("2026-11-09T00:00:00Z");
-        Weather weather = weathers.save(Weather.builder()
-                .latitude(37.5).longitude(127.0)
-                .forecastedAt(now).forecastAt(now.plusSeconds(3600))
-                .skyStatus(SkyStatus.CLEAR).precipitationType(PrecipitationType.NONE)
-                .precipitationAmount(0.0).precipitationProbability(0.0)
-                .temperature(temperature).humidity(50.0).windSpeed(1.0)
-                .build());
+        Weather weather = saveWeather(temperature);
         UUID ownerId = owner.getId();
         UUID otherId = other.getId();
         UUID weatherId = weather.getId();
@@ -100,6 +93,60 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.clothes[0].attributes[0].definitionName").value("두께"))
                 .andExpect(jsonPath("$.clothes[0].attributes[0].value").value("보통"))
                 .andExpect(jsonPath("$.clothes[1].clothesId").value(bottomId.toString()));
+    }
+
+    @ParameterizedTest
+    @CsvSource(value = {
+            "21.0, 1, 두꺼움",
+            "22.0, 2, 두꺼움",
+            "18.0, 4, 얇음",
+            "19.0, 5, 얇음",
+            "19.9, 3, 두꺼움",
+            "20.0, 3, 얇음",
+            "19.9, NULL, 두꺼움",
+            "20.0, NULL, 얇음"
+    }, nullValues = "NULL")
+    void 저장된_민감도와_중립_20도_경계에_따라_차선_상의를_추천한다(
+            double temperature, Integer sensitivity, String expectedValue) throws Exception {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "민감도 사용자"));
+        profiles.save(new Profile(owner, null, null, null, null, null, sensitivity, List.of()));
+        var definition = definitions.save(new ClothesAttributeDefinition(
+                "두께", List.of("얇음", "보통", "두꺼움")));
+        // 상의에는 보통 두께를 등록하지 않아 민감도에 따른 차선 선택을 검증한다.
+        Clothes light = saveClothes("얇은 상의", ClothesType.TOP, owner, definition, "얇음");
+        Clothes heavy = saveClothes("두꺼운 상의", ClothesType.TOP, owner, definition, "두꺼움");
+        Clothes bottom = saveClothes("하의", ClothesType.BOTTOM, owner, definition, "보통");
+        Weather weather = saveWeather(temperature);
+        UUID ownerId = owner.getId();
+        UUID weatherId = weather.getId();
+        UUID expectedTopId = expectedValue.equals("얇음") ? light.getId() : heavy.getId();
+        UUID bottomId = bottom.getId();
+        entityManager.flush();
+        entityManager.clear();
+        String token = tokenProvider.createAccessToken(ownerId);
+        when(jwtRegistry.hasActiveJwtInformationByAccessToken(token)).thenReturn(true);
+
+        mvc.perform(get("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("weatherId", weatherId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value(ownerId.toString()))
+                .andExpect(jsonPath("$.weatherId").value(weatherId.toString()))
+                .andExpect(jsonPath("$.clothes.length()").value(2))
+                .andExpect(jsonPath("$.clothes[0].clothesId").value(expectedTopId.toString()))
+                .andExpect(jsonPath("$.clothes[0].attributes[0].value").value(expectedValue))
+                .andExpect(jsonPath("$.clothes[1].clothesId").value(bottomId.toString()));
+    }
+
+    private Weather saveWeather(double temperature) {
+        Instant now = Instant.parse("2026-11-09T00:00:00Z");
+        return weathers.save(Weather.builder()
+                .latitude(37.5).longitude(127.0)
+                .forecastedAt(now).forecastAt(now.plusSeconds(3600))
+                .skyStatus(SkyStatus.CLEAR).precipitationType(PrecipitationType.NONE)
+                .precipitationAmount(0.0).precipitationProbability(0.0)
+                .temperature(temperature).humidity(50.0).windSpeed(1.0)
+                .build());
     }
 
     private Clothes saveClothes(String name, ClothesType type, User owner,
