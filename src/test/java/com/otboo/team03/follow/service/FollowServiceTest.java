@@ -261,4 +261,63 @@ class FollowServiceTest {
         userRepository
     );
   }
+
+  @Test
+  void 팔로워_ID가_null이면_팔로우를_생성할_수_없다() {
+    // given
+    UUID requesterId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+
+    FollowCreateRequest request = new FollowCreateRequest(
+        null,
+        followeeId
+    );
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> followService.create(requesterId, request)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.INVALID_INPUT_VALUE,
+        exception.getErrorCode()
+    );
+
+    verifyNoInteractions(
+        followRepository,
+        followDtoAssembler,
+        userRepository
+    );
+  }
+
+  @Test
+  void 팔로우_대상_ID가_null이면_팔로우를_생성할_수_없다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+
+    FollowCreateRequest request = new FollowCreateRequest(
+        followerId,
+        null
+    );
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> followService.create(followerId, request)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.INVALID_INPUT_VALUE,
+        exception.getErrorCode()
+    );
+
+    verifyNoInteractions(
+        followRepository,
+        followDtoAssembler,
+        userRepository
+    );
+  }
 }
