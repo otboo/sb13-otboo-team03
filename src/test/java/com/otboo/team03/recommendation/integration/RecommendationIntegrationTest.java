@@ -201,6 +201,95 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.clothes[1].clothesId").value(bottomId.toString()));
     }
 
+    @ParameterizedTest
+    @CsvSource({
+            "28.0, 두꺼움, false", "28.0, 두꺼움, true",
+            "10.0, 얇음, false", "10.0, 얇음, true"
+    })
+    void DB에_선호와_차선_두께가_없으면_UNKNOWN_상의를_반대_두께보다_우선한다(
+            double temperature, String unsuitableValue, boolean hasUnsupportedAttribute) throws Exception {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "정보 부족 사용자"));
+        profiles.save(new Profile(owner, null, null, null, null, null, 3, List.of()));
+        var definition = definitions.save(new ClothesAttributeDefinition(
+                "두께", List.of("얇음", "보통", "두꺼움")));
+        saveClothes("반대 두께 상의", ClothesType.TOP, owner, definition, unsuitableValue);
+        Clothes unknown = clothes.save(new Clothes("두께 미상 상의", ClothesType.TOP, null, owner));
+        if (hasUnsupportedAttribute) {
+            var color = definitions.save(new ClothesAttributeDefinition("색상", List.of("검정")));
+            attributes.save(new ClothesAttribute(unknown, color, "검정"));
+        }
+        Clothes bottom = saveClothes("하의", ClothesType.BOTTOM, owner, definition, "보통");
+        UUID ownerId = owner.getId();
+        UUID weatherId = saveWeather(temperature).getId();
+        UUID unknownId = unknown.getId();
+        UUID bottomId = bottom.getId();
+        String token = flushAndAuthenticate(ownerId);
+
+        mvc.perform(get("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("weatherId", weatherId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clothes.length()").value(2))
+                .andExpect(jsonPath("$.clothes[0].clothesId").value(unknownId.toString()))
+                .andExpect(jsonPath("$.clothes[0].attributes.length()").value(hasUnsupportedAttribute ? 1 : 0))
+                .andExpect(jsonPath("$.clothes[1].clothesId").value(bottomId.toString()));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"28.0, 두꺼움", "10.0, 얇음"})
+    void DB에_부적합한_두께만_있어도_추천_API는_기본_조합을_반환한다(
+            double temperature, String value) throws Exception {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "최종 대안 사용자"));
+        profiles.save(new Profile(owner, null, null, null, null, null, 3, List.of()));
+        var definition = definitions.save(new ClothesAttributeDefinition("두께", List.of("얇음", "두꺼움")));
+        Clothes top = saveClothes("상의", ClothesType.TOP, owner, definition, value);
+        Clothes bottom = saveClothes("하의", ClothesType.BOTTOM, owner, definition, value);
+        UUID ownerId = owner.getId();
+        UUID weatherId = saveWeather(temperature).getId();
+        UUID topId = top.getId();
+        UUID bottomId = bottom.getId();
+        String token = flushAndAuthenticate(ownerId);
+
+        mvc.perform(get("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("weatherId", weatherId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clothes.length()").value(2))
+                .andExpect(jsonPath("$.clothes[0].clothesId").value(topId.toString()))
+                .andExpect(jsonPath("$.clothes[0].attributes[0].value").value(value))
+                .andExpect(jsonPath("$.clothes[1].clothesId").value(bottomId.toString()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"없음", "TOP", "BOTTOM", "OUTER"})
+    void DB의_보유_의상으로_기본_조합을_만들_수_없으면_빈_추천을_반환한다(String availableType) throws Exception {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "조합 부족 사용자"));
+        profiles.save(new Profile(owner, null, null, null, null, null, 3, List.of()));
+        if (!availableType.equals("없음")) {
+            clothes.save(new Clothes("단일 의상", ClothesType.valueOf(availableType), null, owner));
+        }
+        UUID ownerId = owner.getId();
+        // 추운 날에도 아우터만 단독으로 반환하지 않아야 한다.
+        UUID weatherId = saveWeather(10.0).getId();
+        String token = flushAndAuthenticate(ownerId);
+
+        mvc.perform(get("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("weatherId", weatherId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.weatherId").value(weatherId.toString()))
+                .andExpect(jsonPath("$.userId").value(ownerId.toString()))
+                .andExpect(jsonPath("$.clothes").isEmpty());
+    }
+
+    private String flushAndAuthenticate(UUID ownerId) {
+        entityManager.flush();
+        entityManager.clear();
+        String token = tokenProvider.createAccessToken(ownerId);
+        when(jwtRegistry.hasActiveJwtInformationByAccessToken(token)).thenReturn(true);
+        return token;
+    }
+
     private Weather saveWeather(double temperature) {
         Instant now = Instant.parse("2026-11-09T00:00:00Z");
         return weathers.save(Weather.builder()
