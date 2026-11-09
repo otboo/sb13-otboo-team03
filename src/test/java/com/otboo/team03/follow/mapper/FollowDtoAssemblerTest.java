@@ -92,4 +92,56 @@ class FollowDtoAssemblerTest {
     verify(profileRepository).findById(followeeId);
     verify(profileRepository).findById(followerId);
   }
+
+  @Test
+  void 프로필이_없는_사용자는_프로필_이미지를_null로_반환한다() {
+    // given
+    UUID followId = UUID.randomUUID();
+    UUID followerId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+
+    Follow follow = mock(Follow.class);
+
+    when(follow.getId()).thenReturn(followId);
+    when(follow.getFollowerId()).thenReturn(followerId);
+    when(follow.getFolloweeId()).thenReturn(followeeId);
+
+    User follower = mock(User.class);
+    User followee = mock(User.class);
+
+    when(follower.getId()).thenReturn(followerId);
+    when(follower.getName()).thenReturn("팔로워");
+
+    when(followee.getId()).thenReturn(followeeId);
+    when(followee.getName()).thenReturn("팔로우 대상");
+
+    when(userRepository.findById(followerId))
+        .thenReturn(Optional.of(follower));
+
+    when(userRepository.findById(followeeId))
+        .thenReturn(Optional.of(followee));
+
+    when(profileRepository.findById(followerId))
+        .thenReturn(Optional.empty());
+
+    when(profileRepository.findById(followeeId))
+        .thenReturn(Optional.empty());
+
+    // when
+    FollowDto result = followDtoAssembler.toDto(follow);
+
+    // then
+    assertAll(
+        () -> assertEquals(followId, result.id()),
+        () -> assertEquals(followerId, result.follower().userId()),
+        () -> assertEquals("팔로워", result.follower().name()),
+        () -> assertNull(result.follower().profileImageUrl()),
+        () -> assertEquals(followeeId, result.followee().userId()),
+        () -> assertEquals("팔로우 대상", result.followee().name()),
+        () -> assertNull(result.followee().profileImageUrl())
+    );
+
+    verify(profileRepository).findById(followerId);
+    verify(profileRepository).findById(followeeId);
+  }
 }
