@@ -29,6 +29,10 @@ public class FollowService {
       throw new OtbooException(ErrorCode.ACCESS_DENIED);
     }
 
+    if (request.followerId().equals(request.followeeId())) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
     if (followRepository.existsByFollowerIdAndFolloweeId(
         request.followerId(),
         request.followeeId()
