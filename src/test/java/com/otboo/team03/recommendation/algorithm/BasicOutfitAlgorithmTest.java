@@ -361,6 +361,48 @@ class BasicOutfitAlgorithmTest {
     @DisplayName("속성 기반 의상 추천")
     class AttributeBasedRecommendation {
 
+        @ParameterizedTest
+        @CsvSource({
+                "28.0, 3, HEAVY, MEDIUM",
+                "10.0, 3, LIGHT, MEDIUM",
+                "21.0, 1, LIGHT, HEAVY",
+                "22.0, 2, LIGHT, HEAVY",
+                "18.0, 4, HEAVY, LIGHT",
+                "19.0, 5, HEAVY, LIGHT",
+                "19.9, 3, LIGHT, HEAVY",
+                "20.0, 3, HEAVY, LIGHT",
+                "28.0, 3, HEAVY, UNKNOWN",
+                "10.0, 3, LIGHT, UNKNOWN",
+                "21.0, 1, LIGHT, UNKNOWN",
+                "19.0, 5, HEAVY, UNKNOWN"
+        })
+        void 선호_두께가_없으면_온도와_민감도에_맞는_차선_후보를_선택한다(
+                double temperature, int sensitivity,
+                ThicknessLevel lowerPriority, ThicknessLevel higherPriority) {
+            Clothes first = clothes(ClothesType.TOP);
+            Clothes alternative = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+
+            var result = algorithm.recommend(List.of(first, alternative, bottom),
+                    Map.of(first.getId(), lowerPriority, alternative.getId(), higherPriority),
+                    temperature, sensitivity);
+
+            assertThat(result).containsExactlyInAnyOrder(alternative, bottom);
+        }
+
+        @ParameterizedTest
+        @CsvSource({"28.0, HEAVY", "10.0, LIGHT"})
+        void 부적합한_두께만_있어도_기본_조합을_반환한다(
+                double temperature, ThicknessLevel level) {
+            Clothes top = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+
+            var result = algorithm.recommend(List.of(top, bottom),
+                    Map.of(top.getId(), level, bottom.getId(), level), temperature, 3);
+
+            assertThat(result).containsExactlyInAnyOrder(top, bottom);
+        }
+
         @Test
         void 적합도가_같으면_입력_순서를_유지한다() {
             Clothes heavy = clothes(ClothesType.TOP);
