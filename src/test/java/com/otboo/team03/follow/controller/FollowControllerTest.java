@@ -4,7 +4,9 @@ import com.otboo.team03.follow.dto.request.FollowCreateRequest;
 import com.otboo.team03.follow.dto.response.FollowDto;
 import com.otboo.team03.follow.dto.response.UserSummary;
 import com.otboo.team03.follow.service.FollowService;
+import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.GlobalExceptionHandler;
+import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.UserRole;
@@ -175,5 +177,180 @@ class FollowControllerTest {
         null,
         userDetails.getAuthorities()
     );
+  }
+
+  @Test
+  void 다른_사용자_명의로_팔로우를_생성하면_403을_반환한다()
+      throws Exception {
+    // given
+    UUID otherUserId = UUID.randomUUID();
+
+    FollowCreateRequest request = new FollowCreateRequest(
+        otherUserId,
+        followeeId
+    );
+
+    when(followService.create(followerId, request))
+        .thenThrow(new OtbooException(ErrorCode.ACCESS_DENIED));
+
+    String requestJson = """
+        {
+            "followerId": "%s",
+            "followeeId": "%s"
+        }
+        """.formatted(otherUserId, followeeId);
+
+    // when
+    var result = mockMvc.perform(
+        post("/api/follows")
+            .principal(authentication(followerId))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(requestJson)
+    );
+
+    // then
+    result.andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("ACCESS_DENIED"));
+
+    verify(followService).create(followerId, request);
+  }
+
+  @Test
+  void 중복_팔로우_요청이면_400을_반환한다()
+      throws Exception {
+    // given
+    FollowCreateRequest request = new FollowCreateRequest(
+        followerId,
+        followeeId
+    );
+
+    when(followService.create(followerId, request))
+        .thenThrow(
+            new OtbooException(ErrorCode.INVALID_INPUT_VALUE)
+        );
+
+    String requestJson = """
+        {
+            "followerId": "%s",
+            "followeeId": "%s"
+        }
+        """.formatted(followerId, followeeId);
+
+    // when
+    var result = mockMvc.perform(
+        post("/api/follows")
+            .principal(authentication(followerId))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(requestJson)
+    );
+
+    // then
+    result.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    verify(followService).create(followerId, request);
+  }
+
+  @Test
+  void 존재하지_않는_사용자를_팔로우하면_404를_반환한다()
+      throws Exception {
+    // given
+    FollowCreateRequest request = new FollowCreateRequest(
+        followerId,
+        followeeId
+    );
+
+    when(followService.create(followerId, request))
+        .thenThrow(
+            new OtbooException(ErrorCode.NOT_FOUND_USER)
+        );
+
+    String requestJson = """
+        {
+            "followerId": "%s",
+            "followeeId": "%s"
+        }
+        """.formatted(followerId, followeeId);
+
+    // when
+    var result = mockMvc.perform(
+        post("/api/follows")
+            .principal(authentication(followerId))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(requestJson)
+    );
+
+    // then
+    result.andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("NOT_FOUND_USER"));
+
+    verify(followService).create(followerId, request);
+  }
+
+  @Test
+  void 타인의_팔로우를_취소하면_403을_반환한다()
+      throws Exception {
+    // given
+    doThrow(new OtbooException(ErrorCode.ACCESS_DENIED))
+        .when(followService)
+        .delete(followId, followerId);
+
+    // when
+    var result = mockMvc.perform(
+        delete("/api/follows/{followId}", followId)
+            .principal(authentication(followerId))
+    );
+
+    // then
+    result.andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("ACCESS_DENIED"));
+
+    verify(followService).delete(followId, followerId);
+  }
+
+  @Test
+  void 존재하지_않는_팔로우를_취소하면_404를_반환한다()
+      throws Exception {
+    // given
+    doThrow(new OtbooException(ErrorCode.NOT_FOUND_RESOURCE))
+        .when(followService)
+        .delete(followId, followerId);
+
+    // when
+    var result = mockMvc.perform(
+        delete("/api/follows/{followId}", followId)
+            .principal(authentication(followerId))
+    );
+
+    // then
+    result.andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("NOT_FOUND_RESOURCE"));
+
+    verify(followService).delete(followId, followerId);
+  }
+
+  @Test
+  void 팔로우_ID_형식이_잘못되면_400을_반환한다()
+      throws Exception {
+    // given
+    String invalidFollowId = "invalid-uuid";
+
+    // when
+    var result = mockMvc.perform(
+        delete("/api/follows/{followId}", invalidFollowId)
+            .principal(authentication(followerId))
+    );
+
+    // then
+    result.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    verifyNoInteractions(followService);
   }
 }
