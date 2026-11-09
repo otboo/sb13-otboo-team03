@@ -8,6 +8,7 @@ import com.otboo.team03.follow.mapper.FollowDtoAssembler;
 import com.otboo.team03.follow.repository.FollowRepository;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -28,6 +29,9 @@ class FollowServiceTest {
 
   @Mock
   private FollowDtoAssembler followDtoAssembler;
+
+  @Mock
+  private UserRepository userRepository;
 
   @InjectMocks
   private FollowService followService;
@@ -192,6 +196,37 @@ class FollowServiceTest {
         exception.getErrorCode()
     );
 
+    verify(followRepository, never()).save(any(Follow.class));
+    verifyNoInteractions(followDtoAssembler);
+  }
+
+  @Test
+  void 존재하지_않는_사용자를_팔로우할_수_없다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+
+    FollowCreateRequest request = new FollowCreateRequest(
+        followerId,
+        followeeId
+    );
+
+    when(userRepository.existsById(followeeId))
+        .thenReturn(false);
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> followService.create(followerId, request)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.NOT_FOUND_USER,
+        exception.getErrorCode()
+    );
+
+    verify(userRepository).existsById(followeeId);
     verify(followRepository, never()).save(any(Follow.class));
     verifyNoInteractions(followDtoAssembler);
   }
