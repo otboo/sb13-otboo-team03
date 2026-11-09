@@ -22,11 +22,16 @@ public class FollowService {
   private final FollowDtoAssembler followDtoAssembler;
   private final UserRepository userRepository;
 
+
   @Transactional
   public FollowDto create(
       UUID requesterId,
       FollowCreateRequest request
   ) {
+    if (request == null) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
     if (!requesterId.equals(request.followerId())) {
       throw new OtbooException(ErrorCode.ACCESS_DENIED);
     }
