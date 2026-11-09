@@ -4,6 +4,11 @@ import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesAttribute;
 import com.otboo.team03.clothes.entity.ClothesAttributeDefinition;
 import com.otboo.team03.clothes.entity.ClothesType;
+import com.otboo.team03.clothes.dto.request.ClothesAttributeDto;
+import com.otboo.team03.clothes.dto.request.ClothesAttributeDefUpdateRequest;
+import com.otboo.team03.clothes.dto.request.ClothesUpdateRequest;
+import com.otboo.team03.clothes.service.ClothesService;
+import com.otboo.team03.clothes.service.ClothesAttributeDefinitionService;
 import com.otboo.team03.clothes.repository.ClothesAttributeDefinitionRepository;
 import com.otboo.team03.clothes.repository.ClothesAttributeRepository;
 import com.otboo.team03.clothes.repository.ClothesRepository;
@@ -21,6 +26,7 @@ import com.otboo.team03.weather.repository.WeatherRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -51,6 +57,8 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
     @Autowired private WeatherRepository weathers;
     @Autowired private EntityManager entityManager;
     @Autowired private JwtTokenProvider tokenProvider;
+    @Autowired private ClothesService clothesService;
+    @Autowired private ClothesAttributeDefinitionService definitionService;
     @MockitoBean private JwtRegistry jwtRegistry;
 
     @ParameterizedTest
@@ -135,6 +143,61 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.clothes.length()").value(2))
                 .andExpect(jsonPath("$.clothes[0].clothesId").value(expectedTopId.toString()))
                 .andExpect(jsonPath("$.clothes[0].attributes[0].value").value(expectedValue))
+                .andExpect(jsonPath("$.clothes[1].clothesId").value(bottomId.toString()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"선택값 변경", "속성명 변경"})
+    void DB_속성_수정_후_다음_API_요청에서_최신_정보로_재추천한다(String change) throws Exception {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "속성 수정 사용자"));
+        profiles.save(new Profile(owner, null, null, null, null, null, 3, List.of()));
+        var targetDefinition = definitions.save(new ClothesAttributeDefinition(
+                "두께", List.of("얇음", "보통", "두꺼움")));
+        // 수정 대상 정의와 분리하여 차선 상의의 보통 두께는 그대로 유지한다.
+        var alternativeDefinition = definitions.save(new ClothesAttributeDefinition(
+                "두께감", List.of("얇음", "보통", "두꺼움")));
+        Clothes target = saveClothes("수정 대상 상의", ClothesType.TOP, owner, targetDefinition, "얇음");
+        Clothes alternative = saveClothes("차선 상의", ClothesType.TOP, owner, alternativeDefinition, "보통");
+        Clothes bottom = saveClothes("하의", ClothesType.BOTTOM, owner, alternativeDefinition, "보통");
+        UUID ownerId = owner.getId();
+        UUID weatherId = saveWeather(28.0).getId();
+        UUID targetId = target.getId();
+        UUID alternativeId = alternative.getId();
+        UUID bottomId = bottom.getId();
+        UUID targetDefinitionId = targetDefinition.getId();
+        entityManager.flush();
+        entityManager.clear();
+        String token = tokenProvider.createAccessToken(ownerId);
+        when(jwtRegistry.hasActiveJwtInformationByAccessToken(token)).thenReturn(true);
+
+        mvc.perform(get("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("weatherId", weatherId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clothes.length()").value(2))
+                .andExpect(jsonPath("$.clothes[0].clothesId").value(targetId.toString()))
+                .andExpect(jsonPath("$.clothes[0].attributes[0].value").value("얇음"));
+
+        if (change.equals("선택값 변경")) {
+            clothesService.update(targetId, new ClothesUpdateRequest(null, null,
+                    List.of(new ClothesAttributeDto(targetDefinitionId, "두꺼움"))), ownerId);
+        } else {
+            definitionService.update(targetDefinitionId,
+                    new ClothesAttributeDefUpdateRequest("미지원 속성", null));
+        }
+        // 변경 SQL을 실행하고 다시 조회하여 기존 관리 객체의 값만 보는 테스트를 방지한다.
+        entityManager.flush();
+        entityManager.clear();
+
+        mvc.perform(get("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("weatherId", weatherId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value(ownerId.toString()))
+                .andExpect(jsonPath("$.clothes.length()").value(2))
+                .andExpect(jsonPath("$.clothes[0].clothesId").value(alternativeId.toString()))
+                .andExpect(jsonPath("$.clothes[0].attributes[0].definitionName").value("두께감"))
+                .andExpect(jsonPath("$.clothes[0].attributes[0].value").value("보통"))
                 .andExpect(jsonPath("$.clothes[1].clothesId").value(bottomId.toString()));
     }
 
