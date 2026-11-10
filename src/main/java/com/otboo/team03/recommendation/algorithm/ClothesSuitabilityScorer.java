@@ -33,9 +33,7 @@ public class ClothesSuitabilityScorer {
             };
         }
 
-        // 민감도로 온도를 다시 보정하지 않고, 중간 구간의 차선만 결정한다.
-        boolean preferHeavy = sensitivity < NEUTRAL_SENSITIVITY ||
-                (sensitivity == NEUTRAL_SENSITIVITY && adjustedTemperature < NEUTRAL_FALLBACK_TEMPERATURE_THRESHOLD);
+        boolean preferHeavy = prefersWarmth(adjustedTemperature, sensitivity);
         return switch (level) {
             case MEDIUM -> 3;
             case HEAVY -> preferHeavy ? 2 : 0;
@@ -45,6 +43,28 @@ public class ClothesSuitabilityScorer {
     }
 
     public int scoreSleeve(ClothesType type, SleeveLength length, double adjustedTemperature, int sensitivity) {
-        return 0;
+        if (type != ClothesType.TOP && type != ClothesType.DRESS) {
+            return 0;
+        }
+        if (length == SleeveLength.UNKNOWN) {
+            return 1;
+        }
+
+        SleeveLength preferredLength;
+        if (adjustedTemperature < COLD_TEMPERATURE_THRESHOLD) {
+            preferredLength = SleeveLength.LONG;
+        } else if (adjustedTemperature >= HOT_TEMPERATURE_THRESHOLD) {
+            preferredLength = SleeveLength.SHORT;
+        } else {
+            preferredLength = prefersWarmth(adjustedTemperature, sensitivity) ? SleeveLength.LONG : SleeveLength.SHORT;
+        }
+
+        return length == preferredLength ? 2 : 0;
+    }
+
+    /** 중간 온도 구간에서 온도를 다시 보정하지 않고 두께 차선과 소매 선호를 결정한다. */
+    private boolean prefersWarmth(double adjustedTemperature, int sensitivity) {
+        return sensitivity < NEUTRAL_SENSITIVITY ||
+                (sensitivity == NEUTRAL_SENSITIVITY && adjustedTemperature < NEUTRAL_FALLBACK_TEMPERATURE_THRESHOLD);
     }
 }
