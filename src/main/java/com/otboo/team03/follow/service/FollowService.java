@@ -9,6 +9,8 @@ import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.repository.UserRepository;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
@@ -131,6 +133,20 @@ public class FollowService {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
     }
 
+    if ((cursor == null) != (idAfter == null)) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    Instant cursorTime = null;
+
+    if (cursor != null) {
+      try {
+        cursorTime = Instant.parse(cursor);
+      } catch (DateTimeParseException ex) {
+        throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+      }
+    }
+
     String normalizedNameLike =
         nameLike == null || nameLike.isBlank()
             ? null
@@ -138,18 +154,37 @@ public class FollowService {
 
     List<Follow> fetched;
 
-    if (normalizedNameLike == null) {
-      fetched =
-          followRepository.findByFolloweeIdOrderByCreatedAtDescIdDesc(
-              followeeId,
-              PageRequest.of(0, limit + 1)
-          );
+    if (cursorTime == null) {
+      if (normalizedNameLike == null) {
+        fetched =
+            followRepository.findByFolloweeIdOrderByCreatedAtDescIdDesc(
+                followeeId,
+                PageRequest.of(0, limit + 1)
+            );
+      } else {
+        fetched = followRepository.findFollowersByNameLike(
+            followeeId,
+            normalizedNameLike,
+            PageRequest.of(0, limit + 1)
+        );
+      }
     } else {
-      fetched = followRepository.findFollowersByNameLike(
-          followeeId,
-          normalizedNameLike,
-          PageRequest.of(0, limit + 1)
-      );
+      if (normalizedNameLike == null) {
+        fetched = followRepository.findNextPage(
+            followeeId,
+            cursorTime,
+            idAfter,
+            PageRequest.of(0, limit + 1)
+        );
+      } else {
+        fetched = followRepository.findNextPageByNameLike(
+            followeeId,
+            normalizedNameLike,
+            cursorTime,
+            idAfter,
+            PageRequest.of(0, limit + 1)
+        );
+      }
     }
 
     boolean hasNext = fetched.size() > limit;

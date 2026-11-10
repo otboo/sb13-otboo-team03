@@ -1,6 +1,7 @@
 package com.otboo.team03.follow.repository;
 
 import com.otboo.team03.follow.entity.Follow;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
@@ -46,5 +47,42 @@ public interface FollowRepository extends JpaRepository<Follow, UUID> {
   long countFollowersByNameLike(
       @Param("followeeId") UUID followeeId,
       @Param("nameLike") String nameLike
+  );
+
+  @Query(value = """
+      SELECT f.*
+      FROM follows f
+      WHERE f.followee_id = :followeeId
+        AND (
+          f.created_at < :cursor
+          OR (f.created_at = :cursor AND f.id < :idAfter)
+        )
+      ORDER BY f.created_at DESC, f.id DESC
+      """, nativeQuery = true)
+  List<Follow> findNextPage(
+      @Param("followeeId") UUID followeeId,
+      @Param("cursor") Instant cursor,
+      @Param("idAfter") UUID idAfter,
+      Pageable pageable
+  );
+
+  @Query(value = """
+      SELECT f.*
+      FROM follows f
+      JOIN users u ON f.follower_id = u.id
+      WHERE f.followee_id = :followeeId
+        AND LOWER(u.name) LIKE LOWER(CONCAT('%', :nameLike, '%'))
+        AND (
+          f.created_at < :cursor
+          OR (f.created_at = :cursor AND f.id < :idAfter)
+        )
+      ORDER BY f.created_at DESC, f.id DESC
+      """, nativeQuery = true)
+  List<Follow> findNextPageByNameLike(
+      @Param("followeeId") UUID followeeId,
+      @Param("nameLike") String nameLike,
+      @Param("cursor") Instant cursor,
+      @Param("idAfter") UUID idAfter,
+      Pageable pageable
   );
 }
