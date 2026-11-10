@@ -11,20 +11,27 @@ import com.otboo.team03.user.repository.UserRepository;
 import jakarta.persistence.EntityManager;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.mockingDetails;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -55,6 +62,9 @@ class FeedCommentIntegrationTest extends PostgresTestSupport {
 
   @MockitoBean
   private JwtRegistry jwtRegistry;
+
+  @MockitoSpyBean
+  private NamedParameterJdbcTemplate namedParameterJdbcTemplate;
 
   @Test
   void 댓글_등록과_조회가_DB와_피드_댓글수에_반영된다()
@@ -447,5 +457,173 @@ class FeedCommentIntegrationTest extends PostgresTestSupport {
         "테스트 댓글",
         Timestamp.from(createdAt)
     );
+  }
+
+  @Test
+  void 댓글_목록_크기가_증가해도_작성자_조회_SQL은_한번만_실행된다()
+      throws Exception {
+    // given
+    List<User> commenters = new ArrayList<>();
+    Timestamp now = Timestamp.from(Instant.now());
+
+    for (int i = 0; i < 5; i++) {
+      User commenter = userRepository.saveAndFlush(
+          new User(
+              UUID.randomUUID() + "@example.com",
+              "encodedPassword",
+              "댓글 작성자 " + i
+          )
+      );
+
+      commenters.add(commenter);
+
+      jdbcTemplate.update("""
+        INSERT INTO profiles (
+            user_id, profile_image_url,
+            created_at, updated_at
+        ) VALUES (?, ?, ?, ?)
+        """,
+          commenter.getId(),
+          "/images/commenter-" + i + ".png",
+          now,
+          now
+      );
+    }
+
+    UUID weatherId = UUID.randomUUID();
+
+    jdbcTemplate.update("""
+      INSERT INTO weathers (
+          id, latitude, longitude,
+          forecasted_at, forecast_at,
+          sky_status, precipitation_type,
+          precipitation_amount, precipitation_probability,
+          temperature, humidity, wind_speed,
+          created_at, updated_at
+      ) VALUES (
+          ?, 35.2, 129.1,
+          ?, ?, 'CLEAR', 'NONE',
+          0, 0, 20, 50, 1,
+          ?, ?
+      )
+      """,
+        weatherId, now, now, now, now
+    );
+
+    Feed feed = feedRepository.saveAndFlush(
+        new Feed(
+            commenters.get(0).getId(),
+            weatherId,
+            "댓글 N+1 테스트 피드"
+        )
+    );
+
+    Instant baseTime =
+        Instant.parse("2026-11-10T01:00:00Z");
+
+    for (int i = 0; i < 5; i++) {
+      insertPaginationComment(
+          UUID.randomUUID(),
+          feed.getId(),
+          commenters.get(i).getId(),
+          baseTime.plusSeconds(i)
+      );
+    }
+
+    String accessToken = jwtTokenProvider.createAccessToken(
+        commenters.get(0).getId()
+    );
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    entityManager.flush();
+    entityManager.clear();
+
+    clearInvocations(namedParameterJdbcTemplate);
+
+    // when
+    var smallPage = mockMvc.perform(
+        get("/api/feeds/{feedId}/comments", feed.getId())
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "2")
+    );
+
+    long smallPageQueries = countAuthorProfileQueries();
+
+    clearInvocations(namedParameterJdbcTemplate);
+
+    var largePage = mockMvc.perform(
+        get("/api/feeds/{feedId}/comments", feed.getId())
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "5")
+    );
+
+    long largePageQueries = countAuthorProfileQueries();
+
+    // then
+    smallPage.andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andExpect(jsonPath("$.totalCount").value(5))
+        .andExpect(jsonPath("$.data[0].author.userId")
+            .value(commenters.get(4).getId().toString()))
+        .andExpect(jsonPath("$.data[1].author.userId")
+            .value(commenters.get(3).getId().toString()));
+
+    largePage.andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(5))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.totalCount").value(5));
+
+    for (int i = 0; i < 5; i++) {
+      int authorIndex = 4 - i;
+
+      largePage
+          .andExpect(jsonPath("$.data[" + i + "].author.userId")
+              .value(commenters.get(authorIndex).getId().toString()))
+          .andExpect(jsonPath("$.data[" + i + "].author.name")
+              .value("댓글 작성자 " + authorIndex))
+          .andExpect(jsonPath("$.data[" + i + "].author.profileImageUrl")
+              .value("/images/commenter-" + authorIndex + ".png"));
+    }
+
+    assertEquals(
+        1L,
+        smallPageQueries,
+        "댓글 2개 조회 시 작성자·프로필 SQL 호출 횟수"
+    );
+
+    assertEquals(
+        1L,
+        largePageQueries,
+        "댓글 5개 조회 시 작성자·프로필 SQL 호출 횟수"
+    );
+  }
+
+  private long countAuthorProfileQueries() {
+    return mockingDetails(namedParameterJdbcTemplate)
+        .getInvocations()
+        .stream()
+        .filter(invocation -> {
+          if (!invocation.getMethod().getName().equals("query")) {
+            return false;
+          }
+
+          Class<?>[] parameterTypes =
+              invocation.getMethod().getParameterTypes();
+
+          if (parameterTypes.length != 3
+              || parameterTypes[0] != String.class
+              || parameterTypes[1] != Map.class) {
+            return false;
+          }
+
+          String sql = (String) invocation.getArguments()[0];
+
+          return sql.contains("FROM users u")
+              && sql.contains("LEFT JOIN profiles p");
+        })
+        .count();
   }
 }
