@@ -45,7 +45,7 @@
 
 ## 3. 의상별 두께 정보 종합
 
-`ClothesThermalEstimator`는 한 의상에서 해석한 두께 수준 목록을 입력받는다. 문자열 해석이나 DB 조회는 수행하지 않는다.
+`ClothesAttributeEstimator.estimateThickness()`는 한 의상에서 해석한 두께 수준 목록을 입력받는다. 문자열 해석이나 DB 조회는 수행하지 않는다.
 
 | 입력 예시 | 반환값 | 적용 규칙 |
 | --- | --- | --- |

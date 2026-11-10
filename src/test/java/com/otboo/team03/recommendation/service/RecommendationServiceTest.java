@@ -14,7 +14,7 @@ import com.otboo.team03.profile.exception.ProfileNotFoundException;
 import com.otboo.team03.profile.service.ProfileService;
 import com.otboo.team03.recommendation.algorithm.BasicOutfitAlgorithm;
 import com.otboo.team03.recommendation.algorithm.AttributeSemanticAnalyzer;
-import com.otboo.team03.recommendation.algorithm.ClothesThermalEstimator;
+import com.otboo.team03.recommendation.algorithm.ClothesAttributeEstimator;
 import com.otboo.team03.recommendation.algorithm.ThicknessSuitabilityScorer;
 import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import com.otboo.team03.weather.entity.Weather;
@@ -50,7 +50,7 @@ class RecommendationServiceTest {
     @Mock private BasicOutfitAlgorithm algorithm;
     @Mock private WeatherRepository weatherRepository;
     @Spy private AttributeSemanticAnalyzer attributeAnalyzer = new AttributeSemanticAnalyzer();
-    @Spy private ClothesThermalEstimator thermalEstimator = new ClothesThermalEstimator();
+    @Spy private ClothesAttributeEstimator attributeEstimator = new ClothesAttributeEstimator();
     @InjectMocks private RecommendationService service;
 
     private final UUID userId = UUID.randomUUID();
@@ -196,7 +196,7 @@ class RecommendationServiceTest {
                 clothesRepository, clothesAttributeRepository, weatherRepository,
                 profileService, clothesService,
                 new BasicOutfitAlgorithm(new ThicknessSuitabilityScorer()),
-                new AttributeSemanticAnalyzer(), new ClothesThermalEstimator());
+                new AttributeSemanticAnalyzer(), new ClothesAttributeEstimator());
         givenTemperature(temperature);
         when(profileService.getProfile(userId)).thenReturn(profile(sensitivity));
 
@@ -279,7 +279,7 @@ class RecommendationServiceTest {
                 clothesRepository, clothesAttributeRepository, weatherRepository,
                 profileService, clothesService,
                 new BasicOutfitAlgorithm(new ThicknessSuitabilityScorer()),
-                new AttributeSemanticAnalyzer(), new ClothesThermalEstimator());
+                new AttributeSemanticAnalyzer(), new ClothesAttributeEstimator());
         givenTemperature(temperature);
         when(profileService.getProfile(userId)).thenReturn(profile(sensitivity));
         Clothes first = candidate(ClothesType.TOP);

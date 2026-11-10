@@ -9,7 +9,7 @@ import com.otboo.team03.feed.dto.response.OotdDto;
 import com.otboo.team03.profile.service.ProfileService;
 import com.otboo.team03.recommendation.algorithm.BasicOutfitAlgorithm;
 import com.otboo.team03.recommendation.algorithm.AttributeSemanticAnalyzer;
-import com.otboo.team03.recommendation.algorithm.ClothesThermalEstimator;
+import com.otboo.team03.recommendation.algorithm.ClothesAttributeEstimator;
 import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import com.otboo.team03.recommendation.dto.RecommendationDto;
 import com.otboo.team03.weather.exception.WeatherNotFoundException;
@@ -36,7 +36,7 @@ public class RecommendationService {
     private final ClothesService clothesService;
     private final BasicOutfitAlgorithm algorithm;
     private final AttributeSemanticAnalyzer attributeAnalyzer;
-    private final ClothesThermalEstimator thermalEstimator;
+    private final ClothesAttributeEstimator attributeEstimator;
 
     public RecommendationDto recommend(UUID weatherId, UUID userId) {
         Double temperature = weatherRepository.findById(weatherId)
@@ -73,7 +73,7 @@ public class RecommendationService {
         Map<UUID, ThicknessLevel> thicknessByClothesId = new HashMap<>();
         for (UUID clothesId : clothesIds) {
             List<ThicknessLevel> levels = levelsByClothesId.getOrDefault(clothesId, List.of());
-            thicknessByClothesId.put(clothesId, thermalEstimator.estimate(levels));
+            thicknessByClothesId.put(clothesId, attributeEstimator.estimateThickness(levels));
         }
         return thicknessByClothesId;
     }
