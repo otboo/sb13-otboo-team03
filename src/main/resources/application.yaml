@@ -52,6 +52,22 @@ otboo:
     region: ${AWS_REGION:ap-northeast-2}
     presign-minutes: 5
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include:
+            - readinessState
+            - db
+
 kakao:
   api:
     key: ${KAKAO_API_KEY:}
