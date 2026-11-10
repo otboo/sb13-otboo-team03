@@ -75,6 +75,32 @@ class DirectMessageWebSocketInterceptorTest {
     }
 
     @Test
+    void STOMP_메시지_헤더가_없으면_메시지를_그대로_전달한다() {
+        Message<byte[]> message = MessageBuilder.withPayload(new byte[0]).build();
+
+        assertThat(interceptor.preSend(message, null)).isSameAs(message);
+    }
+
+    @Test
+    void 잘못된_인증_헤더_형식은_거부한다() {
+        Message<byte[]> message = connectMessage("Basic access-token");
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 비활성화된_액세스_토큰은_거부한다() {
+        String accessToken = "inactive-token";
+        Message<byte[]> message = connectMessage("Bearer " + accessToken);
+        doNothing().when(jwtTokenProvider).validateAccessToken(accessToken);
+        when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken)).thenReturn(false);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void DM_참여자만_구독할_수_있다() {
         UUID userId = UUID.randomUUID();
         UUID otherUserId = UUID.randomUUID();
@@ -101,6 +127,49 @@ class DirectMessageWebSocketInterceptorTest {
         )).isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void 인증되지_않은_메시지는_거부한다() {
+        String destination = "/sub/direct-messages_" + UUID.randomUUID();
+
+        assertThatThrownBy(() -> interceptor.preSend(
+                subscriptionMessage(destination, null),
+                null
+        )).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 잘못된_송신_destination은_거부한다() {
+        UUID userId = UUID.randomUUID();
+        Authentication authentication = authentication(userId);
+        Message<byte[]> message = sendMessage("/pub/invalid", authentication);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 허용된_송신_destination은_통과한다() {
+        Authentication authentication = authentication(UUID.randomUUID());
+        Message<byte[]> message = sendMessage("/pub/direct-messages_send", authentication);
+
+        assertThat(interceptor.preSend(message, null)).isSameAs(message);
+    }
+
+    @Test
+    void 잘못된_인증_principal은_DM을_구독할_수_없다() {
+        Authentication authentication = new UsernamePasswordAuthenticationToken(
+                "wrong-principal",
+                null,
+                List.of()
+        );
+        String destination = "/sub/direct-messages_" + UUID.randomUUID();
+
+        assertThatThrownBy(() -> interceptor.preSend(
+                subscriptionMessage(destination, authentication),
+                null
+        )).isInstanceOf(IllegalArgumentException.class);
+    }
+
     private Message<byte[]> connectMessage(String authorization) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
         if (authorization != null) {
@@ -115,6 +184,16 @@ class DirectMessageWebSocketInterceptorTest {
             Authentication authentication
     ) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination(destination);
+        accessor.setUser(authentication);
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    private Message<byte[]> sendMessage(
+            String destination,
+            Authentication authentication
+    ) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
         accessor.setDestination(destination);
         accessor.setUser(authentication);
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());

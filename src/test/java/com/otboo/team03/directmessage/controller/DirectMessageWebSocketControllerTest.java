@@ -76,6 +76,21 @@ class DirectMessageWebSocketControllerTest {
                 .isInstanceOf(OtbooException.class);
     }
 
+    @Test
+    void 인증_객체의_principal이_잘못되면_DM을_전송할_수_없다() {
+        DirectMessageCreateRequest request = new DirectMessageCreateRequest(
+                UUID.randomUUID(),
+                "메시지"
+        );
+        Authentication authentication = new UsernamePasswordAuthenticationToken(
+                "wrong-principal",
+                null
+        );
+
+        assertThatThrownBy(() -> controller.send(request, authentication))
+                .isInstanceOf(OtbooException.class);
+    }
+
     private Authentication authentication(UUID userId) {
         OtbooUserDetails userDetails = new OtbooUserDetails(
                 new UserDto(
