@@ -67,3 +67,6 @@ management:
           include:
             - readinessState
             - db
+kakao:
+  api:
+    key: ${KAKAO_API_KEY:}
