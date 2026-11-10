@@ -1318,4 +1318,55 @@ class FeedServiceTest {
         eq(viewerId)
     );
   }
+
+  @Test
+  void 댓글_목록_조회시_단건_DTO_변환을_반복하지_않는다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID secondCommentId = UUID.randomUUID();
+
+    Instant createdAt =
+        Instant.parse("2026-11-10T01:00:00Z");
+
+    FeedComment first = mock(FeedComment.class);
+    FeedComment second = mock(FeedComment.class);
+    FeedComment extra = mock(FeedComment.class);
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    when(feedCommentRepository.findByFeedIdOrderByCreatedAtDescIdDesc(
+        feedId,
+        PageRequest.of(0, 3)
+    )).thenReturn(List.of(first, second, extra));
+
+    when(feedCommentRepository.countByFeedId(feedId))
+        .thenReturn(3L);
+
+    when(second.getId())
+        .thenReturn(secondCommentId);
+
+    when(second.getCreatedAt())
+        .thenReturn(createdAt);
+
+    // when
+    CursorResponse<CommentDto> result = feedService.getFeedComments(
+        feedId,
+        2,
+        null,
+        null
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(2, result.data().size()),
+        () -> assertTrue(result.hasNext()),
+        () -> assertEquals(3L, result.totalCount()),
+        () -> assertEquals(createdAt.toString(), result.nextCursor()),
+        () -> assertEquals(secondCommentId, result.nextIdAfter())
+    );
+
+    verify(feedDtoAssembler, never())
+        .toCommentDto(any(FeedComment.class));
+  }
 }
