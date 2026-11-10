@@ -11,22 +11,27 @@ import java.util.List;
 public class ClothesAttributeEstimator {
 
     public ThicknessLevel estimateThickness(List<ThicknessLevel> levels) {
-        ThicknessLevel result = ThicknessLevel.UNKNOWN;
-
-        for (ThicknessLevel level : levels) {
-            if (level == ThicknessLevel.UNKNOWN) {
-                continue;
-            }
-            if (result != ThicknessLevel.UNKNOWN && result != level) {
-                return ThicknessLevel.UNKNOWN;
-            }
-            result = level;
-        }
-
-        return result;
+        return estimate(levels, ThicknessLevel.UNKNOWN);
     }
 
     public SleeveLength estimateSleeveLength(List<SleeveLength> lengths) {
-        return SleeveLength.UNKNOWN;
+        return estimate(lengths, SleeveLength.UNKNOWN);
+    }
+
+    /** UNKNOWN을 제외한 유효 값이 하나로 일치할 때만 해당 값을 반환한다. */
+    private <T extends Enum<T>> T estimate(List<T> values, T unknown) {
+        T result = unknown;
+
+        for (T value : values) {
+            if (value == unknown) {
+                continue;
+            }
+            if (result != unknown && result != value) {
+                return unknown;
+            }
+            result = value;
+        }
+
+        return result;
     }
 }
