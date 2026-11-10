@@ -1274,6 +1274,14 @@ class FeedServiceTest {
     when(second.getId()).thenReturn(secondFeedId);
     when(second.getCreatedAt()).thenReturn(createdAt);
 
+    FeedDto firstDto = mock(FeedDto.class);
+    FeedDto secondDto = mock(FeedDto.class);
+
+    when(feedDtoAssembler.toDtos(
+        List.of(first, second),
+        viewerId
+    )).thenReturn(List.of(firstDto, secondDto));
+
     // when
     CursorResponse<FeedDto> result = feedService.getFeedList(
         2,
@@ -1290,10 +1298,19 @@ class FeedServiceTest {
 
     // then
     assertAll(
+        () -> assertEquals(
+            List.of(firstDto, secondDto),
+            result.data()
+        ),
         () -> assertTrue(result.hasNext()),
         () -> assertEquals(3L, result.totalCount()),
         () -> assertEquals(createdAt.toString(), result.nextCursor()),
         () -> assertEquals(secondFeedId, result.nextIdAfter())
+    );
+
+    verify(feedDtoAssembler).toDtos(
+        List.of(first, second),
+        viewerId
     );
 
     verify(feedDtoAssembler, never()).toDto(

@@ -326,9 +326,9 @@ public class FeedService {
         ? fetched.subList(0, query.limit())
         : fetched;
 
-    List<FeedDto> data = page.stream()
-        .map(feed -> feedDtoAssembler.toDto(feed, query.viewerId()))
-        .toList();
+    List<FeedDto> data = page.isEmpty()
+        ? List.of()
+        : feedDtoAssembler.toDtos(page, query.viewerId());
 
     String nextCursor = null;
     UUID nextIdAfter = null;
