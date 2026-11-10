@@ -1,5 +1,7 @@
 package com.otboo.team03.user.init;
 
+import com.otboo.team03.profile.entity.Profile;
+import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.entity.UserRole;
 import com.otboo.team03.user.repository.UserRepository;
@@ -22,6 +24,9 @@ class AdminInitializerTest {
     private UserRepository userRepository;
 
     @Mock
+    private ProfileRepository profileRepository;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     private AdminInitializer adminInitializer;
@@ -29,7 +34,7 @@ class AdminInitializerTest {
     @BeforeEach
     void setUp() {
         AdminProperties properties = new AdminProperties("admin@example.com", "adminPassword123!", "관리자");
-        adminInitializer = new AdminInitializer(userRepository, passwordEncoder, properties);
+        adminInitializer = new AdminInitializer(userRepository, profileRepository, passwordEncoder, properties);
     }
 
     @Test
@@ -65,6 +70,7 @@ class AdminInitializerTest {
         verify(userRepository).existsByRole(UserRole.ADMIN);
         verify(userRepository, never()).save(any(User.class));
         verifyNoInteractions(passwordEncoder);
+        verifyNoInteractions(profileRepository);
     }
 
     @Test
@@ -78,5 +84,31 @@ class AdminInitializerTest {
 
         // then
         verify(userRepository).save(any(User.class));
+        verify(profileRepository).save(any(Profile.class));
     }
+
+    @Test
+    void initialize_adminNotExists_createsProfile() {
+        // given
+        when(userRepository.existsByRole(UserRole.ADMIN)).thenReturn(false);
+        when(passwordEncoder.encode("adminPassword123!")).thenReturn("encodedPassword");
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // when
+        adminInitializer.initialize();
+
+        // then
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        ArgumentCaptor<Profile> profileCaptor = ArgumentCaptor.forClass(Profile.class);
+
+        verify(userRepository).save(userCaptor.capture());
+        verify(profileRepository).save(profileCaptor.capture());
+
+        User savedAdmin = userCaptor.getValue();
+        Profile savedProfile = profileCaptor.getValue();
+
+        assertThat(savedProfile.getUser()).isSameAs(savedAdmin);
+        assertThat(savedAdmin.getRole()).isEqualTo(UserRole.ADMIN);
+    }
+
 }

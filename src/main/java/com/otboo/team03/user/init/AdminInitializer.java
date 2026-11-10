@@ -1,5 +1,7 @@
 package com.otboo.team03.user.init;
 
+import com.otboo.team03.profile.entity.Profile;
+import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.entity.UserRole;
 import com.otboo.team03.user.repository.UserRepository;
@@ -14,11 +16,13 @@ import org.springframework.stereotype.Component;
 public class AdminInitializer implements ApplicationRunner {
 
     private final UserRepository userRepository;
+    private final ProfileRepository profileRepository;
     private final PasswordEncoder passwordEncoder;
     private final AdminProperties adminProperties;
 
-    public AdminInitializer(UserRepository userRepository, PasswordEncoder passwordEncoder, AdminProperties adminProperties) {
+    public AdminInitializer(UserRepository userRepository, ProfileRepository profileRepository, PasswordEncoder passwordEncoder, AdminProperties adminProperties) {
         this.userRepository = userRepository;
+        this.profileRepository = profileRepository;
         this.passwordEncoder = passwordEncoder;
         this.adminProperties = adminProperties;
     }
@@ -40,7 +44,8 @@ public class AdminInitializer implements ApplicationRunner {
         );
         admin.changeRole(UserRole.ADMIN);
 
-        userRepository.save(admin);
+        User savedAdmin = userRepository.save(admin);
+        profileRepository.save(new Profile(savedAdmin));
     }
 
 
