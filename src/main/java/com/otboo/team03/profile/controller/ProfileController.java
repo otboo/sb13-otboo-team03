@@ -6,6 +6,7 @@ import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.profile.dto.ProfileDto;
 import com.otboo.team03.profile.dto.ProfileUpdateRequest;
 import com.otboo.team03.profile.service.ProfileService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -51,7 +52,7 @@ public class ProfileController {
   @PatchMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ResponseEntity<ProfileDto> updateProfile(
       @PathVariable UUID userId,
-      @RequestPart(value = "request", required = false) ProfileUpdateRequest request,
+      @RequestPart(value = "request", required = false) @Valid ProfileUpdateRequest request,
       @RequestPart(value = "image", required = false) MultipartFile image,
       Authentication authentication
   ) {
