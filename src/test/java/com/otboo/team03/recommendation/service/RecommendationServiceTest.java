@@ -16,7 +16,7 @@ import com.otboo.team03.recommendation.algorithm.BasicOutfitAlgorithm;
 import com.otboo.team03.recommendation.algorithm.AttributeSemanticAnalyzer;
 import com.otboo.team03.recommendation.algorithm.ClothesThermalEstimator;
 import com.otboo.team03.recommendation.algorithm.ThicknessSuitabilityScorer;
-import com.otboo.team03.recommendation.algorithm.ThicknessLevel;
+import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.exception.WeatherNotFoundException;
 import com.otboo.team03.weather.repository.WeatherRepository;
@@ -38,7 +38,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
-import static com.otboo.team03.recommendation.algorithm.ThicknessLevel.*;
+import static com.otboo.team03.recommendation.entity.ThicknessLevel.*;
 
 @ExtendWith(MockitoExtension.class)
 class RecommendationServiceTest {

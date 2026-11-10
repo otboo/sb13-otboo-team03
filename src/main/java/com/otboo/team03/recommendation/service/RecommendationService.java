@@ -10,7 +10,7 @@ import com.otboo.team03.profile.service.ProfileService;
 import com.otboo.team03.recommendation.algorithm.BasicOutfitAlgorithm;
 import com.otboo.team03.recommendation.algorithm.AttributeSemanticAnalyzer;
 import com.otboo.team03.recommendation.algorithm.ClothesThermalEstimator;
-import com.otboo.team03.recommendation.algorithm.ThicknessLevel;
+import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import com.otboo.team03.recommendation.dto.RecommendationDto;
 import com.otboo.team03.weather.exception.WeatherNotFoundException;
 import com.otboo.team03.weather.repository.WeatherRepository;

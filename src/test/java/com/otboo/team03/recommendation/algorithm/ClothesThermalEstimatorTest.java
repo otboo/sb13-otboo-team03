@@ -1,12 +1,13 @@
 package com.otboo.team03.recommendation.algorithm;
 
+import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
-import static com.otboo.team03.recommendation.algorithm.ThicknessLevel.*;
+import static com.otboo.team03.recommendation.entity.ThicknessLevel.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ClothesThermalEstimatorTest {

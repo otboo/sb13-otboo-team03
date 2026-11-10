@@ -2,6 +2,7 @@ package com.otboo.team03.recommendation.algorithm;
 
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesType;
+import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

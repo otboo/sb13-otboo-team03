@@ -2,6 +2,7 @@ package com.otboo.team03.recommendation.algorithm;
 
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesType;
+import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import com.otboo.team03.user.entity.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -15,7 +16,7 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.UUID;
 
-import static com.otboo.team03.recommendation.algorithm.ThicknessLevel.*;
+import static com.otboo.team03.recommendation.entity.ThicknessLevel.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 

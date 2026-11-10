@@ -1,5 +1,6 @@
 package com.otboo.team03.recommendation.algorithm;
 
+import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import org.springframework.stereotype.Component;
 
 /** 온도 민감도가 이미 반영된 보정 온도와 두께 수준의 적합도를 평가한다. */
