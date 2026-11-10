@@ -263,8 +263,8 @@ class RecommendationServiceTest {
     @CsvSource(value = {
             "28.0, 3, HEAVY, MEDIUM",
             "10.0, 3, LIGHT, MEDIUM",
-            "21.0, 1, LIGHT, HEAVY",
-            "19.0, 5, HEAVY, LIGHT",
+            "24.0, 1, LIGHT, HEAVY", // 보정 20℃: 실제 민감도는 HEAVY, 중립 규칙은 LIGHT
+            "14.0, 5, HEAVY, LIGHT", // 보정 18℃: 실제 민감도는 LIGHT, 중립 규칙은 HEAVY
             "19.9, 3, LIGHT, HEAVY",
             "20.0, 3, HEAVY, LIGHT",
             "19.9, NULL, LIGHT, HEAVY",

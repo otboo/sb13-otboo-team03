@@ -472,16 +472,24 @@ class BasicOutfitAlgorithmTest {
             assertThat(result).containsExactlyInAnyOrder(heavy, bottom, outer);
         }
 
-        @Test
-        void ID가_없는_의상은_UNKNOWN으로_평가한다() {
+        @ParameterizedTest
+        @CsvSource({"LIGHT, false", "MEDIUM, false", "HEAVY, true"})
+        void ID가_없는_의상은_UNKNOWN으로_평가한다(
+                ThicknessLevel knownLevel, boolean expectWithoutId) {
             Clothes withoutId = new Clothes("ID 없는 상의", ClothesType.TOP, null, owner);
-            Clothes light = clothes(ClothesType.TOP);
+            Clothes known = clothes(ClothesType.TOP);
             Clothes bottom = clothes(ClothesType.BOTTOM);
+            assertThat(withoutId.getId()).isNull();
+            // 잘못 같은 수준으로 평가해도 입력 순서만으로 통과하지 않도록 배치한다.
+            List<Clothes> candidates = expectWithoutId
+                    ? List.of(known, withoutId, bottom)
+                    : List.of(withoutId, known, bottom);
 
-            var result = algorithm.recommend(List.of(withoutId, light, bottom),
-                    Map.of(light.getId(), LIGHT), 28.0, 3);
+            var result = algorithm.recommend(candidates,
+                    Map.of(known.getId(), knownLevel), 28.0, 3);
 
-            assertThat(result).containsExactlyInAnyOrder(light, bottom);
+            Clothes expectedTop = expectWithoutId ? withoutId : known;
+            assertThat(result).containsExactlyInAnyOrder(expectedTop, bottom);
         }
 
         @Test

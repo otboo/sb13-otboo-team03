@@ -5,7 +5,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** 추천 정책 문서의 온도·민감도별 전체 두께 순위를 검증한다. */
+/** 추천 정책 문서의 온도·민감도별 두께 순위와 정확한 점수를 검증한다. */
 class ThicknessSuitabilityScorerTest {
 
     private final ThicknessSuitabilityScorer scorer = new ThicknessSuitabilityScorer();
@@ -32,7 +32,7 @@ class ThicknessSuitabilityScorerTest {
             "25.0, 5, LIGHT, MEDIUM, UNKNOWN, HEAVY",
             "35.0, 3, LIGHT, MEDIUM, UNKNOWN, HEAVY"
     })
-    void 보정_온도와_민감도에_따른_두께_우선순위를_보장한다(
+    void 보정_온도와_민감도에_따른_두께_순위별_점수는_3_2_1_0이다(
             double adjustedTemperature, int sensitivity,
             ThicknessLevel first, ThicknessLevel second,
             ThicknessLevel third, ThicknessLevel fourth) {
@@ -41,8 +41,9 @@ class ThicknessSuitabilityScorerTest {
         int thirdScore = scorer.score(third, adjustedTemperature, sensitivity);
         int fourthScore = scorer.score(fourth, adjustedTemperature, sensitivity);
 
-        assertThat(firstScore).isGreaterThan(secondScore);
-        assertThat(secondScore).isGreaterThan(thirdScore);
-        assertThat(thirdScore).isGreaterThan(fourthScore);
+        assertThat(firstScore).isEqualTo(3);
+        assertThat(secondScore).isEqualTo(2);
+        assertThat(thirdScore).isEqualTo(1);
+        assertThat(fourthScore).isZero();
     }
 }
