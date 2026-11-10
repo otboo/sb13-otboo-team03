@@ -54,6 +54,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/clothes/attribute-defs").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/clothes/attribute-defs/*").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/clothes/attribute-defs/*").hasRole("ADMIN")
+                        // WebSocket 핸드셰이크는 허용하고, 실제 JWT 인증은 STOMP CONNECT에서 처리한다.
+                        .requestMatchers("/ws/**").permitAll()
                         // API 인증은 SPA 공개 규칙보다 먼저 검사한다.
                         .requestMatchers("/api/**").authenticated()
                         // 페이지 자체는 공개하고, 데이터 접근 권한은 기존 API 규칙으로 검사한다.

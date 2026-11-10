@@ -58,6 +58,21 @@ class SpaSecurityHttpTest {
         verify(clothesService, never()).findById(any());
     }
 
+    @Test
+    void websocketHandshakeEndpointIsNotBlockedByHttpAuthentication() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(
+                URI.create("http://localhost:" + port + "/ws"))
+                .GET()
+                .build();
+
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                request,
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        assertThat(response.statusCode()).isNotEqualTo(401);
+    }
+
     @Autowired ClothesService clothesService;
     static final UUID OWNER = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
