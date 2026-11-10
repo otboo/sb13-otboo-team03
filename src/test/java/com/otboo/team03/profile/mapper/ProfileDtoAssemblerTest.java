@@ -145,4 +145,69 @@ class ProfileDtoAssemblerTest {
     assertThat(result.location().locationNames()).containsExactly("부산광역시");
   }
 
+  @Test
+  @DisplayName("7. 지역명(locationNames)이 빈 배열인 경우 location은 null을 반환한다")
+  void toDto_withEmptyLocationNames_returnsNullLocation() {
+    // given: 좌표는 있지만 지역명이 빈 리스트([])인 프로필 생성
+    User user = new User("user@otboo.io", "pass1234!", "우디");
+    Profile profile = new Profile(
+        user,
+        null,
+        Gender.MALE,
+        LocalDate.of(1995, 5, 20),
+        37.5665,
+        126.9780,
+        3,
+        List.of() // 빈 리스트
+    );
+    ProfileDtoAssembler assembler = new ProfileDtoAssembler(Optional.empty());
+    // when
+    ProfileDto result = assembler.toDto(profile);
+    // then: location 객체가 생성되지 않고 null이어야 함!
+    assertThat(result.location()).isNull();
+  }
+  @Test
+  @DisplayName("8. 지역명(locationNames)이 null인 경우 location은 null을 반환한다")
+  void toDto_withNullLocationNames_returnsNullLocation() {
+    // given: 지역명이 null인 프로필 생성
+    User user = new User("user@otboo.io", "pass1234!", "우디");
+    Profile profile = new Profile(
+        user,
+        null,
+        Gender.MALE,
+        LocalDate.of(1995, 5, 20),
+        37.5665,
+        126.9780,
+        3,
+        null // null
+    );
+    ProfileDtoAssembler assembler = new ProfileDtoAssembler(Optional.empty());
+    // when
+    ProfileDto result = assembler.toDto(profile);
+    // then: location이 null이어야 함!
+    assertThat(result.location()).isNull();
+  }
+  @Test
+  @DisplayName("9. 위도와 경도 좌표가 모두 null인 경우 location은 null을 반환한다")
+  void toDto_withNullCoordinates_returnsNullLocation() {
+    // given: 지역명은 있어도 좌표가 둘 다 null인 비정상 데이터 방어
+    User user = new User("user@otboo.io", "pass1234!", "우디");
+    Profile profile = new Profile(
+        user,
+        null,
+        Gender.MALE,
+        LocalDate.of(1995, 5, 20),
+        null, // latitude null
+        null, // longitude null
+        3,
+        List.of("서울특별시")
+    );
+    ProfileDtoAssembler assembler = new ProfileDtoAssembler(Optional.empty());
+    // when
+    ProfileDto result = assembler.toDto(profile);
+    // then: location이 null이어야 함!
+    assertThat(result.location()).isNull();
+  }
+
+
 }
