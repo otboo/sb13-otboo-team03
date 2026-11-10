@@ -5,12 +5,12 @@ import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.entity.UserRole;
 import com.otboo.team03.user.repository.UserRepository;
-import jakarta.transaction.Transactional;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @EnableConfigurationProperties(AdminProperties.class)
