@@ -445,9 +445,9 @@ public class FeedService {
         ? fetched.subList(0, limit)
         : fetched;
 
-    List<CommentDto> data = page.stream()
-        .map(feedDtoAssembler::toCommentDto)
-        .toList();
+    List<CommentDto> data = page.isEmpty()
+        ? List.of()
+        : feedDtoAssembler.toCommentDtos(page);
 
     String nextCursor = null;
     UUID nextIdAfter = null;

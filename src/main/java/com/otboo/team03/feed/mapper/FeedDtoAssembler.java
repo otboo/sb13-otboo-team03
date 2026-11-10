@@ -226,6 +226,39 @@ public class FeedDtoAssembler {
     );
   }
 
+  public List<CommentDto> toCommentDtos(List<FeedComment> comments) {
+    if (comments.isEmpty()) {
+      return List.of();
+    }
+
+    Set<UUID> authorIds = new HashSet<>();
+
+    for (FeedComment comment : comments) {
+      authorIds.add(comment.getAuthorId());
+    }
+
+    Map<UUID, AuthorDto> authors =
+        batchQueryRepository.findAuthors(authorIds);
+
+    return comments.stream()
+        .map(comment -> {
+          AuthorDto author = authors.get(comment.getAuthorId());
+
+          if (author == null) {
+            throw new UserNotFoundException();
+          }
+
+          return new CommentDto(
+              comment.getId(),
+              comment.getCreatedAt(),
+              comment.getFeedId(),
+              author,
+              comment.getContent()
+          );
+        })
+        .toList();
+  }
+
   public CommentDto toCommentDto(FeedComment comment) {
     return new CommentDto(
         comment.getId(),

@@ -906,11 +906,9 @@ class FeedServiceTest {
     when(feedCommentRepository.countByFeedId(feedId))
         .thenReturn(3L);
 
-    when(feedDtoAssembler.toCommentDto(firstComment))
-        .thenReturn(firstDto);
-
-    when(feedDtoAssembler.toCommentDto(secondComment))
-        .thenReturn(secondDto);
+    when(feedDtoAssembler.toCommentDtos(
+        List.of(firstComment, secondComment)
+    )).thenReturn(List.of(firstDto, secondDto));
 
     when(secondComment.getCreatedAt())
         .thenReturn(secondTime);
@@ -943,7 +941,12 @@ class FeedServiceTest {
             PageRequest.of(0, 3)
         );
 
-    verify(feedDtoAssembler, never()).toCommentDto(thirdComment);
+    verify(feedDtoAssembler).toCommentDtos(
+        List.of(firstComment, secondComment)
+    );
+
+    verify(feedDtoAssembler, never())
+        .toCommentDto(any(FeedComment.class));
   }
 
   @Test
@@ -997,11 +1000,9 @@ class FeedServiceTest {
     when(feedCommentRepository.countByFeedId(feedId))
         .thenReturn(5L);
 
-    when(feedDtoAssembler.toCommentDto(firstComment))
-        .thenReturn(firstDto);
-
-    when(feedDtoAssembler.toCommentDto(secondComment))
-        .thenReturn(secondDto);
+    when(feedDtoAssembler.toCommentDtos(
+        List.of(firstComment, secondComment)
+    )).thenReturn(List.of(firstDto, secondDto));
 
     when(secondComment.getCreatedAt())
         .thenReturn(secondTime);
@@ -1041,8 +1042,12 @@ class FeedServiceTest {
             any(PageRequest.class)
         );
 
+    verify(feedDtoAssembler).toCommentDtos(
+        List.of(firstComment, secondComment)
+    );
+
     verify(feedDtoAssembler, never())
-        .toCommentDto(thirdComment);
+        .toCommentDto(any(FeedComment.class));
   }
 
   @Test
@@ -1072,8 +1077,9 @@ class FeedServiceTest {
         feedId, cursorTime, idAfter, 3
     )).thenReturn(List.of(comment));
 
-    when(feedDtoAssembler.toCommentDto(comment))
-        .thenReturn(expectedDto);
+    when(feedDtoAssembler.toCommentDtos(
+        List.of(comment)
+    )).thenReturn(List.of(expectedDto));
 
     when(feedCommentRepository.countByFeedId(feedId))
         .thenReturn(3L);
@@ -1332,6 +1338,9 @@ class FeedServiceTest {
     FeedComment second = mock(FeedComment.class);
     FeedComment extra = mock(FeedComment.class);
 
+    CommentDto firstDto = mock(CommentDto.class);
+    CommentDto secondDto = mock(CommentDto.class);
+
     when(feedRepository.existsById(feedId))
         .thenReturn(true);
 
@@ -1349,6 +1358,10 @@ class FeedServiceTest {
     when(second.getCreatedAt())
         .thenReturn(createdAt);
 
+    when(feedDtoAssembler.toCommentDtos(
+        List.of(first, second)
+    )).thenReturn(List.of(firstDto, secondDto));
+
     // when
     CursorResponse<CommentDto> result = feedService.getFeedComments(
         feedId,
@@ -1359,11 +1372,18 @@ class FeedServiceTest {
 
     // then
     assertAll(
-        () -> assertEquals(2, result.data().size()),
+        () -> assertEquals(
+            List.of(firstDto, secondDto),
+            result.data()
+        ),
         () -> assertTrue(result.hasNext()),
         () -> assertEquals(3L, result.totalCount()),
         () -> assertEquals(createdAt.toString(), result.nextCursor()),
         () -> assertEquals(secondCommentId, result.nextIdAfter())
+    );
+
+    verify(feedDtoAssembler).toCommentDtos(
+        List.of(first, second)
     );
 
     verify(feedDtoAssembler, never())
