@@ -27,7 +27,7 @@ class BasicOutfitAlgorithmTest {
 
     @BeforeEach
     void setUp() {
-        algorithm = new BasicOutfitAlgorithm(new ThicknessSuitabilityScorer());
+        algorithm = new BasicOutfitAlgorithm(new ClothesSuitabilityScorer());
         owner = new User("user@example.com", "encoded-password", "사용자");
     }
 

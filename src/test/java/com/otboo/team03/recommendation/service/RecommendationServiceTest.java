@@ -15,7 +15,7 @@ import com.otboo.team03.profile.service.ProfileService;
 import com.otboo.team03.recommendation.algorithm.BasicOutfitAlgorithm;
 import com.otboo.team03.recommendation.algorithm.AttributeSemanticAnalyzer;
 import com.otboo.team03.recommendation.algorithm.ClothesAttributeEstimator;
-import com.otboo.team03.recommendation.algorithm.ThicknessSuitabilityScorer;
+import com.otboo.team03.recommendation.algorithm.ClothesSuitabilityScorer;
 import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.exception.WeatherNotFoundException;
@@ -195,7 +195,7 @@ class RecommendationServiceTest {
         RecommendationService connectedService = new RecommendationService(
                 clothesRepository, clothesAttributeRepository, weatherRepository,
                 profileService, clothesService,
-                new BasicOutfitAlgorithm(new ThicknessSuitabilityScorer()),
+                new BasicOutfitAlgorithm(new ClothesSuitabilityScorer()),
                 new AttributeSemanticAnalyzer(), new ClothesAttributeEstimator());
         givenTemperature(temperature);
         when(profileService.getProfile(userId)).thenReturn(profile(sensitivity));
@@ -278,7 +278,7 @@ class RecommendationServiceTest {
         RecommendationService connectedService = new RecommendationService(
                 clothesRepository, clothesAttributeRepository, weatherRepository,
                 profileService, clothesService,
-                new BasicOutfitAlgorithm(new ThicknessSuitabilityScorer()),
+                new BasicOutfitAlgorithm(new ClothesSuitabilityScorer()),
                 new AttributeSemanticAnalyzer(), new ClothesAttributeEstimator());
         givenTemperature(temperature);
         when(profileService.getProfile(userId)).thenReturn(profile(sensitivity));

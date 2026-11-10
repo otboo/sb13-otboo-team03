@@ -20,7 +20,7 @@ public class BasicOutfitAlgorithm {
     private static final double TEMPERATURE_ADJUSTMENT_PER_LEVEL = 2.0;
     private static final double OUTER_TEMPERATURE_THRESHOLD = 15.0;
 
-    private final ThicknessSuitabilityScorer thicknessScorer;
+    private final ClothesSuitabilityScorer suitabilityScorer;
 
     public List<Clothes> recommend(List<Clothes> clothes,
                                   Map<UUID, ThicknessLevel> thicknessByClothesId,
@@ -28,7 +28,7 @@ public class BasicOutfitAlgorithm {
         double adjustedTemperature = adjustTemperature(temperature, sensitivity);
         List<Clothes> rankedClothes = clothes.stream()
                 .sorted(Comparator.comparingInt((Clothes item) ->
-                        thicknessScorer.score(thicknessOf(item, thicknessByClothesId), adjustedTemperature, sensitivity))
+                        suitabilityScorer.scoreThickness(thicknessOf(item, thicknessByClothesId), adjustedTemperature, sensitivity))
                         .reversed())
                 .toList();
 
