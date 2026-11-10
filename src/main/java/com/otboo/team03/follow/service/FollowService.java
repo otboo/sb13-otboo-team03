@@ -193,9 +193,9 @@ public class FollowService {
         ? fetched.subList(0, limit)
         : fetched;
 
-    List<FollowDto> data = page.stream()
-        .map(followDtoAssembler::toDto)
-        .toList();
+    List<FollowDto> data = page.isEmpty()
+        ? List.of()
+        : followDtoAssembler.toDtos(page);
 
     String nextCursor = null;
     UUID nextIdAfter = null;

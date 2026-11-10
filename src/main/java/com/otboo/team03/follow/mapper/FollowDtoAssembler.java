@@ -9,6 +9,11 @@ import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.UserRepository;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -29,6 +34,61 @@ public class FollowDtoAssembler {
         toUserSummary(follow.getFolloweeId()),
         toUserSummary(follow.getFollowerId())
     );
+  }
+
+  public List<FollowDto> toDtos(List<Follow> follows) {
+    if (follows.isEmpty()) {
+      return List.of();
+    }
+
+    Set<UUID> userIds = new HashSet<>();
+
+    for (Follow follow : follows) {
+      userIds.add(follow.getFolloweeId());
+      userIds.add(follow.getFollowerId());
+    }
+
+    Map<UUID, User> users = new HashMap<>();
+
+    for (User user : userRepository.findAllById(userIds)) {
+      users.put(user.getId(), user);
+    }
+
+    Map<UUID, Profile> profiles = new HashMap<>();
+
+    for (Profile profile : profileRepository.findAllById(userIds)) {
+      profiles.put(profile.getUserId(), profile);
+    }
+
+    Map<UUID, UserSummary> summaries = new HashMap<>();
+
+    for (UUID userId : userIds) {
+      User user = Optional.ofNullable(users.get(userId))
+          .orElseThrow(UserNotFoundException::new);
+
+      Profile profile = profiles.get(userId);
+
+      String profileImageUrl = profile == null
+          ? null
+          : resolveImageUrl(profile.getProfileImageUrl());
+
+      summaries.put(
+          userId,
+          new UserSummary(
+              user.getId(),
+              user.getName(),
+              profileImageUrl
+          )
+      );
+    }
+
+    return follows.stream()
+        .map(follow -> new FollowDto(
+            follow.getId(),
+            summaries.get(follow.getFolloweeId()),
+            summaries.get(follow.getFollowerId())
+        ))
+        .toList();
   }
 
   private UserSummary toUserSummary(UUID userId) {

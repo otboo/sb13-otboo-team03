@@ -524,8 +524,8 @@ class FollowServiceTest {
     when(followRepository.countByFolloweeId(followeeId))
         .thenReturn(5L);
 
-    when(followDtoAssembler.toDto(first)).thenReturn(firstDto);
-    when(followDtoAssembler.toDto(second)).thenReturn(secondDto);
+    when(followDtoAssembler.toDtos(List.of(first, second)))
+        .thenReturn(List.of(firstDto, secondDto));
 
     when(second.getId()).thenReturn(secondFollowId);
     when(second.getCreatedAt()).thenReturn(createdAt);
@@ -546,7 +546,7 @@ class FollowServiceTest {
         () -> assertEquals("DESCENDING", result.sortDirection())
     );
 
-    verify(followDtoAssembler, never()).toDto(extra);
+    verify(followDtoAssembler).toDtos(List.of(first, second));
   }
 
   @Test
@@ -612,8 +612,8 @@ class FollowServiceTest {
         "민"
     )).thenReturn(5L);
 
-    when(followDtoAssembler.toDto(first)).thenReturn(firstDto);
-    when(followDtoAssembler.toDto(second)).thenReturn(secondDto);
+    when(followDtoAssembler.toDtos(List.of(first, second)))
+        .thenReturn(List.of(firstDto, secondDto));
 
     when(second.getId()).thenReturn(lastFollowId);
     when(second.getCreatedAt()).thenReturn(createdAt);
@@ -636,7 +636,7 @@ class FollowServiceTest {
         () -> assertEquals("DESCENDING", result.sortDirection())
     );
 
-    verify(followDtoAssembler, never()).toDto(extra);
+    verify(followDtoAssembler).toDtos(List.of(first, second));
     verify(followRepository, never())
         .findByFolloweeIdOrderByCreatedAtDescIdDesc(
             any(UUID.class),
@@ -701,7 +701,8 @@ class FollowServiceTest {
     when(followRepository.countByFolloweeId(followeeId))
         .thenReturn(3L);
 
-    when(followDtoAssembler.toDto(first)).thenReturn(firstDto);
+    when(followDtoAssembler.toDtos(List.of(first)))
+        .thenReturn(List.of(firstDto));
     when(first.getId()).thenReturn(nextFollowId);
     when(first.getCreatedAt()).thenReturn(nextCreatedAt);
 
@@ -728,7 +729,7 @@ class FollowServiceTest {
         PageRequest.of(0, 2)
     );
 
-    verify(followDtoAssembler, never()).toDto(extra);
+    verify(followDtoAssembler).toDtos(List.of(first));
   }
 
   @Test
@@ -761,7 +762,8 @@ class FollowServiceTest {
         "민"
     )).thenReturn(3L);
 
-    when(followDtoAssembler.toDto(follow)).thenReturn(followDto);
+    when(followDtoAssembler.toDtos(List.of(follow)))
+        .thenReturn(List.of(followDto));
 
     // when
     CursorResponse<FollowDto> result = followService.getFollowers(
