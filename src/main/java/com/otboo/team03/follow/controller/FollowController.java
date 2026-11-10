@@ -3,6 +3,7 @@ package com.otboo.team03.follow.controller;
 import com.otboo.team03.follow.dto.request.FollowCreateRequest;
 import com.otboo.team03.follow.dto.response.FollowDto;
 import com.otboo.team03.follow.service.FollowService;
+import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.global.security.OtbooUserDetails;
@@ -62,5 +63,32 @@ public class FollowController {
     followService.delete(followId, requesterId);
 
     return ResponseEntity.noContent().build();
+  }
+
+  @GetMapping("/followers")
+  public ResponseEntity<CursorResponse<FollowDto>> getFollowers(
+      @RequestParam UUID followeeId,
+      @RequestParam int limit,
+      @RequestParam(required = false) String cursor,
+      @RequestParam(required = false) UUID idAfter,
+      @RequestParam(required = false) String nameLike,
+      Authentication authentication
+  ) {
+    if (authentication == null
+        || !authentication.isAuthenticated()
+        || !(authentication.getPrincipal()
+        instanceof OtbooUserDetails)) {
+      throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
+    }
+
+    CursorResponse<FollowDto> response = followService.getFollowers(
+        followeeId,
+        limit,
+        cursor,
+        idAfter,
+        nameLike
+    );
+
+    return ResponseEntity.ok(response);
   }
 }

@@ -9,6 +9,8 @@ import com.otboo.team03.support.PostgresTestSupport;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
 import jakarta.persistence.EntityManager;
+import java.sql.Timestamp;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -17,6 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.UUID;
 
@@ -45,6 +48,9 @@ class FollowHttpIntegrationTest extends PostgresTestSupport {
 
   @Autowired
   private JwtTokenProvider jwtTokenProvider;
+
+  @Autowired
+  private JdbcTemplate jdbcTemplate;
 
   @MockitoBean
   private JwtRegistry jwtRegistry;
@@ -274,6 +280,236 @@ class FollowHttpIntegrationTest extends PostgresTestSupport {
     );
   }
 
+  @Test
+  void 팔로워_이름_검색과_커서_페이지네이션을_HTTP로_조회한다()
+      throws Exception {
+    // given
+    User followee = createUser("팔로우 대상");
+    User otherFollowee = createUser("다른 대상");
+
+    User minsu = createUser("김민수");
+    User minji = createUser("이민지");
+    User minho = createUser("최민호");
+    User seojun = createUser("박서준");
+
+    Instant sameTime = Instant.parse("2026-11-09T03:00:00Z");
+
+    UUID id3 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000003"
+    );
+    UUID id2 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000002"
+    );
+    UUID id1 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000001"
+    );
+    UUID excludedId = UUID.fromString(
+        "00000000-0000-0000-0000-000000000004"
+    );
+    UUID otherId = UUID.fromString(
+        "00000000-0000-0000-0000-000000000005"
+    );
+
+    insertPaginationFollow(
+        id3, minsu.getId(), followee.getId(), sameTime
+    );
+    insertPaginationFollow(
+        id2, minji.getId(), followee.getId(), sameTime
+    );
+    insertPaginationFollow(
+        id1, minho.getId(), followee.getId(), sameTime
+    );
+    insertPaginationFollow(
+        excludedId, seojun.getId(), followee.getId(), sameTime
+    );
+    insertPaginationFollow(
+        otherId, minsu.getId(), otherFollowee.getId(), sameTime
+    );
+
+    jdbcTemplate.update("""
+        INSERT INTO profiles (
+            user_id, profile_image_url,
+            created_at, updated_at
+        ) VALUES (?, ?, ?, ?)
+        """,
+        minsu.getId(),
+        "https://example.com/minsu.png",
+        Timestamp.from(sameTime),
+        Timestamp.from(sameTime)
+    );
+
+    entityManager.clear();
+
+    String accessToken = accessTokenFor(minsu.getId());
+
+    // when
+    var firstPage = mockMvc.perform(
+        get("/api/follows/followers")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("followeeId", followee.getId().toString())
+            .param("limit", "2")
+            .param("nameLike", "민")
+    );
+
+    // then
+    firstPage.andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(id3.toString()))
+        .andExpect(jsonPath("$.data[0].follower.userId")
+            .value(minsu.getId().toString()))
+        .andExpect(jsonPath("$.data[0].follower.name")
+            .value("김민수"))
+        .andExpect(jsonPath("$.data[0].follower.profileImageUrl")
+            .value("https://example.com/minsu.png"))
+        .andExpect(jsonPath("$.data[0].followee.userId")
+            .value(followee.getId().toString()))
+        .andExpect(jsonPath("$.data[1].id")
+            .value(id2.toString()))
+        .andExpect(jsonPath("$.data[1].follower.name")
+            .value("이민지"))
+        .andExpect(jsonPath("$.nextCursor")
+            .value(sameTime.toString()))
+        .andExpect(jsonPath("$.nextIdAfter")
+            .value(id2.toString()))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andExpect(jsonPath("$.totalCount").value(3))
+        .andExpect(jsonPath("$.sortBy").value("createdAt"))
+        .andExpect(jsonPath("$.sortDirection")
+            .value("DESCENDING"));
+
+    String responseBody = firstPage
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    String cursor = JsonPath.read(
+        responseBody, "$.nextCursor"
+    );
+    String idAfter = JsonPath.read(
+        responseBody, "$.nextIdAfter"
+    );
+
+    // when
+    var secondPage = mockMvc.perform(
+        get("/api/follows/followers")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("followeeId", followee.getId().toString())
+            .param("limit", "2")
+            .param("nameLike", "민")
+            .param("cursor", cursor)
+            .param("idAfter", idAfter)
+    );
+
+    // then
+    secondPage.andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(id1.toString()))
+        .andExpect(jsonPath("$.data[0].follower.name")
+            .value("최민호"))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.nextCursor").isEmpty())
+        .andExpect(jsonPath("$.nextIdAfter").isEmpty())
+        .andExpect(jsonPath("$.totalCount").value(3));
+  }
+
+  @Test
+  void 미인증_사용자는_팔로워_목록을_조회할_수_없다()
+      throws Exception {
+    // given
+    User followee = createUser("팔로우 대상");
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/followers")
+            .param("followeeId", followee.getId().toString())
+            .param("limit", "10")
+    );
+
+    // then
+    result.andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void 팔로워_조회에서_잘못된_요청은_400을_반환한다()
+      throws Exception {
+    // given
+    User requester = createUser("요청 사용자");
+    User followee = createUser("팔로우 대상");
+
+    String accessToken = accessTokenFor(requester.getId());
+
+    // when
+    var missingFolloweeId = mockMvc.perform(
+        get("/api/follows/followers")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "10")
+    );
+
+    var missingLimit = mockMvc.perform(
+        get("/api/follows/followers")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("followeeId", followee.getId().toString())
+    );
+
+    var invalidFolloweeId = mockMvc.perform(
+        get("/api/follows/followers")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("followeeId", "invalid-uuid")
+            .param("limit", "10")
+    );
+
+    var invalidLimit = mockMvc.perform(
+        get("/api/follows/followers")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("followeeId", followee.getId().toString())
+            .param("limit", "0")
+    );
+
+    var missingIdAfter = mockMvc.perform(
+        get("/api/follows/followers")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("followeeId", followee.getId().toString())
+            .param("limit", "10")
+            .param("cursor", "2026-11-09T03:00:00Z")
+    );
+
+    var invalidCursor = mockMvc.perform(
+        get("/api/follows/followers")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("followeeId", followee.getId().toString())
+            .param("limit", "10")
+            .param("cursor", "invalid-cursor")
+            .param("idAfter", UUID.randomUUID().toString())
+    );
+
+    // then
+    missingFolloweeId.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    missingLimit.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    invalidFolloweeId.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    invalidLimit.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    missingIdAfter.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    invalidCursor.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+  }
+
   private User createUser(String name) {
     return userRepository.saveAndFlush(
         new User(
@@ -300,5 +536,23 @@ class FollowHttpIntegrationTest extends PostgresTestSupport {
                 "followeeId": "%s"
             }
             """.formatted(followerId, followeeId);
+  }
+
+  private void insertPaginationFollow(
+      UUID followId,
+      UUID followerId,
+      UUID followeeId,
+      Instant createdAt
+  ) {
+    jdbcTemplate.update("""
+        INSERT INTO follows (
+            id, follower_id, followee_id, created_at
+        ) VALUES (?, ?, ?, ?)
+        """,
+        followId,
+        followerId,
+        followeeId,
+        Timestamp.from(createdAt)
+    );
   }
 }
