@@ -37,6 +37,8 @@ import java.net.CookieManager;
 import java.net.CookiePolicy;
 
 @SpringBootTest(classes = SpaSecurityHttpTest.Application.class,
+        // DB 자동 설정을 제외한 웹 보안 테스트이므로 readiness에서도 DB 검사를 제외한다.
+        properties = "management.endpoint.health.group.readiness.include=readinessState",
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class SpaSecurityHttpTest {
     @LocalServerPort
@@ -54,6 +56,21 @@ class SpaSecurityHttpTest {
             }
         }
         verify(clothesService, never()).findById(any());
+    }
+
+    @Test
+    void websocketHandshakeEndpointIsNotBlockedByHttpAuthentication() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(
+                URI.create("http://localhost:" + port + "/ws"))
+                .GET()
+                .build();
+
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                request,
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        assertThat(response.statusCode()).isNotEqualTo(401);
     }
 
     @Autowired ClothesService clothesService;

@@ -5,6 +5,7 @@ import com.otboo.team03.clothes.dto.response.ClothesDto;
 import com.otboo.team03.clothes.entity.*;
 import com.otboo.team03.clothes.repository.*;
 import com.otboo.team03.clothes.service.ClothesService;
+import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
 import org.junit.jupiter.api.*;
@@ -58,6 +59,7 @@ class ClothesCreateIntegrationTest {
     @Autowired ClothesRepository clothesRepository;
     @Autowired ClothesAttributeDefinitionRepository definitions;
     @Autowired UserRepository users;
+    @Autowired ProfileRepository profiles;
     @Autowired jakarta.persistence.EntityManagerFactory entityManagerFactory;
     @Autowired MockMvc mvc;
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
@@ -77,6 +79,7 @@ class ClothesCreateIntegrationTest {
         attributes.deleteAllInBatch();
         clothesRepository.deleteAllInBatch();
         definitions.deleteAllInBatch();
+        profiles.deleteAllInBatch();
         users.deleteAllInBatch();
     }
 

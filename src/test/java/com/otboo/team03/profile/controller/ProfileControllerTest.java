@@ -240,5 +240,53 @@ class ProfileControllerTest {
     verifyNoInteractions(profileService);
   }
 
+  @Test
+  @DisplayName("온도 민감도가 1 미만(0)이면 HTTP 400 BAD_REQUEST를 반환한다")
+  void updateProfile_temperatureSensitivity_underMin() throws Exception {
+    // given (준비: 온도 민감도에 0 전달)
+    UUID userId = UUID.randomUUID();
+    String jsonContent = """
+        {
+          "temperatureSensitivity": 0
+        }
+        """;
+    MockMultipartFile requestPart = new MockMultipartFile(
+        "request", "", "application/json", jsonContent.getBytes(StandardCharsets.UTF_8)
+    );
+
+    // when & then (실행 및 검증: HTTP 400 에러 응답 및 서비스 미호출 검증)
+    mockMvc.perform(multipart(HttpMethod.PATCH, "/api/users/{userId}/profiles", userId)
+            .file(requestPart)
+            .principal(createAuth(userId)))
+        .andDo(print())
+        .andExpect(status().isBadRequest());
+
+    verifyNoInteractions(profileService);
+  }
+
+  @Test
+  @DisplayName("온도 민감도가 5 초과(6)이면 HTTP 400 BAD_REQUEST를 반환한다")
+  void updateProfile_temperatureSensitivity_overMax() throws Exception {
+    // given (준비: 온도 민감도에 6 전달)
+    UUID userId = UUID.randomUUID();
+    String jsonContent = """
+        {
+          "temperatureSensitivity": 6
+        }
+        """;
+    MockMultipartFile requestPart = new MockMultipartFile(
+        "request", "", "application/json", jsonContent.getBytes(StandardCharsets.UTF_8)
+    );
+
+    // when & then (실행 및 검증: HTTP 400 에러 응답 및 서비스 미호출 검증)
+    mockMvc.perform(multipart(HttpMethod.PATCH, "/api/users/{userId}/profiles", userId)
+            .file(requestPart)
+            .principal(createAuth(userId)))
+        .andDo(print())
+        .andExpect(status().isBadRequest());
+
+    verifyNoInteractions(profileService);
+  }
+
 
 }
