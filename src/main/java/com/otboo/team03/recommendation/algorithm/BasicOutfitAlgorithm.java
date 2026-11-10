@@ -2,6 +2,7 @@ package com.otboo.team03.recommendation.algorithm;
 
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesType;
+import com.otboo.team03.recommendation.entity.SleeveLength;
 import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -24,16 +25,28 @@ public class BasicOutfitAlgorithm {
 
     public List<Clothes> recommend(List<Clothes> clothes,
                                   Map<UUID, ThicknessLevel> thicknessByClothesId,
+                                  Map<UUID, SleeveLength> sleeveByClothesId,
                                   double temperature, int sensitivity) {
         double adjustedTemperature = adjustTemperature(temperature, sensitivity);
+        Comparator<Clothes> byThicknessDescending = Comparator.comparingInt((Clothes item) ->
+                suitabilityScorer.scoreThickness(thicknessOf(item, thicknessByClothesId),
+                        adjustedTemperature, sensitivity)).reversed();
+        Comparator<Clothes> bySleeveDescending = Comparator.comparingInt((Clothes item) ->
+                suitabilityScorer.scoreSleeve(item.getType(), sleeveOf(item, sleeveByClothesId),
+                        adjustedTemperature, sensitivity)).reversed();
+
         List<Clothes> rankedClothes = clothes.stream()
-                .sorted(Comparator.comparingInt((Clothes item) ->
-                        suitabilityScorer.scoreThickness(thicknessOf(item, thicknessByClothesId), adjustedTemperature, sensitivity))
-                        .reversed())
+                .sorted(byThicknessDescending.thenComparing(bySleeveDescending))
                 .toList();
 
-        // 동점이면 입력 순서를 유지하고, 기존 종류별 선택과 코디 구성 규칙을 재사용한다.
+        // 두께와 소매 점수가 모두 같으면 입력 순서를 유지한다.
         return recommendAtAdjustedTemperature(rankedClothes, adjustedTemperature);
+    }
+
+    public List<Clothes> recommend(List<Clothes> clothes,
+                                  Map<UUID, ThicknessLevel> thicknessByClothesId,
+                                  double temperature, int sensitivity) {
+        return recommend(clothes, thicknessByClothesId, Map.of(), temperature, sensitivity);
     }
 
     public List<Clothes> recommend(List<Clothes> clothes, double temperature, int sensitivity) {
@@ -71,6 +84,11 @@ public class BasicOutfitAlgorithm {
     private ThicknessLevel thicknessOf(Clothes clothes, Map<UUID, ThicknessLevel> thicknessByClothesId) {
         UUID clothesId = clothes.getId();
         return clothesId == null ? ThicknessLevel.UNKNOWN : thicknessByClothesId.getOrDefault(clothesId, ThicknessLevel.UNKNOWN);
+    }
+
+    private SleeveLength sleeveOf(Clothes clothes, Map<UUID, SleeveLength> sleeveByClothesId) {
+        UUID clothesId = clothes.getId();
+        return clothesId == null ? SleeveLength.UNKNOWN : sleeveByClothesId.getOrDefault(clothesId, SleeveLength.UNKNOWN);
     }
 
     private List<Clothes> recommendAtAdjustedTemperature(List<Clothes> clothes, double adjustedTemperature) {
