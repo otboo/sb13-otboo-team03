@@ -21,6 +21,7 @@ import com.otboo.team03.feed.repository.FeedClothesRepository;
 import com.otboo.team03.feed.repository.FeedCommentRepository;
 import com.otboo.team03.feed.repository.FeedLikeRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
+import com.otboo.team03.feed.repository.FeedSearchQueryRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
@@ -73,6 +74,9 @@ class FeedServiceTest {
 
   @Mock
   private FeedCommentRepository feedCommentRepository;
+
+  @Mock
+  private FeedSearchQueryRepository feedSearchQueryRepository;
 
   @Test
   void 피드_생성시_의상을_연결하고_FeedDto를_반환한다() {
@@ -1235,5 +1239,66 @@ class FeedServiceTest {
 
     verifyNoInteractions(feedCommentRepository);
     verifyNoInteractions(feedDtoAssembler);
+  }
+
+  @Test
+  void 피드_목록_조회시_단건_DTO_변환을_반복하지_않는다() {
+    // given
+    UUID viewerId = UUID.randomUUID();
+    UUID secondFeedId = UUID.randomUUID();
+
+    Instant createdAt =
+        Instant.parse("2026-11-10T01:00:00Z");
+
+    Feed first = mock(Feed.class);
+    Feed second = mock(Feed.class);
+    Feed extra = mock(Feed.class);
+
+    when(feedSearchQueryRepository.findByFilters(
+        null,
+        null,
+        null,
+        null,
+        "createdAt",
+        "DESCENDING",
+        null,
+        null,
+        null,
+        3
+    )).thenReturn(List.of(first, second, extra));
+
+    when(feedSearchQueryRepository.countByFilters(
+        null, null, null, null
+    )).thenReturn(3L);
+
+    when(second.getId()).thenReturn(secondFeedId);
+    when(second.getCreatedAt()).thenReturn(createdAt);
+
+    // when
+    CursorResponse<FeedDto> result = feedService.getFeedList(
+        2,
+        "createdAt",
+        "DESCENDING",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        viewerId
+    );
+
+    // then
+    assertAll(
+        () -> assertTrue(result.hasNext()),
+        () -> assertEquals(3L, result.totalCount()),
+        () -> assertEquals(createdAt.toString(), result.nextCursor()),
+        () -> assertEquals(secondFeedId, result.nextIdAfter())
+    );
+
+    verify(feedDtoAssembler, never()).toDto(
+        any(Feed.class),
+        eq(viewerId)
+    );
   }
 }
