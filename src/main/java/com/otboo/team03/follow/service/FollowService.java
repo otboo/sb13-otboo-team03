@@ -125,18 +125,32 @@ public class FollowService {
       UUID idAfter,
       String nameLike
   ) {
-
     if (followeeId == null
         || limit <= 0
         || limit == Integer.MAX_VALUE) {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
     }
 
-    List<Follow> fetched =
-        followRepository.findByFolloweeIdOrderByCreatedAtDescIdDesc(
-            followeeId,
-            PageRequest.of(0, limit + 1)
-        );
+    String normalizedNameLike =
+        nameLike == null || nameLike.isBlank()
+            ? null
+            : nameLike.trim();
+
+    List<Follow> fetched;
+
+    if (normalizedNameLike == null) {
+      fetched =
+          followRepository.findByFolloweeIdOrderByCreatedAtDescIdDesc(
+              followeeId,
+              PageRequest.of(0, limit + 1)
+          );
+    } else {
+      fetched = followRepository.findFollowersByNameLike(
+          followeeId,
+          normalizedNameLike,
+          PageRequest.of(0, limit + 1)
+      );
+    }
 
     boolean hasNext = fetched.size() > limit;
 
@@ -158,8 +172,12 @@ public class FollowService {
       nextIdAfter = lastFollow.getId();
     }
 
-    long totalCount =
-        followRepository.countByFolloweeId(followeeId);
+    long totalCount = normalizedNameLike == null
+        ? followRepository.countByFolloweeId(followeeId)
+        : followRepository.countFollowersByNameLike(
+            followeeId,
+            normalizedNameLike
+        );
 
     return new CursorResponse<>(
         data,
