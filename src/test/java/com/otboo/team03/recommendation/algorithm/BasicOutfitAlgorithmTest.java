@@ -11,6 +11,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.UUID;
 
@@ -361,6 +362,83 @@ class BasicOutfitAlgorithmTest {
     @DisplayName("속성 기반 의상 추천")
     class AttributeBasedRecommendation {
 
+        @ParameterizedTest
+        @CsvSource({"TOP", "BOTTOM", "DRESS", "OUTER"})
+        void 같은_종류의_차선_후보가_동점이면_입력_순서를_유지한다(ClothesType type) {
+            Clothes lowerPriority = clothes(type);
+            Clothes firstAlternative = clothes(type);
+            Clothes secondAlternative = clothes(type);
+            List<Clothes> base = switch (type) {
+                case TOP -> List.of(clothes(ClothesType.BOTTOM));
+                case BOTTOM -> List.of(clothes(ClothesType.TOP));
+                case DRESS -> List.of();
+                case OUTER -> List.of(clothes(ClothesType.TOP), clothes(ClothesType.BOTTOM));
+                default -> throw new IllegalArgumentException();
+            };
+            Map<UUID, ThicknessLevel> levels = Map.of(
+                    lowerPriority.getId(), LIGHT,
+                    firstAlternative.getId(), MEDIUM,
+                    secondAlternative.getId(), MEDIUM);
+            List<Clothes> candidates = new ArrayList<>(
+                    List.of(lowerPriority, firstAlternative, secondAlternative));
+            candidates.addAll(base);
+            List<Clothes> reversedCandidates = new ArrayList<>(
+                    List.of(lowerPriority, secondAlternative, firstAlternative));
+            reversedCandidates.addAll(base);
+
+            var firstResult = algorithm.recommend(candidates, levels, 10.0, 3);
+            var reversedResult = algorithm.recommend(reversedCandidates, levels, 10.0, 3);
+
+            List<Clothes> firstExpected = new ArrayList<>(base);
+            firstExpected.add(firstAlternative);
+            List<Clothes> reversedExpected = new ArrayList<>(base);
+            reversedExpected.add(secondAlternative);
+            assertThat(firstResult).containsExactlyInAnyOrderElementsOf(firstExpected);
+            assertThat(reversedResult).containsExactlyInAnyOrderElementsOf(reversedExpected);
+        }
+
+        @ParameterizedTest
+        @CsvSource({
+                "28.0, 3, HEAVY, MEDIUM",
+                "10.0, 3, LIGHT, MEDIUM",
+                "21.0, 1, LIGHT, HEAVY",
+                "22.0, 2, LIGHT, HEAVY",
+                "18.0, 4, HEAVY, LIGHT",
+                "19.0, 5, HEAVY, LIGHT",
+                "19.9, 3, LIGHT, HEAVY",
+                "20.0, 3, HEAVY, LIGHT",
+                "28.0, 3, HEAVY, UNKNOWN",
+                "10.0, 3, LIGHT, UNKNOWN",
+                "21.0, 1, LIGHT, UNKNOWN",
+                "19.0, 5, HEAVY, UNKNOWN"
+        })
+        void 선호_두께가_없으면_온도와_민감도에_맞는_차선_후보를_선택한다(
+                double temperature, int sensitivity,
+                ThicknessLevel lowerPriority, ThicknessLevel higherPriority) {
+            Clothes first = clothes(ClothesType.TOP);
+            Clothes alternative = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+
+            var result = algorithm.recommend(List.of(first, alternative, bottom),
+                    Map.of(first.getId(), lowerPriority, alternative.getId(), higherPriority),
+                    temperature, sensitivity);
+
+            assertThat(result).containsExactlyInAnyOrder(alternative, bottom);
+        }
+
+        @ParameterizedTest
+        @CsvSource({"28.0, HEAVY", "10.0, LIGHT"})
+        void 부적합한_두께만_있어도_기본_조합을_반환한다(
+                double temperature, ThicknessLevel level) {
+            Clothes top = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+
+            var result = algorithm.recommend(List.of(top, bottom),
+                    Map.of(top.getId(), level, bottom.getId(), level), temperature, 3);
+
+            assertThat(result).containsExactlyInAnyOrder(top, bottom);
+        }
+
         @Test
         void 적합도가_같으면_입력_순서를_유지한다() {
             Clothes heavy = clothes(ClothesType.TOP);
@@ -394,16 +472,24 @@ class BasicOutfitAlgorithmTest {
             assertThat(result).containsExactlyInAnyOrder(heavy, bottom, outer);
         }
 
-        @Test
-        void ID가_없는_의상은_UNKNOWN으로_평가한다() {
+        @ParameterizedTest
+        @CsvSource({"LIGHT, false", "MEDIUM, false", "HEAVY, true"})
+        void ID가_없는_의상은_UNKNOWN으로_평가한다(
+                ThicknessLevel knownLevel, boolean expectWithoutId) {
             Clothes withoutId = new Clothes("ID 없는 상의", ClothesType.TOP, null, owner);
-            Clothes light = clothes(ClothesType.TOP);
+            Clothes known = clothes(ClothesType.TOP);
             Clothes bottom = clothes(ClothesType.BOTTOM);
+            assertThat(withoutId.getId()).isNull();
+            // 잘못 같은 수준으로 평가해도 입력 순서만으로 통과하지 않도록 배치한다.
+            List<Clothes> candidates = expectWithoutId
+                    ? List.of(known, withoutId, bottom)
+                    : List.of(withoutId, known, bottom);
 
-            var result = algorithm.recommend(List.of(withoutId, light, bottom),
-                    Map.of(light.getId(), LIGHT), 28.0, 3);
+            var result = algorithm.recommend(candidates,
+                    Map.of(known.getId(), knownLevel), 28.0, 3);
 
-            assertThat(result).containsExactlyInAnyOrder(light, bottom);
+            Clothes expectedTop = expectWithoutId ? withoutId : known;
+            assertThat(result).containsExactlyInAnyOrder(expectedTop, bottom);
         }
 
         @Test

@@ -27,7 +27,7 @@ public class BasicOutfitAlgorithm {
         double adjustedTemperature = adjustTemperature(temperature, sensitivity);
         List<Clothes> rankedClothes = clothes.stream()
                 .sorted(Comparator.comparingInt((Clothes item) ->
-                        thicknessScorer.score(thicknessOf(item, thicknessByClothesId), adjustedTemperature))
+                        thicknessScorer.score(thicknessOf(item, thicknessByClothesId), adjustedTemperature, sensitivity))
                         .reversed())
                 .toList();
 
