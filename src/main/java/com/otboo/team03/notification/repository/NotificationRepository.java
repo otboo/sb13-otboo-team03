@@ -37,5 +37,11 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 
     long countByReceiver_Id(UUID receiverId);
 
+    boolean existsByReceiver_IdAndNotificationTypeAndSourceEventId(
+            UUID receiverId,
+            String notificationType,
+            UUID sourceEventId
+    );
+
     Optional<Notification> findByIdAndReceiver_Id(UUID notificationId, UUID receiverId);
 }
