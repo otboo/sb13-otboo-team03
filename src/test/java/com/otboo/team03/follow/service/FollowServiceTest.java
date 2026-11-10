@@ -577,4 +577,96 @@ class FollowServiceTest {
 
     verifyNoInteractions(followDtoAssembler);
   }
+
+  @Test
+  void 팔로워_이름으로_검색하면_일치하는_목록과_전체_건수를_반환한다() {
+    // given
+    UUID followeeId = UUID.randomUUID();
+    UUID lastFollowId = UUID.randomUUID();
+    Instant createdAt = Instant.parse("2026-11-09T01:00:00Z");
+
+    Follow first = mock(Follow.class);
+    Follow second = mock(Follow.class);
+    Follow extra = mock(Follow.class);
+
+    FollowDto firstDto = new FollowDto(
+        UUID.randomUUID(),
+        new UserSummary(followeeId, "팔로우 대상", null),
+        new UserSummary(UUID.randomUUID(), "김민수", null)
+    );
+
+    FollowDto secondDto = new FollowDto(
+        lastFollowId,
+        new UserSummary(followeeId, "팔로우 대상", null),
+        new UserSummary(UUID.randomUUID(), "이민지", null)
+    );
+
+    when(followRepository.findFollowersByNameLike(
+        followeeId,
+        "민",
+        PageRequest.of(0, 3)
+    )).thenReturn(List.of(first, second, extra));
+
+    when(followRepository.countFollowersByNameLike(
+        followeeId,
+        "민"
+    )).thenReturn(5L);
+
+    when(followDtoAssembler.toDto(first)).thenReturn(firstDto);
+    when(followDtoAssembler.toDto(second)).thenReturn(secondDto);
+
+    when(second.getId()).thenReturn(lastFollowId);
+    when(second.getCreatedAt()).thenReturn(createdAt);
+
+    // when
+    CursorResponse<FollowDto> result = followService.getFollowers(
+        followeeId, 2, null, null, "민"
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(2, result.data().size()),
+        () -> assertEquals("김민수", result.data().get(0).follower().name()),
+        () -> assertEquals("이민지", result.data().get(1).follower().name()),
+        () -> assertEquals(5L, result.totalCount()),
+        () -> assertTrue(result.hasNext()),
+        () -> assertEquals(createdAt.toString(), result.nextCursor()),
+        () -> assertEquals(lastFollowId, result.nextIdAfter()),
+        () -> assertEquals("createdAt", result.sortBy()),
+        () -> assertEquals("DESCENDING", result.sortDirection())
+    );
+
+    verify(followDtoAssembler, never()).toDto(extra);
+    verify(followRepository, never())
+        .findByFolloweeIdOrderByCreatedAtDescIdDesc(
+            any(UUID.class),
+            any(PageRequest.class)
+        );
+  }
+
+  @Test
+  void 이름_검색어가_공백이면_전체_팔로워를_조회한다() {
+    // given
+    UUID followeeId = UUID.randomUUID();
+
+    when(followRepository.findByFolloweeIdOrderByCreatedAtDescIdDesc(
+        followeeId,
+        PageRequest.of(0, 11)
+    )).thenReturn(List.of());
+
+    // when
+    CursorResponse<FollowDto> result = followService.getFollowers(
+        followeeId, 10, null, null, "   "
+    );
+
+    // then
+    assertAll(
+        () -> assertTrue(result.data().isEmpty()),
+        () -> assertFalse(result.hasNext()),
+        () -> assertEquals(0L, result.totalCount())
+    );
+
+    verify(followRepository).countByFolloweeId(followeeId);
+    verifyNoInteractions(followDtoAssembler);
+  }
 }
