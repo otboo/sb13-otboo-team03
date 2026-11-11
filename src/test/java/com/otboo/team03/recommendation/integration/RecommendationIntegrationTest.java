@@ -14,6 +14,7 @@ import com.otboo.team03.clothes.repository.ClothesAttributeRepository;
 import com.otboo.team03.clothes.repository.ClothesRepository;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.security.jwt.JwtTokenProvider;
+import com.otboo.team03.global.storage.ImageStorage;
 import com.otboo.team03.profile.entity.Profile;
 import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.support.PostgresTestSupport;
@@ -43,12 +44,16 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.nullValue;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-/** 실제 PostgreSQL·서비스·알고리즘·JWT 필터를 검증하며 Redis의 토큰 등록 여부만 대체한다. */
+/** 실제 PostgreSQL·서비스·알고리즘·JWT 필터를 검증하며 Redis 토큰 등록과 이미지 저장소를 대체한다. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -66,6 +71,7 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
     @Autowired private ClothesService clothesService;
     @Autowired private ClothesAttributeDefinitionService definitionService;
     @MockitoBean private JwtRegistry jwtRegistry;
+    @MockitoBean private ImageStorage imageStorage;
 
     @ParameterizedTest
     @CsvSource({"28.0, 두꺼움, 얇음", "10.0, 얇음, 두꺼움"})
@@ -453,6 +459,65 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.clothes[0].attributes[?(@.definitionName == '두께')].value")
                         .value(contains("얇음")))
                 .andExpect(jsonPath("$.clothes[1].clothesId").value(bottomId.toString()));
+    }
+
+    @Test
+    void 조회_결과를_재사용한_추천_응답도_이미지와_전체_속성을_유지한다() throws Exception {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "응답 보존 사용자"));
+        profiles.save(new Profile(owner, null, null, null, null, null, 3, List.of()));
+        var thickness = definitions.save(new ClothesAttributeDefinition("두께", List.of("얇음", "두꺼움")));
+        var sleeve = definitions.save(new ClothesAttributeDefinition("소매", List.of("반팔", "긴팔")));
+        var color = definitions.save(new ClothesAttributeDefinition("색상", List.of("검정", "흰색")));
+        Clothes top = clothes.save(new Clothes("선택된 상의", ClothesType.TOP, "https://example.com/old-top", owner));
+        top.updateImageKey("clothes/recommended-top.png");
+        attributes.save(new ClothesAttribute(top, thickness, "두꺼움"));
+        attributes.save(new ClothesAttribute(top, sleeve, "긴팔"));
+        attributes.save(new ClothesAttribute(top, color, "검정"));
+        Clothes rejected = saveClothes("제외된 상의", ClothesType.TOP, owner, thickness, "얇음");
+        rejected.updateImageKey("clothes/rejected-top.png");
+        Clothes bottom = clothes.save(new Clothes("기존 이미지 하의", ClothesType.BOTTOM,
+                "https://example.com/bottom.png", owner));
+        Clothes outer = clothes.save(new Clothes("이미지 없는 아우터", ClothesType.OUTER, null, owner));
+        UUID ownerId = owner.getId();
+        UUID weatherId = saveWeather(10.0).getId();
+        UUID topId = top.getId();
+        UUID bottomId = bottom.getId();
+        UUID outerId = outer.getId();
+        UUID colorId = color.getId();
+        String token = flushAndAuthenticate(ownerId);
+        when(imageStorage.getAccessUrl("clothes/recommended-top.png"))
+                .thenReturn("https://example.com/signed-top");
+
+        mvc.perform(get("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("weatherId", weatherId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clothes[*].clothesId")
+                        .value(contains(topId.toString(), bottomId.toString(), outerId.toString())))
+                .andExpect(jsonPath("$.clothes[0].name").value("선택된 상의"))
+                .andExpect(jsonPath("$.clothes[0].type").value("TOP"))
+                .andExpect(jsonPath("$.clothes[0].imageUrl").value("https://example.com/signed-top"))
+                .andExpect(jsonPath("$.clothes[0].attributes.length()").value(3))
+                .andExpect(jsonPath("$.clothes[0].attributes[?(@.definitionName == '두께')].value")
+                        .value(contains("두꺼움")))
+                .andExpect(jsonPath("$.clothes[0].attributes[?(@.definitionName == '소매')].value")
+                        .value(contains("긴팔")))
+                .andExpect(jsonPath("$.clothes[0].attributes[?(@.definitionName == '색상')].definitionId")
+                        .value(contains(colorId.toString())))
+                .andExpect(jsonPath("$.clothes[0].attributes[?(@.definitionName == '색상')].value")
+                        .value(contains("검정")))
+                .andExpect(jsonPath("$.clothes[0].attributes[?(@.definitionName == '색상')].selectableValues[0]")
+                        .value(contains("검정")))
+                .andExpect(jsonPath("$.clothes[0].attributes[?(@.definitionName == '색상')].selectableValues[1]")
+                        .value(contains("흰색")))
+                .andExpect(jsonPath("$.clothes[1].imageUrl").value("https://example.com/bottom.png"))
+                .andExpect(jsonPath("$.clothes[1].attributes").isEmpty())
+                .andExpect(jsonPath("$.clothes[2].imageUrl").value(nullValue()))
+                .andExpect(jsonPath("$.clothes[2].attributes").isEmpty());
+
+        verify(imageStorage).getAccessUrl("clothes/recommended-top.png");
+        verify(imageStorage, never()).getAccessUrl("clothes/rejected-top.png");
+        verifyNoMoreInteractions(imageStorage);
     }
 
     @Test
