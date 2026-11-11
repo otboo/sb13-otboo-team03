@@ -2,6 +2,8 @@
 package com.otboo.team03.global.security;
 
 import com.otboo.team03.user.repository.RedisTemporaryPasswordRepository;
+import org.springframework.dao.DataAccessException;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -47,12 +49,16 @@ public class PasswordAuthenticationProvider extends DaoAuthenticationProvider {
         String rawPassword = authentication.getCredentials().toString();
         String email = userDetails.getUsername();
 
-        Optional<String> temporaryPassword = temporaryPasswordRepository.findByEmail(email);
+        try {
+            Optional<String> temporaryPassword = temporaryPasswordRepository.findByEmail(email);
 
-        if (temporaryPassword.isEmpty()
-                || !getPasswordEncoder().matches(rawPassword, temporaryPassword.get())
-                || !temporaryPasswordRepository.consumeIfMatches(email, temporaryPassword.get())) {
-            throw new BadCredentialsException("Bad credentials");
+            if (temporaryPassword.isEmpty()
+                    || !getPasswordEncoder().matches(rawPassword, temporaryPassword.get())
+                    || !temporaryPasswordRepository.consumeIfMatches(email, temporaryPassword.get())) {
+                throw new BadCredentialsException("Bad credentials");
+            }
+        } catch (DataAccessException e) {
+            throw new AuthenticationServiceException("임시 비밀번호 인증 중 Redis 접근 실패", e);
         }
     }
 }
