@@ -4,6 +4,7 @@ package com.otboo.team03.user.service;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.exception.UserNotFoundException;
+import com.otboo.team03.user.repository.RedisPasswordResetRateLimitRepository;
 import com.otboo.team03.user.repository.RedisTemporaryPasswordRepository;
 import com.otboo.team03.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +40,9 @@ class PasswordResetServiceTest {
     @Mock
     private MailService mailService;
 
+    @Mock
+    private RedisPasswordResetRateLimitRepository rateLimitRepository;
+
     @InjectMocks
     private PasswordResetService passwordResetService;
 
@@ -55,6 +59,7 @@ class PasswordResetServiceTest {
 
             when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
             when(passwordEncoder.encode(anyString())).thenReturn("encodedTemporaryPassword");
+            when(rateLimitRepository.tryAcquire(email)).thenReturn(Optional.of("token"));
 
             // when
             passwordResetService.resetPassword(email);
@@ -94,6 +99,7 @@ class PasswordResetServiceTest {
 
             when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
             when(passwordEncoder.encode(anyString())).thenReturn("encodedTemporaryPassword");
+            when(rateLimitRepository.tryAcquire(email)).thenReturn(Optional.of("token"));
 
             doThrow(new MailSendException("메일 발송 실패"))
                     .when(mailService).sendTemporaryPassword(eq(email), anyString());
@@ -104,6 +110,7 @@ class PasswordResetServiceTest {
 
             verify(temporaryPasswordRepository).save(email, "encodedTemporaryPassword");
             verify(temporaryPasswordRepository).delete(email);
+            verify(rateLimitRepository).release(email, "token");
         }
 
         @Test
@@ -115,6 +122,8 @@ class PasswordResetServiceTest {
 
             when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
             when(passwordEncoder.encode(anyString())).thenReturn("encodedTemporaryPassword");
+            when(rateLimitRepository.tryAcquire(email))
+                    .thenReturn(Optional.of("token"), Optional.empty());
 
             // when
             passwordResetService.resetPassword(email);

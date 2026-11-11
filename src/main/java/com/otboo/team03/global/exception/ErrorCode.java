@@ -10,6 +10,7 @@ public enum ErrorCode {
     DUPLICATE_EMAIL(HttpStatus.BAD_REQUEST, "이미 사용 중인 이메일입니다."),
     NOT_FOUND_USER(HttpStatus.NOT_FOUND, "사용자가 존재하지 않습니다."),
     LAST_ADMIN_ROLE_CHANGE_FORBIDDEN(HttpStatus.CONFLICT, "마지막 관리자의 권한은 변경할 수 없습니다."),
+    PASSWORD_RESET_RATE_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "비밀번호 초기화 요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요."),
 
     // auth
     AUTHENTICATION_REQUIRED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),

@@ -1,6 +1,8 @@
 package com.otboo.team03.user.service;
 
+import com.otboo.team03.user.exception.PasswordResetRateLimitException;
 import com.otboo.team03.user.exception.UserNotFoundException;
+import com.otboo.team03.user.repository.RedisPasswordResetRateLimitRepository;
 import com.otboo.team03.user.repository.RedisTemporaryPasswordRepository;
 import com.otboo.team03.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,21 +23,38 @@ public class PasswordResetService {
     private final RedisTemporaryPasswordRepository temporaryPasswordRepository;
     private final PasswordEncoder passwordEncoder;
     private final MailService mailService;
+    private final RedisPasswordResetRateLimitRepository rateLimitRepository;
 
     public void resetPassword(String email) {
         userRepository.findByEmail(email)
                 .orElseThrow(UserNotFoundException::new);
 
-        String temporaryPassword = generateTemporaryPassword();
-        String encodedPassword = passwordEncoder.encode(temporaryPassword);
-
-        temporaryPasswordRepository.save(email, encodedPassword);
+        String token = rateLimitRepository.tryAcquire(email)
+                .orElseThrow(PasswordResetRateLimitException::new);
 
         try {
-            mailService.sendTemporaryPassword(email, temporaryPassword);
-        } catch (RuntimeException exception) {
-            temporaryPasswordRepository.delete(email);
-            throw exception;
+            String temporaryPassword = generateTemporaryPassword();
+            String encodedPassword = passwordEncoder.encode(temporaryPassword);
+
+            temporaryPasswordRepository.save(email, encodedPassword);
+
+            try {
+                mailService.sendTemporaryPassword(email, temporaryPassword);
+            } catch (RuntimeException e) {
+                try {
+                    temporaryPasswordRepository.delete(email);
+                } catch (RuntimeException cleanupException) {
+                    e.addSuppressed(cleanupException);
+                }
+                throw e;
+            }
+        } catch (RuntimeException e) {
+            try {
+                rateLimitRepository.release(email, token);
+            } catch (RuntimeException cleanupException) {
+                e.addSuppressed(cleanupException);
+            }
+            throw e;
         }
     }
 
