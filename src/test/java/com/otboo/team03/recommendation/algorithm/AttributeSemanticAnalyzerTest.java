@@ -1,5 +1,6 @@
 package com.otboo.team03.recommendation.algorithm;
 
+import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;

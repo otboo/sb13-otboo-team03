@@ -2,6 +2,8 @@ package com.otboo.team03.recommendation.algorithm;
 
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesType;
+import com.otboo.team03.recommendation.entity.SleeveLength;
+import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import com.otboo.team03.user.entity.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -15,7 +17,7 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.UUID;
 
-import static com.otboo.team03.recommendation.algorithm.ThicknessLevel.*;
+import static com.otboo.team03.recommendation.entity.ThicknessLevel.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
@@ -26,7 +28,7 @@ class BasicOutfitAlgorithmTest {
 
     @BeforeEach
     void setUp() {
-        algorithm = new BasicOutfitAlgorithm(new ThicknessSuitabilityScorer());
+        algorithm = new BasicOutfitAlgorithm(new ClothesSuitabilityScorer());
         owner = new User("user@example.com", "encoded-password", "사용자");
     }
 
@@ -361,6 +363,140 @@ class BasicOutfitAlgorithmTest {
     @Nested
     @DisplayName("속성 기반 의상 추천")
     class AttributeBasedRecommendation {
+
+        @Nested
+        @DisplayName("두께 동점 시 소매 길이로 선택")
+        class SleeveBasedRecommendation {
+
+            @ParameterizedTest
+            @CsvSource({
+                    "TOP, 28.0, 3, SHORT",
+                    "TOP, 10.0, 3, LONG",
+                    "TOP, 21.0, 1, LONG",
+                    "TOP, 19.0, 5, SHORT",
+                    "DRESS, 28.0, 3, SHORT",
+                    "DRESS, 10.0, 3, LONG",
+                    "DRESS, 21.0, 1, LONG",
+                    "DRESS, 19.0, 5, SHORT"
+            })
+            void 두께가_같으면_보정_온도와_민감도에_맞는_소매를_선택한다(
+                    ClothesType type, double temperature, int sensitivity, SleeveLength preferred) {
+                Clothes opposite = clothes(type);
+                Clothes suitable = clothes(type);
+                List<Clothes> base = baseFor(type);
+                List<Clothes> candidates = new ArrayList<>(List.of(opposite, suitable));
+                candidates.addAll(base);
+                SleeveLength oppositeLength = preferred == SleeveLength.SHORT
+                        ? SleeveLength.LONG : SleeveLength.SHORT;
+
+                var result = algorithm.recommend(candidates,
+                        Map.of(opposite.getId(), MEDIUM, suitable.getId(), MEDIUM),
+                        Map.of(opposite.getId(), oppositeLength, suitable.getId(), preferred),
+                        temperature, sensitivity);
+
+                assertOutfit(result, suitable, base);
+            }
+
+            @ParameterizedTest
+            @CsvSource({"TOP", "DRESS"})
+            void 소매가_더_적합해도_두께_점수가_높은_후보를_우선한다(ClothesType type) {
+                Clothes mediumShort = clothes(type);
+                Clothes lightLong = clothes(type);
+                List<Clothes> base = baseFor(type);
+                List<Clothes> candidates = new ArrayList<>(List.of(mediumShort, lightLong));
+                candidates.addAll(base);
+
+                // 점수를 합산하면 보통·반팔이 4점, 얇음·긴팔이 3점이므로 잘못 선택된다.
+                var result = algorithm.recommend(candidates,
+                        Map.of(mediumShort.getId(), MEDIUM, lightLong.getId(), LIGHT),
+                        Map.of(mediumShort.getId(), SleeveLength.SHORT, lightLong.getId(), SleeveLength.LONG),
+                        28.0, 3);
+
+                assertOutfit(result, lightLong, base);
+            }
+
+            @ParameterizedTest
+            @CsvSource({"TOP, true", "TOP, false", "DRESS, true", "DRESS, false"})
+            void 소매_UNKNOWN과_누락값을_반대_소매보다_우선한다(ClothesType type, boolean explicitUnknown) {
+                Clothes opposite = clothes(type);
+                Clothes unknown = clothes(type);
+                List<Clothes> base = baseFor(type);
+                List<Clothes> candidates = new ArrayList<>(List.of(opposite, unknown));
+                candidates.addAll(base);
+                Map<UUID, SleeveLength> sleeves = explicitUnknown
+                        ? Map.of(opposite.getId(), SleeveLength.LONG, unknown.getId(), SleeveLength.UNKNOWN)
+                        : Map.of(opposite.getId(), SleeveLength.LONG);
+
+                var result = algorithm.recommend(candidates, Map.of(), sleeves, 28.0, 3);
+
+                assertOutfit(result, unknown, base);
+            }
+
+            @ParameterizedTest
+            @CsvSource({"TOP", "DRESS"})
+            void 두께와_소매가_모두_동점이면_입력_순서를_유지한다(ClothesType type) {
+                Clothes first = clothes(type);
+                Clothes second = clothes(type);
+                List<Clothes> base = baseFor(type);
+                List<Clothes> candidates = new ArrayList<>(List.of(first, second));
+                candidates.addAll(base);
+                List<Clothes> reversed = new ArrayList<>(List.of(second, first));
+                reversed.addAll(base);
+                Map<UUID, SleeveLength> sleeves = Map.of(
+                        first.getId(), SleeveLength.SHORT, second.getId(), SleeveLength.SHORT);
+
+                var result = algorithm.recommend(candidates, Map.of(), sleeves, 28.0, 3);
+                var reversedResult = algorithm.recommend(reversed, Map.of(), sleeves, 28.0, 3);
+
+                assertOutfit(result, first, base);
+                assertOutfit(reversedResult, second, base);
+            }
+
+            @Test
+            void ID가_없는_상의도_소매_UNKNOWN으로_평가하여_후보에_유지한다() {
+                Clothes longSleeve = clothes(ClothesType.TOP);
+                Clothes withoutId = new Clothes("ID 없는 상의", ClothesType.TOP, null, owner);
+                Clothes bottom = clothes(ClothesType.BOTTOM);
+                assertThat(withoutId.getId()).isNull();
+
+                var result = algorithm.recommend(List.of(longSleeve, withoutId, bottom), Map.of(),
+                        Map.of(longSleeve.getId(), SleeveLength.LONG), 28.0, 3);
+
+                assertThat(result).containsExactlyInAnyOrder(withoutId, bottom);
+            }
+
+            @ParameterizedTest
+            @CsvSource({"BOTTOM, 28.0, LONG, SHORT", "OUTER, 10.0, SHORT, LONG"})
+            void 하의와_아우터는_소매가_달라도_입력_순서를_유지한다(
+                    ClothesType type, double temperature, SleeveLength firstLength, SleeveLength secondLength) {
+                Clothes first = clothes(type);
+                Clothes second = clothes(type);
+                List<Clothes> base = baseFor(type);
+                List<Clothes> candidates = new ArrayList<>(List.of(first, second));
+                candidates.addAll(base);
+
+                var result = algorithm.recommend(candidates, Map.of(),
+                        Map.of(first.getId(), firstLength, second.getId(), secondLength), temperature, 3);
+
+                assertOutfit(result, first, base);
+            }
+
+            private List<Clothes> baseFor(ClothesType type) {
+                return switch (type) {
+                    case TOP -> List.of(clothes(ClothesType.BOTTOM));
+                    case BOTTOM -> List.of(clothes(ClothesType.TOP));
+                    case DRESS -> List.of();
+                    case OUTER -> List.of(clothes(ClothesType.TOP), clothes(ClothesType.BOTTOM));
+                    default -> throw new IllegalArgumentException();
+                };
+            }
+
+            private void assertOutfit(List<Clothes> actual, Clothes selected, List<Clothes> base) {
+                List<Clothes> expected = new ArrayList<>(base);
+                expected.add(selected);
+                assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+            }
+        }
 
         @ParameterizedTest
         @CsvSource({"TOP", "BOTTOM", "DRESS", "OUTER"})

@@ -24,8 +24,12 @@ import com.otboo.team03.weather.entity.SkyStatus;
 import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.repository.WeatherRepository;
 import jakarta.persistence.EntityManager;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -38,6 +42,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.contains;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -280,6 +286,207 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.weatherId").value(weatherId.toString()))
                 .andExpect(jsonPath("$.userId").value(ownerId.toString()))
                 .andExpect(jsonPath("$.clothes").isEmpty());
+    }
+
+    @ParameterizedTest
+    @CsvSource(value = {
+            "TOP, 28.0, 3, 반팔, false",
+            "TOP, 10.0, 3, 긴팔, true",
+            "TOP, 17.0, 1, 긴팔, true",
+            "TOP, 19.0, 5, 반팔, false",
+            "TOP, 19.9, NULL, 긴팔, false",
+            "TOP, 20.0, NULL, 반팔, false",
+            "DRESS, 28.0, 3, 반팔, false",
+            "DRESS, 10.0, 3, 긴팔, true",
+            "DRESS, 21.0, 1, 긴팔, false",
+            "DRESS, 19.0, 5, 반팔, false"
+    }, nullValues = "NULL")
+    void 같은_두께의_상의와_원피스는_저장된_소매와_민감도로_추천한다(
+            ClothesType type, double temperature, Integer sensitivity,
+            String expectedSleeve, boolean needsOuter) throws Exception {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "소매 추천 사용자"));
+        profiles.save(new Profile(owner, null, null, null, null, null, sensitivity, List.of()));
+        var thickness = definitions.save(new ClothesAttributeDefinition("두께", List.of("보통")));
+        var sleeve = definitions.save(new ClothesAttributeDefinition("소매 길이", List.of("반팔", "긴팔")));
+        Clothes shortSleeve = saveClothes("반팔 후보", type, owner, thickness, "보통");
+        Clothes longSleeve = saveClothes("긴팔 후보", type, owner, thickness, "보통");
+        attributes.save(new ClothesAttribute(shortSleeve, sleeve, "반팔"));
+        attributes.save(new ClothesAttribute(longSleeve, sleeve, "긴팔"));
+        Clothes bottom = type == ClothesType.TOP
+                ? saveClothes("하의", ClothesType.BOTTOM, owner, thickness, "보통") : null;
+        Clothes outer = saveClothes("아우터", ClothesType.OUTER, owner, thickness, "보통");
+        UUID ownerId = owner.getId();
+        UUID weatherId = saveWeather(temperature).getId();
+        UUID expectedId = expectedSleeve.equals("반팔") ? shortSleeve.getId() : longSleeve.getId();
+        UUID bottomId = bottom == null ? null : bottom.getId();
+        UUID outerId = outer.getId();
+        int baseSize = type == ClothesType.TOP ? 2 : 1;
+        String token = flushAndAuthenticate(ownerId);
+
+        var response = mvc.perform(get("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("weatherId", weatherId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value(ownerId.toString()))
+                .andExpect(jsonPath("$.weatherId").value(weatherId.toString()))
+                .andExpect(jsonPath("$.clothes.length()").value(baseSize + (needsOuter ? 1 : 0)))
+                .andExpect(jsonPath("$.clothes[0].clothesId").value(expectedId.toString()))
+                .andExpect(jsonPath("$.clothes[0].type").value(type.name()))
+                .andExpect(jsonPath("$.clothes[0].attributes[?(@.definitionName == '소매 길이')].value")
+                        .value(contains(expectedSleeve)));
+        if (bottomId != null) {
+            response.andExpect(jsonPath("$.clothes[1].clothesId").value(bottomId.toString()));
+        }
+        if (needsOuter) {
+            response.andExpect(jsonPath("$.clothes[" + baseSize + "].clothesId").value(outerId.toString()));
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ClothesType.class, names = {"TOP", "DRESS"})
+    void 추천_API는_소매보다_두께_점수가_높은_의상을_우선한다(ClothesType type) throws Exception {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "두께 우선 사용자"));
+        profiles.save(new Profile(owner, null, null, null, null, null, 3, List.of()));
+        var thickness = definitions.save(new ClothesAttributeDefinition("두께", List.of("얇음", "보통")));
+        var sleeve = definitions.save(new ClothesAttributeDefinition("소매", List.of("반팔", "긴팔")));
+        Clothes mediumShort = saveClothes("보통 반팔", type, owner, thickness, "보통");
+        Clothes lightLong = saveClothes("얇은 긴팔", type, owner, thickness, "얇음");
+        attributes.save(new ClothesAttribute(mediumShort, sleeve, "반팔"));
+        attributes.save(new ClothesAttribute(lightLong, sleeve, "긴팔"));
+        if (type == ClothesType.TOP) {
+            saveClothes("하의", ClothesType.BOTTOM, owner, thickness, "보통");
+        }
+        UUID ownerId = owner.getId();
+        UUID weatherId = saveWeather(28.0).getId();
+        UUID expectedId = lightLong.getId();
+        String token = flushAndAuthenticate(ownerId);
+
+        // 합산하면 보통·반팔이 4점으로 더 높지만, 두께 3점인 얇음·긴팔을 선택해야 한다.
+        mvc.perform(get("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("weatherId", weatherId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clothes.length()").value(type == ClothesType.TOP ? 2 : 1))
+                .andExpect(jsonPath("$.clothes[0].clothesId").value(expectedId.toString()))
+                .andExpect(jsonPath("$.clothes[0].attributes[?(@.definitionName == '두께')].value")
+                        .value(contains("얇음")))
+                .andExpect(jsonPath("$.clothes[0].attributes[?(@.definitionName == '소매')].value")
+                        .value(contains("긴팔")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"없음", "미지원 속성", "충돌"})
+    void DB의_소매가_없거나_해석할_수_없으면_반대_소매보다_우선한다(String unknownCase) throws Exception {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "소매 미상 사용자"));
+        profiles.save(new Profile(owner, null, null, null, null, null, 3, List.of()));
+        var thickness = definitions.save(new ClothesAttributeDefinition("두께", List.of("얇음")));
+        var sleeve = definitions.save(new ClothesAttributeDefinition("소매", List.of("반팔", "긴팔")));
+        Clothes longSleeve = saveClothes("긴팔 상의", ClothesType.TOP, owner, thickness, "얇음");
+        attributes.save(new ClothesAttribute(longSleeve, sleeve, "긴팔"));
+        Clothes unknown = saveClothes("소매 미상 상의", ClothesType.TOP, owner, thickness, "얇음");
+        if (unknownCase.equals("미지원 속성")) {
+            var unsupported = definitions.save(new ClothesAttributeDefinition("기장", List.of("반팔")));
+            attributes.save(new ClothesAttribute(unknown, unsupported, "반팔"));
+        } else if (unknownCase.equals("충돌")) {
+            var alias = definitions.save(new ClothesAttributeDefinition("소매 길이", List.of("반팔", "긴팔")));
+            attributes.save(new ClothesAttribute(unknown, sleeve, "반팔"));
+            attributes.save(new ClothesAttribute(unknown, alias, "긴팔"));
+        }
+        Clothes bottom = saveClothes("하의", ClothesType.BOTTOM, owner, thickness, "얇음");
+        UUID ownerId = owner.getId();
+        UUID weatherId = saveWeather(28.0).getId();
+        UUID expectedId = unknown.getId();
+        UUID bottomId = bottom.getId();
+        String token = flushAndAuthenticate(ownerId);
+
+        mvc.perform(get("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("weatherId", weatherId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clothes.length()").value(2))
+                .andExpect(jsonPath("$.clothes[0].clothesId").value(expectedId.toString()))
+                .andExpect(jsonPath("$.clothes[0].attributes[?(@.definitionName == '두께')].value")
+                        .value(contains("얇음")))
+                .andExpect(jsonPath("$.clothes[1].clothesId").value(bottomId.toString()));
+    }
+
+    @Test
+    void DB의_소매_선택값_수정_후_다음_API_요청에서_선택_결과가_바뀐다() throws Exception {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "소매 수정 사용자"));
+        profiles.save(new Profile(owner, null, null, null, null, null, 3, List.of()));
+        var thickness = definitions.save(new ClothesAttributeDefinition("두께", List.of("얇음")));
+        var sleeve = definitions.save(new ClothesAttributeDefinition("소매", List.of("반팔", "긴팔")));
+        Clothes target = saveClothes("수정 대상 상의", ClothesType.TOP, owner, thickness, "얇음");
+        attributes.save(new ClothesAttribute(target, sleeve, "반팔"));
+        Clothes alternative = saveClothes("소매 미상 상의", ClothesType.TOP, owner, thickness, "얇음");
+        Clothes bottom = saveClothes("하의", ClothesType.BOTTOM, owner, thickness, "얇음");
+        UUID ownerId = owner.getId();
+        UUID weatherId = saveWeather(28.0).getId();
+        UUID targetId = target.getId();
+        UUID alternativeId = alternative.getId();
+        UUID bottomId = bottom.getId();
+        UUID thicknessId = thickness.getId();
+        UUID sleeveId = sleeve.getId();
+        String token = flushAndAuthenticate(ownerId);
+
+        mvc.perform(get("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("weatherId", weatherId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clothes.length()").value(2))
+                .andExpect(jsonPath("$.clothes[0].clothesId").value(targetId.toString()))
+                .andExpect(jsonPath("$.clothes[0].attributes[?(@.definitionName == '소매')].value")
+                        .value(contains("반팔")));
+
+        clothesService.update(targetId, new ClothesUpdateRequest(null, null, List.of(
+                new ClothesAttributeDto(thicknessId, "얇음"),
+                new ClothesAttributeDto(sleeveId, "긴팔"))), ownerId);
+        entityManager.flush();
+        entityManager.clear();
+
+        mvc.perform(get("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("weatherId", weatherId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clothes.length()").value(2))
+                .andExpect(jsonPath("$.clothes[0].clothesId").value(alternativeId.toString()))
+                .andExpect(jsonPath("$.clothes[0].attributes[?(@.definitionName == '두께')].value")
+                        .value(contains("얇음")))
+                .andExpect(jsonPath("$.clothes[1].clothesId").value(bottomId.toString()));
+    }
+
+    @Test
+    void 의상_속성과_정의를_SQL_한번으로_조회하고_정의명_접근시_추가_조회하지_않는다() {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "속성 조회 사용자"));
+        var thickness = definitions.save(new ClothesAttributeDefinition("두께", List.of("얇음")));
+        var sleeve = definitions.save(new ClothesAttributeDefinition("소매", List.of("반팔")));
+        Clothes top = saveClothes("상의", ClothesType.TOP, owner, thickness, "얇음");
+        attributes.save(new ClothesAttribute(top, sleeve, "반팔"));
+        Clothes bottom = saveClothes("하의", ClothesType.BOTTOM, owner, thickness, "얇음");
+        List<UUID> clothesIds = List.of(top.getId(), bottom.getId());
+        // 저장 SQL과 영속성 컨텍스트에 남은 정의가 조회 횟수 검증에 영향을 주지 않도록 한다.
+        entityManager.flush();
+        entityManager.clear();
+        Statistics statistics = entityManager.getEntityManagerFactory()
+                .unwrap(SessionFactory.class).getStatistics();
+        boolean previousEnabled = statistics.isStatisticsEnabled();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+        try {
+            List<ClothesAttribute> result = attributes.findAllByClothes_IdIn(clothesIds);
+
+            assertThat(result).hasSize(3);
+            assertThat(statistics.getPrepareStatementCount())
+                    .as("속성과 정의를 함께 조회하는 SQL 횟수")
+                    .isEqualTo(1);
+            assertThat(result).extracting(attribute -> attribute.getDefinition().getName())
+                    .containsExactlyInAnyOrder("두께", "소매", "두께");
+            assertThat(statistics.getPrepareStatementCount())
+                    .as("정의 이름에 접근한 후의 전체 SQL 횟수")
+                    .isEqualTo(1);
+        } finally {
+            statistics.setStatisticsEnabled(previousEnabled);
+        }
     }
 
     private String flushAndAuthenticate(UUID ownerId) {

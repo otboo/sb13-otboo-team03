@@ -1,5 +1,6 @@
 package com.otboo.team03.recommendation.algorithm;
 
+import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;

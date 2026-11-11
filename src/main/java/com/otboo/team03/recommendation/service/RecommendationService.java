@@ -9,8 +9,10 @@ import com.otboo.team03.feed.dto.response.OotdDto;
 import com.otboo.team03.profile.service.ProfileService;
 import com.otboo.team03.recommendation.algorithm.BasicOutfitAlgorithm;
 import com.otboo.team03.recommendation.algorithm.AttributeSemanticAnalyzer;
-import com.otboo.team03.recommendation.algorithm.ClothesThermalEstimator;
-import com.otboo.team03.recommendation.algorithm.ThicknessLevel;
+import com.otboo.team03.recommendation.algorithm.ClothesAttributeEstimator;
+import com.otboo.team03.recommendation.algorithm.SleeveLengthAnalyzer;
+import com.otboo.team03.recommendation.entity.SleeveLength;
+import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import com.otboo.team03.recommendation.dto.RecommendationDto;
 import com.otboo.team03.weather.exception.WeatherNotFoundException;
 import com.otboo.team03.weather.repository.WeatherRepository;
@@ -36,7 +38,8 @@ public class RecommendationService {
     private final ClothesService clothesService;
     private final BasicOutfitAlgorithm algorithm;
     private final AttributeSemanticAnalyzer attributeAnalyzer;
-    private final ClothesThermalEstimator thermalEstimator;
+    private final ClothesAttributeEstimator attributeEstimator;
+    private final SleeveLengthAnalyzer sleeveAnalyzer;
 
     public RecommendationDto recommend(UUID weatherId, UUID userId) {
         Double temperature = weatherRepository.findById(weatherId)
@@ -51,8 +54,11 @@ public class RecommendationService {
         if (clothes.isEmpty()) {
             recommended = algorithm.recommend(clothes, temperature, effectiveSensitivity);
         } else {
-            Map<UUID, ThicknessLevel> thicknessByClothesId = loadThicknessByClothesId(clothes);
-            recommended = algorithm.recommend(clothes, thicknessByClothesId, temperature, effectiveSensitivity);
+            List<UUID> clothesIds = clothes.stream().map(Clothes::getId).toList();
+            Map<UUID, List<ClothesAttribute>> attributesByClothesId = loadAttributesByClothesId(clothesIds);
+            Map<UUID, ThicknessLevel> thicknessByClothesId = estimateThicknessByClothesId(clothesIds, attributesByClothesId);
+            Map<UUID, SleeveLength> sleeveByClothesId = estimateSleeveByClothesId(clothesIds, attributesByClothesId);
+            recommended = algorithm.recommend(clothes, thicknessByClothesId, sleeveByClothesId, temperature, effectiveSensitivity);
         }
 
         List<OotdDto> ootds = recommended.stream()
@@ -63,22 +69,40 @@ public class RecommendationService {
         return new RecommendationDto(weatherId, userId, ootds);
     }
 
-    private Map<UUID, ThicknessLevel> loadThicknessByClothesId(List<Clothes> clothes) {
-        List<UUID> clothesIds = clothes.stream().map(Clothes::getId).toList();
-        List<ClothesAttribute> attributes = clothesAttributeRepository.findAllByClothes_IdIn(clothesIds);
-        Map<UUID, List<ThicknessLevel>> levelsByClothesId = attributes.stream()
-                .collect(Collectors.groupingBy(attribute -> attribute.getClothes().getId(),
-                        Collectors.mapping(this::analyzeThickness, Collectors.toList())));
+    private Map<UUID, List<ClothesAttribute>> loadAttributesByClothesId(List<UUID> clothesIds) {
+        return clothesAttributeRepository.findAllByClothes_IdIn(clothesIds).stream()
+                .collect(Collectors.groupingBy(attribute -> attribute.getClothes().getId()));
+    }
 
+    private Map<UUID, ThicknessLevel> estimateThicknessByClothesId(
+            List<UUID> clothesIds, Map<UUID, List<ClothesAttribute>> attributesByClothesId) {
         Map<UUID, ThicknessLevel> thicknessByClothesId = new HashMap<>();
         for (UUID clothesId : clothesIds) {
-            List<ThicknessLevel> levels = levelsByClothesId.getOrDefault(clothesId, List.of());
-            thicknessByClothesId.put(clothesId, thermalEstimator.estimate(levels));
+            List<ThicknessLevel> levels = attributesByClothesId.getOrDefault(clothesId, List.of()).stream()
+                    .map(this::analyzeThickness)
+                    .toList();
+            thicknessByClothesId.put(clothesId, attributeEstimator.estimateThickness(levels));
         }
         return thicknessByClothesId;
     }
 
+    private Map<UUID, SleeveLength> estimateSleeveByClothesId(
+            List<UUID> clothesIds, Map<UUID, List<ClothesAttribute>> attributesByClothesId) {
+        Map<UUID, SleeveLength> sleeveByClothesId = new HashMap<>();
+        for (UUID clothesId : clothesIds) {
+            List<SleeveLength> lengths = attributesByClothesId.getOrDefault(clothesId, List.of()).stream()
+                    .map(this::analyzeSleeve)
+                    .toList();
+            sleeveByClothesId.put(clothesId, attributeEstimator.estimateSleeveLength(lengths));
+        }
+        return sleeveByClothesId;
+    }
+
     private ThicknessLevel analyzeThickness(ClothesAttribute attribute) {
         return attributeAnalyzer.analyze(attribute.getDefinition().getName(), attribute.getValue());
+    }
+
+    private SleeveLength analyzeSleeve(ClothesAttribute attribute) {
+        return sleeveAnalyzer.analyze(attribute.getDefinition().getName(), attribute.getValue());
     }
 }

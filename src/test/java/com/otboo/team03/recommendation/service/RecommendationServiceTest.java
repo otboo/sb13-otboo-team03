@@ -14,9 +14,11 @@ import com.otboo.team03.profile.exception.ProfileNotFoundException;
 import com.otboo.team03.profile.service.ProfileService;
 import com.otboo.team03.recommendation.algorithm.BasicOutfitAlgorithm;
 import com.otboo.team03.recommendation.algorithm.AttributeSemanticAnalyzer;
-import com.otboo.team03.recommendation.algorithm.ClothesThermalEstimator;
-import com.otboo.team03.recommendation.algorithm.ThicknessSuitabilityScorer;
-import com.otboo.team03.recommendation.algorithm.ThicknessLevel;
+import com.otboo.team03.recommendation.algorithm.ClothesAttributeEstimator;
+import com.otboo.team03.recommendation.algorithm.ClothesSuitabilityScorer;
+import com.otboo.team03.recommendation.algorithm.SleeveLengthAnalyzer;
+import com.otboo.team03.recommendation.entity.SleeveLength;
+import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.exception.WeatherNotFoundException;
 import com.otboo.team03.weather.repository.WeatherRepository;
@@ -38,7 +40,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
-import static com.otboo.team03.recommendation.algorithm.ThicknessLevel.*;
+import static com.otboo.team03.recommendation.entity.ThicknessLevel.*;
 
 @ExtendWith(MockitoExtension.class)
 class RecommendationServiceTest {
@@ -50,7 +52,8 @@ class RecommendationServiceTest {
     @Mock private BasicOutfitAlgorithm algorithm;
     @Mock private WeatherRepository weatherRepository;
     @Spy private AttributeSemanticAnalyzer attributeAnalyzer = new AttributeSemanticAnalyzer();
-    @Spy private ClothesThermalEstimator thermalEstimator = new ClothesThermalEstimator();
+    @Spy private ClothesAttributeEstimator attributeEstimator = new ClothesAttributeEstimator();
+    @Spy private SleeveLengthAnalyzer sleeveAnalyzer = new SleeveLengthAnalyzer();
     @InjectMocks private RecommendationService service;
 
     private final UUID userId = UUID.randomUUID();
@@ -68,7 +71,8 @@ class RecommendationServiceTest {
         List<Clothes> clothes = List.of(dress);
         when(profileService.getProfile(userId)).thenReturn(profile(1));
         when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(clothes);
-        when(algorithm.recommend(clothes, Map.of(clothesId, UNKNOWN), 10.0, 1)).thenReturn(clothes);
+        when(algorithm.recommend(clothes, Map.of(clothesId, UNKNOWN),
+                Map.of(clothesId, SleeveLength.UNKNOWN), 10.0, 1)).thenReturn(clothes);
         when(dress.getId()).thenReturn(clothesId);
         when(clothesService.findById(clothesId)).thenReturn(dto);
 
@@ -84,7 +88,8 @@ class RecommendationServiceTest {
             assertThat(ootd.attributes()).containsExactly(attribute);
         });
         verify(weatherRepository).findById(weatherId);
-        verify(algorithm).recommend(clothes, Map.of(clothesId, UNKNOWN), 10.0, 1);
+        verify(algorithm).recommend(clothes, Map.of(clothesId, UNKNOWN),
+                Map.of(clothesId, SleeveLength.UNKNOWN), 10.0, 1);
     }
 
     @Test
@@ -165,7 +170,9 @@ class RecommendationServiceTest {
         verify(clothesAttributeRepository).findAllByClothes_IdIn(ids);
         verify(algorithm).recommend(clothes,
                 Map.of(lightId, LIGHT, heavyId, HEAVY,
-                        conflictingId, UNKNOWN, withoutAttributesId, UNKNOWN), 28.0, 3);
+                        conflictingId, UNKNOWN, withoutAttributesId, UNKNOWN),
+                Map.of(lightId, SleeveLength.UNKNOWN, heavyId, SleeveLength.UNKNOWN,
+                        conflictingId, SleeveLength.UNKNOWN, withoutAttributesId, SleeveLength.UNKNOWN), 28.0, 3);
     }
 
     @Test
@@ -181,11 +188,116 @@ class RecommendationServiceTest {
         service.recommend(weatherId, userId);
 
         verify(clothesAttributeRepository).findAllByClothes_IdIn(List.of(clothesId));
-        verify(algorithm).recommend(clothes, Map.of(clothesId, UNKNOWN), 20.0, 3);
+        verify(algorithm).recommend(clothes, Map.of(clothesId, UNKNOWN),
+                Map.of(clothesId, SleeveLength.UNKNOWN), 20.0, 3);
     }
 
     private ProfileDto profile(Integer sensitivity) {
         return new ProfileDto(userId, "사용자", null, null, null, sensitivity, null);
+    }
+
+    @Test
+    void 같은_속성_조회_결과에서_두께와_소매를_독립적으로_종합해_전달한다() {
+        givenTemperature(17.0);
+        when(profileService.getProfile(userId)).thenReturn(profile(1));
+        Clothes shortSleeve = mock(Clothes.class);
+        Clothes longSleeve = mock(Clothes.class);
+        Clothes sleeveConflict = mock(Clothes.class);
+        Clothes thicknessConflict = mock(Clothes.class);
+        Clothes unsupportedSleeve = mock(Clothes.class);
+        Clothes withoutAttributes = mock(Clothes.class);
+        List<Clothes> clothes = List.of(shortSleeve, longSleeve, sleeveConflict,
+                thicknessConflict, unsupportedSleeve, withoutAttributes);
+        for (Clothes item : clothes) {
+            when(item.getId()).thenReturn(UUID.randomUUID());
+        }
+        when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(clothes);
+        List<UUID> ids = clothes.stream().map(Clothes::getId).toList();
+        var thickness = new ClothesAttributeDefinition("두께", List.of("얇음", "보통", "두꺼움"));
+        var sleeve = new ClothesAttributeDefinition("소매", List.of("반팔", "긴팔"));
+        var sleeveAlias = new ClothesAttributeDefinition("소매 길이", List.of("반팔", "긴팔"));
+        var unsupported = new ClothesAttributeDefinition("기장", List.of("반팔"));
+        when(clothesAttributeRepository.findAllByClothes_IdIn(ids)).thenReturn(List.of(
+                new ClothesAttribute(longSleeve, sleeveAlias, "긴팔"),
+                new ClothesAttribute(sleeveConflict, sleeve, "반팔"),
+                new ClothesAttribute(thicknessConflict, thickness, "얇음"),
+                new ClothesAttribute(shortSleeve, thickness, "얇음"),
+                new ClothesAttribute(longSleeve, thickness, "두꺼움"),
+                new ClothesAttribute(sleeveConflict, thickness, "보통"),
+                new ClothesAttribute(shortSleeve, sleeve, "반팔"),
+                new ClothesAttribute(thicknessConflict, sleeve, "긴팔"),
+                new ClothesAttribute(sleeveConflict, sleeveAlias, "긴팔"),
+                new ClothesAttribute(thicknessConflict, thickness, "두꺼움"),
+                new ClothesAttribute(unsupportedSleeve, thickness, "얇음"),
+                new ClothesAttribute(unsupportedSleeve, unsupported, "반팔")
+        ));
+
+        service.recommend(weatherId, userId);
+
+        verify(clothesAttributeRepository).findAllByClothes_IdIn(ids);
+        verifyNoMoreInteractions(clothesAttributeRepository);
+        verify(algorithm).recommend(clothes,
+                Map.of(shortSleeve.getId(), LIGHT, longSleeve.getId(), HEAVY,
+                        sleeveConflict.getId(), MEDIUM, thicknessConflict.getId(), UNKNOWN,
+                        unsupportedSleeve.getId(), LIGHT, withoutAttributes.getId(), UNKNOWN),
+                Map.of(shortSleeve.getId(), SleeveLength.SHORT, longSleeve.getId(), SleeveLength.LONG,
+                        sleeveConflict.getId(), SleeveLength.UNKNOWN, thicknessConflict.getId(), SleeveLength.LONG,
+                        unsupportedSleeve.getId(), SleeveLength.UNKNOWN, withoutAttributes.getId(), SleeveLength.UNKNOWN),
+                17.0, 1);
+        verifyNoInteractions(clothesService);
+    }
+
+    @Test
+    void 조회된_속성이_없으면_두께와_소매를_모두_UNKNOWN으로_전달한다() {
+        givenTemperature(20.0);
+        when(profileService.getProfile(userId)).thenReturn(profile(null));
+        Clothes dress = mock(Clothes.class);
+        UUID clothesId = UUID.randomUUID();
+        when(dress.getId()).thenReturn(clothesId);
+        List<Clothes> clothes = List.of(dress);
+        when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(clothes);
+        when(clothesAttributeRepository.findAllByClothes_IdIn(List.of(clothesId))).thenReturn(List.of());
+
+        service.recommend(weatherId, userId);
+
+        verify(clothesAttributeRepository).findAllByClothes_IdIn(List.of(clothesId));
+        verifyNoMoreInteractions(clothesAttributeRepository);
+        verify(algorithm).recommend(clothes, Map.of(clothesId, UNKNOWN),
+                Map.of(clothesId, SleeveLength.UNKNOWN), 20.0, 3);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"선택값 변경", "속성명 변경"})
+    void 속성_수정_후_다음_추천에서_최신_소매를_다시_분석한다(String change) {
+        givenTemperature(28.0);
+        when(profileService.getProfile(userId)).thenReturn(profile(3));
+        Clothes dress = mock(Clothes.class);
+        UUID clothesId = UUID.randomUUID();
+        when(dress.getId()).thenReturn(clothesId);
+        List<Clothes> clothes = List.of(dress);
+        when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(clothes);
+        var definition = new ClothesAttributeDefinition("소매", List.of("반팔", "긴팔"));
+        var attribute = new ClothesAttribute(dress, definition, "반팔");
+        when(clothesAttributeRepository.findAllByClothes_IdIn(List.of(clothesId)))
+                .thenReturn(List.of(attribute));
+
+        service.recommend(weatherId, userId);
+        if (change.equals("선택값 변경")) {
+            attribute.updateValue("긴팔");
+        } else {
+            definition.update("미지원 속성", null);
+        }
+        service.recommend(weatherId, userId);
+
+        SleeveLength updatedLength = change.equals("선택값 변경") ? SleeveLength.LONG : SleeveLength.UNKNOWN;
+        var order = inOrder(clothesAttributeRepository, algorithm);
+        order.verify(clothesAttributeRepository).findAllByClothes_IdIn(List.of(clothesId));
+        order.verify(algorithm).recommend(clothes, Map.of(clothesId, UNKNOWN),
+                Map.of(clothesId, SleeveLength.SHORT), 28.0, 3);
+        order.verify(clothesAttributeRepository).findAllByClothes_IdIn(List.of(clothesId));
+        order.verify(algorithm).recommend(clothes, Map.of(clothesId, UNKNOWN),
+                Map.of(clothesId, updatedLength), 28.0, 3);
+        order.verifyNoMoreInteractions();
     }
 
     @ParameterizedTest
@@ -195,8 +307,8 @@ class RecommendationServiceTest {
         RecommendationService connectedService = new RecommendationService(
                 clothesRepository, clothesAttributeRepository, weatherRepository,
                 profileService, clothesService,
-                new BasicOutfitAlgorithm(new ThicknessSuitabilityScorer()),
-                new AttributeSemanticAnalyzer(), new ClothesThermalEstimator());
+                new BasicOutfitAlgorithm(new ClothesSuitabilityScorer()),
+                new AttributeSemanticAnalyzer(), new ClothesAttributeEstimator(), new SleeveLengthAnalyzer());
         givenTemperature(temperature);
         when(profileService.getProfile(userId)).thenReturn(profile(sensitivity));
 
@@ -278,8 +390,8 @@ class RecommendationServiceTest {
         RecommendationService connectedService = new RecommendationService(
                 clothesRepository, clothesAttributeRepository, weatherRepository,
                 profileService, clothesService,
-                new BasicOutfitAlgorithm(new ThicknessSuitabilityScorer()),
-                new AttributeSemanticAnalyzer(), new ClothesThermalEstimator());
+                new BasicOutfitAlgorithm(new ClothesSuitabilityScorer()),
+                new AttributeSemanticAnalyzer(), new ClothesAttributeEstimator(), new SleeveLengthAnalyzer());
         givenTemperature(temperature);
         when(profileService.getProfile(userId)).thenReturn(profile(sensitivity));
         Clothes first = candidate(ClothesType.TOP);
@@ -340,9 +452,11 @@ class RecommendationServiceTest {
         ThicknessLevel updatedLevel = change.equals("선택값 변경") ? HEAVY : UNKNOWN;
         var order = inOrder(clothesAttributeRepository, algorithm);
         order.verify(clothesAttributeRepository).findAllByClothes_IdIn(List.of(clothesId));
-        order.verify(algorithm).recommend(clothes, Map.of(clothesId, LIGHT), 28.0, 3);
+        order.verify(algorithm).recommend(clothes, Map.of(clothesId, LIGHT),
+                Map.of(clothesId, SleeveLength.UNKNOWN), 28.0, 3);
         order.verify(clothesAttributeRepository).findAllByClothes_IdIn(List.of(clothesId));
-        order.verify(algorithm).recommend(clothes, Map.of(clothesId, updatedLevel), 28.0, 3);
+        order.verify(algorithm).recommend(clothes, Map.of(clothesId, updatedLevel),
+                Map.of(clothesId, SleeveLength.UNKNOWN), 28.0, 3);
         order.verifyNoMoreInteractions();
     }
 }
