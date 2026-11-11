@@ -92,6 +92,19 @@ class PasswordAuthenticationFlowTest {
         verify(temporaryPasswordRepository).consumeIfMatches(EMAIL, encodedTemporaryPassword);
     }
 
+    @Test
+    @DisplayName("실패 - 비밀번호가 null이면 인증에 실패한다")
+    void authenticate_nullPassword_throwsBadCredentialsException() {
+        // given
+        givenUser();
+
+        // when & then
+        assertThatThrownBy(() -> authenticate(null))
+                .isInstanceOf(BadCredentialsException.class);
+
+        verifyNoInteractions(temporaryPasswordRepository);
+    }
+
     @Nested
     @DisplayName("임시 비밀번호 인증 중 Redis 장애")
     class RedisFailureTest {
