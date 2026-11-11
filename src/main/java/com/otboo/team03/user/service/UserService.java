@@ -158,7 +158,11 @@ public class UserService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                temporaryPasswordRepository.delete(user.getEmail());
+                try {
+                    temporaryPasswordRepository.delete(user.getEmail());
+                } catch (RuntimeException e) {
+                    log.error("Failed to delete temporary password after password change: userId={}", userId, e);
+                }
 
                 try {
                     jwtRegistry.invalidateJwtInformationByUserId(userId);
