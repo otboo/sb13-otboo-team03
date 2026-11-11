@@ -456,6 +456,65 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
     }
 
     @Test
+    void 추천_의상_개수가_늘어도_SQL_조회_횟수는_증가하지_않는다() throws Exception {
+        User singleOwner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "원피스 사용자"));
+        User tripleOwner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "세 벌 사용자"));
+        profiles.save(new Profile(singleOwner, null, null, null, null, null, 3, List.of()));
+        profiles.save(new Profile(tripleOwner, null, null, null, null, null, 3, List.of()));
+        var thickness = definitions.save(new ClothesAttributeDefinition("두께", List.of("보통")));
+        Clothes dress = saveClothes("원피스", ClothesType.DRESS, singleOwner, thickness, "보통");
+        Clothes top = saveClothes("상의", ClothesType.TOP, tripleOwner, thickness, "보통");
+        Clothes bottom = saveClothes("하의", ClothesType.BOTTOM, tripleOwner, thickness, "보통");
+        Clothes outer = saveClothes("아우터", ClothesType.OUTER, tripleOwner, thickness, "보통");
+        UUID singleOwnerId = singleOwner.getId();
+        UUID tripleOwnerId = tripleOwner.getId();
+        UUID weatherId = saveWeather(10.0).getId();
+        UUID dressId = dress.getId();
+        UUID topId = top.getId();
+        UUID bottomId = bottom.getId();
+        UUID outerId = outer.getId();
+        String singleToken = flushAndAuthenticate(singleOwnerId);
+        String tripleToken = tokenProvider.createAccessToken(tripleOwnerId);
+        when(jwtRegistry.hasActiveJwtInformationByAccessToken(tripleToken)).thenReturn(true);
+        Statistics statistics = entityManager.getEntityManagerFactory()
+                .unwrap(SessionFactory.class).getStatistics();
+        boolean previousEnabled = statistics.isStatisticsEnabled();
+        statistics.setStatisticsEnabled(true);
+        try {
+            statistics.clear();
+            mvc.perform(get("/api/recommendations")
+                            .header("Authorization", "Bearer " + singleToken)
+                            .param("weatherId", weatherId.toString()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.userId").value(singleOwnerId.toString()))
+                    .andExpect(jsonPath("$.clothes[*].clothesId").value(contains(dressId.toString())))
+                    .andExpect(jsonPath("$.clothes[0].attributes[?(@.definitionName == '두께')].value")
+                            .value(contains("보통")));
+            long singleQueries = statistics.getPrepareStatementCount();
+
+            // 두 번째 요청도 캐시된 의상·정의·날씨 없이 같은 조건에서 측정한다.
+            entityManager.clear();
+            statistics.clear();
+            mvc.perform(get("/api/recommendations")
+                            .header("Authorization", "Bearer " + tripleToken)
+                            .param("weatherId", weatherId.toString()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.userId").value(tripleOwnerId.toString()))
+                    .andExpect(jsonPath("$.clothes[*].clothesId")
+                            .value(contains(topId.toString(), bottomId.toString(), outerId.toString())))
+                    .andExpect(jsonPath("$.clothes[*].attributes[?(@.definitionName == '두께')].value")
+                            .value(contains("보통", "보통", "보통")));
+            long tripleQueries = statistics.getPrepareStatementCount();
+
+            assertThat(tripleQueries)
+                    .as("추천 1벌의 SQL 횟수=%d, 추천 3벌의 SQL 횟수=%d", singleQueries, tripleQueries)
+                    .isEqualTo(singleQueries);
+        } finally {
+            statistics.setStatisticsEnabled(previousEnabled);
+        }
+    }
+
+    @Test
     void 의상_속성과_정의를_SQL_한번으로_조회하고_정의명_접근시_추가_조회하지_않는다() {
         User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "속성 조회 사용자"));
         var thickness = definitions.save(new ClothesAttributeDefinition("두께", List.of("얇음")));
