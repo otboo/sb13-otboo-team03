@@ -135,5 +135,34 @@ class PasswordResetServiceTest {
             verify(temporaryPasswordRepository).save(email, "encodedTemporaryPassword");
             verify(mailService).sendTemporaryPassword(eq(email), anyString());
         }
+
+        @Test
+        @DisplayName("실패 - 메일 발송과 정리 작업이 모두 실패해도 최초 예외를 보존한다")
+        void resetPassword_mailAndCleanupFailures_preservesOriginalException() {
+            // given
+            String email = "user@example.com";
+            User user = new User(email, "encodedPassword", "일반 사용자");
+
+            MailSendException mailException = new MailSendException("메일 발송 실패");
+            RuntimeException deleteException = new IllegalStateException("임시 비밀번호 삭제 실패");
+            RuntimeException releaseException = new IllegalStateException("요청 제한 해제 실패");
+
+            when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+            when(rateLimitRepository.tryAcquire(email)).thenReturn(Optional.of("token"));
+            when(passwordEncoder.encode(anyString())).thenReturn("encodedTemporaryPassword");
+
+            doThrow(mailException).when(mailService).sendTemporaryPassword(eq(email), anyString());
+            doThrow(deleteException).when(temporaryPasswordRepository).delete(email);
+            doThrow(releaseException).when(rateLimitRepository).release(email, "token");
+
+            // when & then
+            assertThatThrownBy(() -> passwordResetService.resetPassword(email))
+                    .isSameAs(mailException)
+                    .satisfies(exception -> assertThat(exception.getSuppressed())
+                            .containsExactly(deleteException, releaseException));
+
+            verify(temporaryPasswordRepository).delete(email);
+            verify(rateLimitRepository).release(email, "token");
+        }
     }
 }
