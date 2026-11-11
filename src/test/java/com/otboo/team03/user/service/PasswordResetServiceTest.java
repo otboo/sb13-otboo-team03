@@ -1,6 +1,7 @@
 
 package com.otboo.team03.user.service;
 
+import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.RedisTemporaryPasswordRepository;
@@ -106,24 +107,24 @@ class PasswordResetServiceTest {
         }
 
         @Test
-        @DisplayName("성공 - 재발급 시 임시 비밀번호를 새로 저장하고 이메일을 발송한다")
-        void resetPassword_reissue_replacesTemporaryPassword() {
+        @DisplayName("실패 - 동일 이메일로 연속 요청하면 재발급을 차단하고 이메일을 중복 발송하지 않는다")
+        void resetPassword_repeatedRequest_isRateLimited() {
             // given
             String email = "user@example.com";
             User user = new User(email, "encodedPassword", "일반 사용자");
 
             when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
-            when(passwordEncoder.encode(anyString()))
-                    .thenReturn("encodedFirstPassword", "encodedSecondPassword");
+            when(passwordEncoder.encode(anyString())).thenReturn("encodedTemporaryPassword");
 
             // when
             passwordResetService.resetPassword(email);
-            passwordResetService.resetPassword(email);
 
             // then
-            verify(temporaryPasswordRepository).save(email, "encodedFirstPassword");
-            verify(temporaryPasswordRepository).save(email, "encodedSecondPassword");
-            verify(mailService, times(2)).sendTemporaryPassword(eq(email), anyString());
+            assertThatThrownBy(() -> passwordResetService.resetPassword(email))
+                    .isInstanceOf(OtbooException.class);
+
+            verify(temporaryPasswordRepository).save(email, "encodedTemporaryPassword");
+            verify(mailService).sendTemporaryPassword(eq(email), anyString());
         }
     }
 }
