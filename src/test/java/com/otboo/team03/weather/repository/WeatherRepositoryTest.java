@@ -1,7 +1,6 @@
 package com.otboo.team03.weather.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
-
 import com.otboo.team03.weather.entity.PrecipitationType;
 import com.otboo.team03.weather.entity.SkyStatus;
 import com.otboo.team03.weather.entity.Weather;
@@ -10,20 +9,24 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
-@ActiveProfiles("test")
 @SpringBootTest
 @Transactional
 class WeatherRepositoryTest {
 
   @Autowired
   private WeatherRepository weatherRepository;
+
+  @BeforeEach
+  void setUp() {
+    weatherRepository.deleteAll();
+  }
 
   @Test
   @DisplayName("날씨 엔티티 저장 및 ID 단건 조회가 정상 동작한다.")

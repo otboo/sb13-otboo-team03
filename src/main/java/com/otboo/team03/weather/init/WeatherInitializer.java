@@ -11,20 +11,18 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-@Profile("!test") // // 테스트 환경에서는 실행되지 않도록 격리
 @Component
 @RequiredArgsConstructor
 public class WeatherInitializer implements ApplicationRunner {
 
   private final WeatherRepository weatherRepository;
 
-  // 서울시청 기본 좌표
-  private static final Double SEOUL_LATITUDE = 37.5665;
-  private static final Double SEOUL_LONGITUDE = 126.9780;
+  // 강남 좌표
+  private static final Double DEFAULT_LATITUDE = 37.4979;
+  private static final Double DEFAULT_LONGITUDE = 127.0276;
 
   @Override
   @Transactional
@@ -46,8 +44,8 @@ public class WeatherInitializer implements ApplicationRunner {
       Instant forecastAt = now.plus(i * 3L, ChronoUnit.HOURS);
 
       Weather weather = Weather.builder()
-          .latitude(SEOUL_LATITUDE)
-          .longitude(SEOUL_LONGITUDE)
+          .latitude(DEFAULT_LATITUDE)
+          .longitude(DEFAULT_LONGITUDE)
           .forecastedAt(now)
           .forecastAt(forecastAt)
           .skyStatus(SkyStatus.CLEAR)
@@ -58,6 +56,7 @@ public class WeatherInitializer implements ApplicationRunner {
           .humidity(50.0 + (i % 3) * 5.0)    // 50% ~ 60% 습도
           .windSpeed(2.5)
           .build();
+
       mockWeathers.add(weather);
     }
 

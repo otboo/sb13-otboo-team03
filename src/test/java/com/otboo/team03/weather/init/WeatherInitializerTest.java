@@ -44,8 +44,8 @@ class WeatherInitializerTest {
     assertThat(savedList).isNotEmpty();
 
     // 서울시청 기본 좌표 검증
-    assertThat(savedList.get(0).getLatitude()).isEqualTo(37.5665);
-    assertThat(savedList.get(0).getLongitude()).isEqualTo(126.9780);
+    assertThat(savedList.get(0).getLatitude()).isEqualTo(37.4979);
+    assertThat(savedList.get(0).getLongitude()).isEqualTo(127.0276);
     assertThat(savedList.get(0).getTemperature()).isNotNull();
     assertThat(savedList.get(0).getSkyStatus()).isNotNull();
   }
