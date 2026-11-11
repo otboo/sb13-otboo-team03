@@ -24,6 +24,8 @@ import com.otboo.team03.weather.entity.SkyStatus;
 import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.repository.WeatherRepository;
 import jakarta.persistence.EntityManager;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -41,6 +43,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.contains;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -450,6 +453,40 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.clothes[0].attributes[?(@.definitionName == '두께')].value")
                         .value(contains("얇음")))
                 .andExpect(jsonPath("$.clothes[1].clothesId").value(bottomId.toString()));
+    }
+
+    @Test
+    void 의상_속성과_정의를_SQL_한번으로_조회하고_정의명_접근시_추가_조회하지_않는다() {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "속성 조회 사용자"));
+        var thickness = definitions.save(new ClothesAttributeDefinition("두께", List.of("얇음")));
+        var sleeve = definitions.save(new ClothesAttributeDefinition("소매", List.of("반팔")));
+        Clothes top = saveClothes("상의", ClothesType.TOP, owner, thickness, "얇음");
+        attributes.save(new ClothesAttribute(top, sleeve, "반팔"));
+        Clothes bottom = saveClothes("하의", ClothesType.BOTTOM, owner, thickness, "얇음");
+        List<UUID> clothesIds = List.of(top.getId(), bottom.getId());
+        // 저장 SQL과 영속성 컨텍스트에 남은 정의가 조회 횟수 검증에 영향을 주지 않도록 한다.
+        entityManager.flush();
+        entityManager.clear();
+        Statistics statistics = entityManager.getEntityManagerFactory()
+                .unwrap(SessionFactory.class).getStatistics();
+        boolean previousEnabled = statistics.isStatisticsEnabled();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+        try {
+            List<ClothesAttribute> result = attributes.findAllByClothes_IdIn(clothesIds);
+
+            assertThat(result).hasSize(3);
+            assertThat(statistics.getPrepareStatementCount())
+                    .as("속성과 정의를 함께 조회하는 SQL 횟수")
+                    .isEqualTo(1);
+            assertThat(result).extracting(attribute -> attribute.getDefinition().getName())
+                    .containsExactlyInAnyOrder("두께", "소매", "두께");
+            assertThat(statistics.getPrepareStatementCount())
+                    .as("정의 이름에 접근한 후의 전체 SQL 횟수")
+                    .isEqualTo(1);
+        } finally {
+            statistics.setStatisticsEnabled(previousEnabled);
+        }
     }
 
     private String flushAndAuthenticate(UUID ownerId) {
