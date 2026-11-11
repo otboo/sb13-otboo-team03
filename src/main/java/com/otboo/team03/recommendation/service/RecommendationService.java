@@ -51,18 +51,20 @@ public class RecommendationService {
 
         List<Clothes> clothes = clothesRepository.findAllByOwner_Id(userId);
         List<Clothes> recommended;
+        Map<UUID, List<ClothesAttribute>> attributesByClothesId;
         if (clothes.isEmpty()) {
+            attributesByClothesId = Map.of();
             recommended = algorithm.recommend(clothes, temperature, effectiveSensitivity);
         } else {
             List<UUID> clothesIds = clothes.stream().map(Clothes::getId).toList();
-            Map<UUID, List<ClothesAttribute>> attributesByClothesId = loadAttributesByClothesId(clothesIds);
+            attributesByClothesId = loadAttributesByClothesId(clothesIds);
             Map<UUID, ThicknessLevel> thicknessByClothesId = estimateThicknessByClothesId(clothesIds, attributesByClothesId);
             Map<UUID, SleeveLength> sleeveByClothesId = estimateSleeveByClothesId(clothesIds, attributesByClothesId);
             recommended = algorithm.recommend(clothes, thicknessByClothesId, sleeveByClothesId, temperature, effectiveSensitivity);
         }
 
         List<OotdDto> ootds = recommended.stream()
-                .map(c -> clothesService.findById(c.getId()))
+                .map(c -> clothesService.toClothesDto(c, attributesByClothesId.getOrDefault(c.getId(), List.of())))
                 .map(OotdDto::fromClothesDto)
                 .toList();
 

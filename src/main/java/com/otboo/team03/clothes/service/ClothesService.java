@@ -146,9 +146,12 @@ public class ClothesService {
         Clothes clothes = clothesOptional.get();
         List<ClothesAttribute> attributes =
                 clothesAttributeRepository.findAllByClothes_Id(clothesId);
-        // 변환한 목록을 실제 응답에 전달해야 저장된 속성이 JSON에 포함된다.
-        List<ClothesAttributeWithDefDto> attributeDtos = toAttributeDtos(attributes);
-        return toDto(clothes, attributeDtos);
+        return toClothesDto(clothes, attributes);
+    }
+
+    /** 이미 조회한 의상과 속성·정의로 응답을 생성한다. DB 조회는 수행하지 않는다. */
+    public ClothesDto toClothesDto(Clothes clothes, List<ClothesAttribute> attributes) {
+        return toDto(clothes, toAttributeDtos(attributes));
     }
 
     /**
@@ -233,7 +236,7 @@ public class ClothesService {
             clothesAttributeRepository.deleteAll(remaining.values());
         }
         clothes.update(request.name(), request.type());
-        return toDto(clothes, toAttributeDtos(resultAttributes));
+        return toClothesDto(clothes, resultAttributes);
     }
 
     /**
@@ -341,8 +344,7 @@ public class ClothesService {
         for (Clothes clothes : clothesList) {
             // 속성이 없는 의상도 제외하지 않고 빈 속성 목록으로 응답한다.
             List<ClothesAttribute> attributes = attributesByClothesId.getOrDefault(clothes.getId(), List.of());
-            List<ClothesAttributeWithDefDto> attributeDtos = toAttributeDtos(attributes);
-            clothesResponses.add(toDto(clothes, attributeDtos));
+            clothesResponses.add(toClothesDto(clothes, attributes));
         }
         // 각 의상의 기본 정보와 속성을 담은 목록을 반환한다. 의상이 없으면 빈 목록이다.
         return clothesResponses;
