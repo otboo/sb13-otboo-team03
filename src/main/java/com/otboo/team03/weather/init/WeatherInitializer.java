@@ -29,7 +29,22 @@ public class WeatherInitializer implements ApplicationRunner {
   @Override
   @Transactional
   public void run(ApplicationArguments args) {
+    // 테스트 실행 중(JUnit/SpringBootTest)에는 Mock 데이터 자동 생성을 건너뜁니다.
+    if (isTestContext()) {
+      return;
+    }
     initialize();
+  }
+
+  // 현재 실행 흐름에 JUnit이나 스프링 테스트 러너가 있는지 감지
+  private boolean isTestContext() {
+    for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
+      if (element.getClassName().startsWith("org.junit.") ||
+          element.getClassName().startsWith("org.springframework.boot.test.")) {
+        return true;
+      }
+    }
+    return false;
   }
 
   public void initialize() {
