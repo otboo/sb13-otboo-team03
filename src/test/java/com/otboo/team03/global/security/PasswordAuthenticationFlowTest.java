@@ -5,6 +5,7 @@ import com.otboo.team03.user.repository.RedisTemporaryPasswordRepository;
 import com.otboo.team03.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -14,12 +15,16 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.security.authentication.AuthenticationServiceException;
 
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class PasswordAuthenticationFlowTest {
@@ -85,6 +90,46 @@ class PasswordAuthenticationFlowTest {
                 .isInstanceOf(BadCredentialsException.class);
 
         verify(temporaryPasswordRepository).consumeIfMatches(EMAIL, encodedTemporaryPassword);
+    }
+
+    @Nested
+    @DisplayName("임시 비밀번호 인증 중 Redis 장애")
+    class RedisFailureTest {
+
+        @Test
+        @DisplayName("Redis 조회 실패 시 인증 서비스 예외가 발생한다")
+        void authenticate_redisLookupFailure_throwsAuthenticationServiceException() {
+            // given
+            givenUser();
+
+            when(temporaryPasswordRepository.findByEmail(EMAIL))
+                    .thenThrow(new RedisConnectionFailureException("Redis unavailable"));
+
+            // when & then
+            assertThatThrownBy(() -> authenticate(TEMPORARY_PASSWORD))
+                    .isInstanceOf(AuthenticationServiceException.class);
+
+            verify(temporaryPasswordRepository, never()).consumeIfMatches(anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("Redis 소모 실패 시 인증 서비스 예외가 발생한다")
+        void authenticate_redisConsumeFailure_throwsAuthenticationServiceException() {
+            // given
+            givenUser();
+
+            String encodedTemporaryPassword = passwordEncoder.encode(TEMPORARY_PASSWORD);
+
+            when(temporaryPasswordRepository.findByEmail(EMAIL))
+                    .thenReturn(Optional.of(encodedTemporaryPassword));
+
+            when(temporaryPasswordRepository.consumeIfMatches(EMAIL, encodedTemporaryPassword))
+                    .thenThrow(new RedisConnectionFailureException("Redis unavailable"));
+
+            // when & then
+            assertThatThrownBy(() -> authenticate(TEMPORARY_PASSWORD))
+                    .isInstanceOf(AuthenticationServiceException.class);
+        }
     }
 
     private void givenUser() {
