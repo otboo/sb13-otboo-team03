@@ -4,14 +4,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 
 import java.time.Duration;
 import java.util.Optional;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -105,6 +108,77 @@ class RedisTemporaryPasswordRepositoryTest {
 
             // then
             verify(redisTemplate).delete("auth:temp-password:" + email);
+        }
+    }
+
+    @Nested
+    @DisplayName("임시 비밀번호 일회성 사용")
+    class ConsumeIfMatchesTest {
+
+        @Test
+        @DisplayName("성공 - 저장된 해시가 일치하면 임시 비밀번호를 소모한다")
+        void consumeIfMatches_matchingPassword_returnsTrue() {
+            // given
+            String email = "user@example.com";
+            String encodedPassword = "encodedTemporaryPassword";
+            String key = "auth:temp-password:" + email;
+
+            when(redisTemplate.execute(
+                    ArgumentMatchers.<RedisScript<Long>>any(),
+                    eq(List.of(key)),
+                    eq(encodedPassword)
+            )).thenReturn(1L);
+
+            // when
+            boolean result = repository.consumeIfMatches(email, encodedPassword);
+
+            // then
+            assertThat(result).isTrue();
+            verify(redisTemplate).execute(
+                    ArgumentMatchers.<RedisScript<Long>>any(),
+                    eq(List.of(key)),
+                    eq(encodedPassword)
+            );
+        }
+
+        @Test
+        @DisplayName("실패 - 저장된 해시가 일치하지 않으면 소모하지 않는다")
+        void consumeIfMatches_wrongPassword_returnsFalse() {
+            // given
+            String email = "user@example.com";
+            String encodedPassword = "wrongEncodedPassword";
+
+            when(redisTemplate.execute(
+                    ArgumentMatchers.<RedisScript<Long>>any(),
+                    eq(List.of("auth:temp-password:" + email)),
+                    eq(encodedPassword)
+            )).thenReturn(0L);
+
+            // when
+            boolean result = repository.consumeIfMatches(email, encodedPassword);
+
+            // then
+            assertThat(result).isFalse();
+        }
+
+        @Test
+        @DisplayName("실패 - 임시 비밀번호가 없으면 소모하지 않는다")
+        void consumeIfMatches_missingPassword_returnsFalse() {
+            // given
+            String email = "user@example.com";
+            String encodedPassword = "encodedTemporaryPassword";
+
+            when(redisTemplate.execute(
+                    ArgumentMatchers.<RedisScript<Long>>any(),
+                    eq(List.of("auth:temp-password:" + email)),
+                    eq(encodedPassword)
+            )).thenReturn(0L);
+
+            // when
+            boolean result = repository.consumeIfMatches(email, encodedPassword);
+
+            // then
+            assertThat(result).isFalse();
         }
     }
 }
