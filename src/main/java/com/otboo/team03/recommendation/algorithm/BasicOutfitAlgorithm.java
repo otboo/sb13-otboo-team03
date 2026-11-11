@@ -20,6 +20,7 @@ public class BasicOutfitAlgorithm {
 
     private static final double TEMPERATURE_ADJUSTMENT_PER_LEVEL = 2.0;
     private static final double OUTER_TEMPERATURE_THRESHOLD = 15.0;
+    private static final double SCARF_TEMPERATURE_THRESHOLD = 15.0;
     private static final List<ClothesType> ADDITIONAL_ITEM_TYPES = List.of(
             ClothesType.SHOES, ClothesType.BAG, ClothesType.HAT, ClothesType.ACCESSORY);
 
@@ -102,7 +103,14 @@ public class BasicOutfitAlgorithm {
         }
 
         for (ClothesType type : ADDITIONAL_ITEM_TYPES) {
-            firstOfType(originalClothes, type).ifPresent(outfit::add);
+            Optional<Clothes> item = firstOfType(originalClothes, type);
+            item.ifPresent(outfit::add);
+            if (type == ClothesType.SHOES && item.isPresent()) {
+                firstOfType(originalClothes, ClothesType.SOCKS).ifPresent(outfit::add);
+            }
+        }
+        if (adjustedTemperature < SCARF_TEMPERATURE_THRESHOLD) {
+            firstOfType(originalClothes, ClothesType.SCARF).ifPresent(outfit::add);
         }
         return List.copyOf(outfit);
     }
