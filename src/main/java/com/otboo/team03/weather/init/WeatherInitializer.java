@@ -29,22 +29,7 @@ public class WeatherInitializer implements ApplicationRunner {
   @Override
   @Transactional
   public void run(ApplicationArguments args) {
-    // 테스트 실행 중(JUnit/SpringBootTest)에는 Mock 데이터 자동 생성을 건너뜁니다.
-    if (isTestContext()) {
-      return;
-    }
     initialize();
-  }
-
-  // 현재 실행 흐름에 JUnit이나 스프링 테스트 러너가 있는지 감지
-  private boolean isTestContext() {
-    for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
-      if (element.getClassName().startsWith("org.junit.") ||
-          element.getClassName().startsWith("org.springframework.boot.test.")) {
-        return true;
-      }
-    }
-    return false;
   }
 
   public void initialize() {
@@ -52,11 +37,14 @@ public class WeatherInitializer implements ApplicationRunner {
     if (weatherRepository.count() > 0) {
       return;
     }
+
     // 2. 현재 시각 기준으로 오늘/내일 3시간 간격 예보 8건(24시간 분량) 생성
     Instant now = Instant.now().truncatedTo(ChronoUnit.HOURS);
     List<Weather> mockWeathers = new ArrayList<>();
+
     for (int i = 0; i < 8; i++) {
       Instant forecastAt = now.plus(i * 3L, ChronoUnit.HOURS);
+
       Weather weather = Weather.builder()
           .latitude(SEOUL_LATITUDE)
           .longitude(SEOUL_LONGITUDE)
@@ -72,6 +60,7 @@ public class WeatherInitializer implements ApplicationRunner {
           .build();
       mockWeathers.add(weather);
     }
+
     // 3. 일괄 저장
     weatherRepository.saveAll(mockWeathers);
   }
