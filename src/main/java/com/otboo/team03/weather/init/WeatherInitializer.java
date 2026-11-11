@@ -11,9 +11,11 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+@Profile("!test") // // 테스트 환경에서는 실행되지 않도록 격리
 @Component
 @RequiredArgsConstructor
 public class WeatherInitializer implements ApplicationRunner {
