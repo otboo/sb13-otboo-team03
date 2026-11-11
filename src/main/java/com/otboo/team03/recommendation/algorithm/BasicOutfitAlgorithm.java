@@ -20,6 +20,8 @@ public class BasicOutfitAlgorithm {
 
     private static final double TEMPERATURE_ADJUSTMENT_PER_LEVEL = 2.0;
     private static final double OUTER_TEMPERATURE_THRESHOLD = 15.0;
+    private static final List<ClothesType> ADDITIONAL_ITEM_TYPES = List.of(
+            ClothesType.SHOES, ClothesType.BAG, ClothesType.HAT, ClothesType.ACCESSORY);
 
     private final ClothesSuitabilityScorer suitabilityScorer;
 
@@ -40,7 +42,7 @@ public class BasicOutfitAlgorithm {
                 .toList();
 
         // 두께와 소매 점수가 모두 같으면 입력 순서를 유지한다.
-        return recommendAtAdjustedTemperature(rankedClothes, adjustedTemperature);
+        return recommendAtAdjustedTemperature(rankedClothes, clothes, adjustedTemperature);
     }
 
     public List<Clothes> recommend(List<Clothes> clothes,
@@ -50,21 +52,13 @@ public class BasicOutfitAlgorithm {
     }
 
     public List<Clothes> recommend(List<Clothes> clothes, double temperature, int sensitivity) {
-        return recommendAtAdjustedTemperature(clothes, adjustTemperature(temperature, sensitivity));
+        return recommendAtAdjustedTemperature(clothes, clothes, adjustTemperature(temperature, sensitivity));
     }
 
     public List<Clothes> recommend(List<Clothes> clothes) {
-        Optional<Clothes> top = clothes.stream()
-                .filter(item -> item.getType() == ClothesType.TOP)
-                .findFirst();
-
-        Optional<Clothes> bottom = clothes.stream()
-                .filter(item -> item.getType() == ClothesType.BOTTOM)
-                .findFirst();
-
-        Optional<Clothes> dress = clothes.stream()
-                .filter(item -> item.getType() == ClothesType.DRESS)
-                .findFirst();
+        Optional<Clothes> top = firstOfType(clothes, ClothesType.TOP);
+        Optional<Clothes> bottom = firstOfType(clothes, ClothesType.BOTTOM);
+        Optional<Clothes> dress = firstOfType(clothes, ClothesType.DRESS);
 
         if (top.isPresent() && bottom.isPresent()) {
             return List.of(top.get(), bottom.get());
@@ -81,6 +75,10 @@ public class BasicOutfitAlgorithm {
         return temperature + (sensitivity - 3) * TEMPERATURE_ADJUSTMENT_PER_LEVEL;
     }
 
+    private Optional<Clothes> firstOfType(List<Clothes> clothes, ClothesType type) {
+        return clothes.stream().filter(item -> item.getType() == type).findFirst();
+    }
+
     private ThicknessLevel thicknessOf(Clothes clothes, Map<UUID, ThicknessLevel> thicknessByClothesId) {
         UUID clothesId = clothes.getId();
         return clothesId == null ? ThicknessLevel.UNKNOWN : thicknessByClothesId.getOrDefault(clothesId, ThicknessLevel.UNKNOWN);
@@ -91,18 +89,21 @@ public class BasicOutfitAlgorithm {
         return clothesId == null ? SleeveLength.UNKNOWN : sleeveByClothesId.getOrDefault(clothesId, SleeveLength.UNKNOWN);
     }
 
-    private List<Clothes> recommendAtAdjustedTemperature(List<Clothes> clothes, double adjustedTemperature) {
-        List<Clothes> basicOutfit = recommend(clothes);
-        if (basicOutfit.isEmpty() || adjustedTemperature >= OUTER_TEMPERATURE_THRESHOLD) {
+    private List<Clothes> recommendAtAdjustedTemperature(
+            List<Clothes> rankedClothes, List<Clothes> originalClothes, double adjustedTemperature) {
+        List<Clothes> basicOutfit = recommend(rankedClothes);
+        if (basicOutfit.isEmpty()) {
             return basicOutfit;
         }
 
-        Optional<Clothes> outer = clothes.stream()
-                .filter(item -> item.getType() == ClothesType.OUTER)
-                .findFirst();
-
         List<Clothes> outfit = new ArrayList<>(basicOutfit);
-        outer.ifPresent(outfit::add);
+        if (adjustedTemperature < OUTER_TEMPERATURE_THRESHOLD) {
+            firstOfType(rankedClothes, ClothesType.OUTER).ifPresent(outfit::add);
+        }
+
+        for (ClothesType type : ADDITIONAL_ITEM_TYPES) {
+            firstOfType(originalClothes, type).ifPresent(outfit::add);
+        }
         return List.copyOf(outfit);
     }
 }
