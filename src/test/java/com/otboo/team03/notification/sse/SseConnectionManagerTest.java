@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,6 +37,16 @@ class SseConnectionManagerTest {
 
         connectionManager.send(receiverId, notification);
 
+        assertThat(connectionManager.connectionCount(receiverId)).isEqualTo(1);
+    }
+
+    @Test
+    void 누락된_알림과_함께_SSE_연결을_등록한다() {
+        UUID receiverId = UUID.randomUUID();
+
+        SseEmitter emitter = connectionManager.connect(receiverId, List.of(notification(receiverId)));
+
+        assertThat(emitter).isNotNull();
         assertThat(connectionManager.connectionCount(receiverId)).isEqualTo(1);
     }
 
@@ -77,11 +88,13 @@ class SseConnectionManagerTest {
     @Test
     void SSE_연결이_완료되면_연결을_제거한다() {
         UUID receiverId = UUID.randomUUID();
-        SseEmitter emitter = connectionManager.connect(receiverId);
+        SseEmitter emitter = mock(SseEmitter.class);
+        connectionManager.register(receiverId, emitter);
 
         connectionManager.disconnect(receiverId, emitter);
 
         assertThat(connectionManager.connectionCount(receiverId)).isZero();
+        verify(emitter).complete();
     }
 
     private NotificationDto notification(UUID receiverId) {

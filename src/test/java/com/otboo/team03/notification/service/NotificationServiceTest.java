@@ -1,5 +1,6 @@
 package com.otboo.team03.notification.service;
 
+import com.otboo.team03.notification.dto.response.NotificationDto;
 import com.otboo.team03.notification.entity.Notification;
 import com.otboo.team03.notification.entity.NotificationLevel;
 import com.otboo.team03.notification.exception.NotificationNotFoundException;
@@ -186,5 +187,53 @@ class NotificationServiceTest {
                 Instant.now()
         )).isInstanceOf(NotificationNotFoundException.class);
         verify(notificationRepository).findByIdAndReceiver_Id(notificationId, receiverId);
+    }
+
+    @Test
+    void 마지막_이벤트_이후_알림을_조회한다() {
+        UUID receiverId = UUID.randomUUID();
+        UUID lastEventId = UUID.randomUUID();
+        Instant lastEventCreatedAt = Instant.parse("2026-01-01T00:00:00Z");
+        User receiver = mock(User.class);
+        Notification lastEvent = mock(Notification.class);
+        Notification missedNotification = mock(Notification.class);
+
+        when(lastEvent.getId()).thenReturn(lastEventId);
+        when(lastEvent.getCreatedAt()).thenReturn(lastEventCreatedAt);
+        when(missedNotification.getId()).thenReturn(UUID.randomUUID());
+        when(missedNotification.getCreatedAt()).thenReturn(lastEventCreatedAt.plusSeconds(1));
+        when(missedNotification.getReceiver()).thenReturn(receiver);
+        when(missedNotification.getTitle()).thenReturn("새 알림");
+        when(missedNotification.getContent()).thenReturn("재전송할 알림");
+        when(missedNotification.getLevel()).thenReturn(NotificationLevel.INFO);
+        when(receiver.getId()).thenReturn(receiverId);
+
+        when(notificationRepository.findByIdAndReceiver_Id(lastEventId, receiverId))
+                .thenReturn(Optional.of(lastEvent));
+        when(notificationRepository.findByReceiverIdAfterEvent(
+                receiverId, lastEventCreatedAt, lastEventId
+        )).thenReturn(List.of(missedNotification));
+
+        List<NotificationDto> result = notificationService.getNotificationsAfterEvent(receiverId, lastEventId);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).title()).isEqualTo("새 알림");
+        verify(notificationRepository).findByReceiverIdAfterEvent(
+                receiverId, lastEventCreatedAt, lastEventId
+        );
+    }
+
+    @Test
+    void 마지막_이벤트가_수신자에게_없으면_빈_목록을_반환한다() {
+        UUID receiverId = UUID.randomUUID();
+        UUID lastEventId = UUID.randomUUID();
+
+        when(notificationRepository.findByIdAndReceiver_Id(lastEventId, receiverId))
+                .thenReturn(Optional.empty());
+
+        List<NotificationDto> result = notificationService.getNotificationsAfterEvent(receiverId, lastEventId);
+
+        assertThat(result).isEmpty();
+        verify(notificationRepository).findByIdAndReceiver_Id(lastEventId, receiverId);
     }
 }

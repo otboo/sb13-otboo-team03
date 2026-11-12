@@ -3,7 +3,9 @@ package com.otboo.team03.notification.controller;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.global.security.OtbooUserDetails;
+import com.otboo.team03.notification.dto.response.NotificationDto;
 import com.otboo.team03.notification.sse.SseConnectionManager;
+import com.otboo.team03.notification.service.NotificationService;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.UserRole;
 import org.junit.jupiter.api.Test;
@@ -16,6 +18,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,6 +34,9 @@ class SseControllerTest {
     @Mock
     private SseConnectionManager sseConnectionManager;
 
+    @Mock
+    private NotificationService notificationService;
+
     @InjectMocks
     private SseController sseController;
 
@@ -41,15 +47,33 @@ class SseControllerTest {
         SseEmitter emitter = new SseEmitter();
         when(sseConnectionManager.connect(receiverId)).thenReturn(emitter);
 
-        SseEmitter result = sseController.connect(authentication);
+        SseEmitter result = sseController.connect(authentication, null, null);
 
         assertThat(result).isSameAs(emitter);
         verify(sseConnectionManager).connect(receiverId);
     }
 
     @Test
+    void 마지막_이벤트_ID가_있으면_누락된_알림을_조회해_재연결한다() {
+        UUID receiverId = UUID.randomUUID();
+        UUID lastEventId = UUID.randomUUID();
+        Authentication authentication = authentication(receiverId);
+        SseEmitter emitter = new SseEmitter();
+        List<NotificationDto> missedNotifications = List.of();
+        when(notificationService.getNotificationsAfterEvent(receiverId, lastEventId))
+                .thenReturn(missedNotifications);
+        when(sseConnectionManager.connect(receiverId, missedNotifications)).thenReturn(emitter);
+
+        SseEmitter result = sseController.connect(authentication, null, lastEventId);
+
+        assertThat(result).isSameAs(emitter);
+        verify(notificationService).getNotificationsAfterEvent(receiverId, lastEventId);
+        verify(sseConnectionManager).connect(receiverId, missedNotifications);
+    }
+
+    @Test
     void 인증되지_않은_사용자는_SSE_연결을_생성할_수_없다() {
-        assertThatThrownBy(() -> sseController.connect(null))
+        assertThatThrownBy(() -> sseController.connect(null, null, null))
                 .isInstanceOfSatisfying(OtbooException.class, exception ->
                         assertThat(exception.getErrorCode())
                                 .isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED)
@@ -62,7 +86,7 @@ class SseControllerTest {
         Authentication authentication = mock(Authentication.class);
         when(authentication.isAuthenticated()).thenReturn(false);
 
-        assertThatThrownBy(() -> sseController.connect(authentication))
+        assertThatThrownBy(() -> sseController.connect(authentication, null, null))
                 .isInstanceOfSatisfying(OtbooException.class, exception ->
                         assertThat(exception.getErrorCode())
                                 .isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED)
@@ -76,7 +100,7 @@ class SseControllerTest {
         when(authentication.isAuthenticated()).thenReturn(true);
         when(authentication.getPrincipal()).thenReturn("wrong-principal");
 
-        assertThatThrownBy(() -> sseController.connect(authentication))
+        assertThatThrownBy(() -> sseController.connect(authentication, null, null))
                 .isInstanceOfSatisfying(OtbooException.class, exception ->
                         assertThat(exception.getErrorCode())
                                 .isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED)

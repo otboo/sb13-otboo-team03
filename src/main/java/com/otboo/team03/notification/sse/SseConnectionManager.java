@@ -7,6 +7,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,6 +33,12 @@ public class SseConnectionManager {
         return emitter;
     }
 
+    public SseEmitter connect(UUID receiverId, List<NotificationDto> missedNotifications) {
+        SseEmitter emitter = connect(receiverId);
+        missedNotifications.forEach(notification -> send(receiverId, emitter, notification));
+        return emitter;
+    }
+
     void register(UUID receiverId, SseEmitter emitter) {
         emitters.compute(receiverId, (id, connections) -> {
             Set<SseEmitter> updatedConnections = connections == null
@@ -49,18 +56,22 @@ public class SseConnectionManager {
         }
 
         for (SseEmitter emitter : receiverEmitters) {
-            try {
-                emitter.send(SseEmitter.event()
-                        .id(notification.id().toString())
-                        .name(NOTIFICATION_EVENT_NAME)
-                        .data(notification));
-            } catch (IOException exception) {
-                handleSendFailure(receiverId, emitter, exception,
-                        "SSE 알림 전송에 실패했습니다.");
-            } catch (IllegalStateException exception) {
-                handleSendFailure(receiverId, emitter, exception,
-                        "SSE 연결이 종료된 상태입니다.");
-            }
+            send(receiverId, emitter, notification);
+        }
+    }
+
+    private void send(UUID receiverId, SseEmitter emitter, NotificationDto notification) {
+        try {
+            emitter.send(SseEmitter.event()
+                    .id(notification.id().toString())
+                    .name(NOTIFICATION_EVENT_NAME)
+                    .data(notification));
+        } catch (IOException exception) {
+            handleSendFailure(receiverId, emitter, exception,
+                    "SSE 알림 전송에 실패했습니다.");
+        } catch (IllegalStateException exception) {
+            handleSendFailure(receiverId, emitter, exception,
+                    "SSE 연결이 종료된 상태입니다.");
         }
     }
 
@@ -111,6 +122,7 @@ public class SseConnectionManager {
 
     void disconnect(UUID receiverId, SseEmitter emitter) {
         remove(receiverId, emitter);
+        emitter.complete();
     }
 
     int connectionCount(UUID receiverId) {
