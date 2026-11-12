@@ -5,6 +5,7 @@ import com.otboo.team03.notification.entity.NotificationLevel;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -96,6 +97,60 @@ class SseConnectionManagerTest {
 
         connectionManager.send(receiverId, notification(receiverId));
 
+        verify(activeEmitter).send(any(SseEmitter.SseEventBuilder.class));
+        assertThat(connectionManager.connectionCount(receiverId)).isEqualTo(1);
+    }
+
+    @Test
+    void 알림_전송중_IOException이_발생한_연결을_제거하고_다른_연결은_계속_전송한다() throws Exception {
+        UUID receiverId = UUID.randomUUID();
+        SseEmitter failedEmitter = mock(SseEmitter.class);
+        SseEmitter activeEmitter = mock(SseEmitter.class);
+        IOException exception = new IOException("전송할 수 없는 연결입니다.");
+        doThrow(exception)
+                .when(failedEmitter)
+                .send(any(SseEmitter.SseEventBuilder.class));
+        connectionManager.register(receiverId, failedEmitter);
+        connectionManager.register(receiverId, activeEmitter);
+
+        connectionManager.send(receiverId, notification(receiverId));
+
+        verify(activeEmitter).send(any(SseEmitter.SseEventBuilder.class));
+        assertThat(connectionManager.connectionCount(receiverId)).isEqualTo(1);
+    }
+
+    @Test
+    void heartbeat_전송중_IOException이_발생한_연결을_제거하고_다른_연결은_계속_전송한다() throws Exception {
+        UUID receiverId = UUID.randomUUID();
+        SseEmitter failedEmitter = mock(SseEmitter.class);
+        SseEmitter activeEmitter = mock(SseEmitter.class);
+        doThrow(new IOException("heartbeat를 전송할 수 없는 연결입니다."))
+                .when(failedEmitter)
+                .send(any(SseEmitter.SseEventBuilder.class));
+        connectionManager.register(receiverId, failedEmitter);
+        connectionManager.register(receiverId, activeEmitter);
+
+        connectionManager.sendHeartbeats();
+
+        verify(activeEmitter).send(any(SseEmitter.SseEventBuilder.class));
+        assertThat(connectionManager.connectionCount(receiverId)).isEqualTo(1);
+    }
+
+    @Test
+    void heartbeat_전송중_IllegalStateException이_발생한_연결을_종료한다() throws Exception {
+        UUID receiverId = UUID.randomUUID();
+        SseEmitter failedEmitter = mock(SseEmitter.class);
+        SseEmitter activeEmitter = mock(SseEmitter.class);
+        IllegalStateException exception = new IllegalStateException("이미 종료된 연결입니다.");
+        doThrow(exception)
+                .when(failedEmitter)
+                .send(any(SseEmitter.SseEventBuilder.class));
+        connectionManager.register(receiverId, failedEmitter);
+        connectionManager.register(receiverId, activeEmitter);
+
+        connectionManager.sendHeartbeats();
+
+        verify(failedEmitter).completeWithError(exception);
         verify(activeEmitter).send(any(SseEmitter.SseEventBuilder.class));
         assertThat(connectionManager.connectionCount(receiverId)).isEqualTo(1);
     }
