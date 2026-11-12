@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
+import org.springframework.data.redis.cache.RedisCacheWriter;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
@@ -30,7 +31,11 @@ public class CacheConfig {
                 .prefixCacheNameWith(CacheNames.KEY_PREFIX)
                 .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(redisSerializer));
 
-        RedisCacheManager.RedisCacheManagerBuilder builder = RedisCacheManager.builder(connectionFactory)
+        RedisCacheWriter cacheWriter = RedisCacheWriter.create(connectionFactory,
+                configurer -> configurer.immediateWrites());
+
+        RedisCacheManager.RedisCacheManagerBuilder builder = RedisCacheManager.RedisCacheManagerBuilder
+                .fromCacheWriter(cacheWriter)
                 .cacheDefaults(defaults)
                 .transactionAware();
 

@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.annotation.Bean;
@@ -15,6 +17,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -26,14 +30,18 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(classes = Sb13OtbooTeam03Application.class)
+@SpringBootTest(
+        classes = Sb13OtbooTeam03Application.class,
+        properties = "otboo.cache.ttls.cache-infra-short-ttl=20s"
+)
 @ActiveProfiles("test")
 @Testcontainers
 @Import(CacheConfigIntegrationTest.TestCacheConfiguration.class)
 class CacheConfigIntegrationTest {
 
     private static final String CACHE_NAME = "cache-infra-test";
-    private static final String CACHE_KEY_PREFIX = "otboo:cache:cache-infra-test::";
+    private static final String SHORT_TTL_CACHE_NAME = "cache-infra-short-ttl";
+    private static final String CACHE_KEY_PREFIX = CacheNames.KEY_PREFIX + CACHE_NAME + "::";
 
     @Container
     static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17-alpine");
@@ -56,9 +64,15 @@ class CacheConfigIntegrationTest {
     @Autowired
     private StringRedisTemplate redisTemplate;
 
+    @Autowired
+    private CacheManager cacheManager;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
     @BeforeEach
     void setUp() {
-        Set<String> keys = redisTemplate.keys(CACHE_KEY_PREFIX + "*");
+        Set<String> keys = redisTemplate.keys(CacheNames.KEY_PREFIX + "cache-infra-*");
         if (keys != null && !keys.isEmpty()) {
             redisTemplate.delete(keys);
         }
@@ -101,8 +115,8 @@ class CacheConfigIntegrationTest {
         // given
         String key = "item-1";
         CachedValue first = cacheService.get(key);
-        cacheService.get(key);
 
+        assertThat(cacheService.get(key)).isEqualTo(first);
         assertThat(cacheService.executionCount()).isEqualTo(1);
 
         // when
@@ -112,6 +126,85 @@ class CacheConfigIntegrationTest {
         // then
         assertThat(second).isNotEqualTo(first);
         assertThat(cacheService.executionCount()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("캐시별로 설정한 TTL이 기본 TTL보다 우선 적용된다")
+    void get_customCache_usesConfiguredTtl() {
+        // given
+        String key = "item-1";
+        String redisKey = CacheNames.KEY_PREFIX + SHORT_TTL_CACHE_NAME + "::" + key;
+        Cache cache = cacheManager.getCache(SHORT_TTL_CACHE_NAME);
+        assertThat(cache).isNotNull();
+
+        // when
+        cache.put(key, new CachedValue(key, 1));
+
+        // then
+        assertThat(redisTemplate.hasKey(redisKey)).isTrue();
+        assertThat(redisTemplate.getExpire(redisKey, TimeUnit.SECONDS)).isBetween(1L, 20L);
+    }
+
+    @Test
+    @DisplayName("트랜잭션 커밋 이후 캐시 무효화가 반영된다")
+    void evict_transactionCommitted_invalidatesCache() {
+        // given
+        Cache cache = cacheManager.getCache(CACHE_NAME);
+        assertThat(cache).isNotNull();
+
+        String key = "item-1";
+        CachedValue value = new CachedValue(key, 1);
+        cache.put(key, value);
+
+        // when
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            cache.evict(key);
+            assertThat(cache.get(key, CachedValue.class)).isEqualTo(value);
+        });
+
+        // then
+        assertThat(cache.get(key)).isNull();
+    }
+
+    @Test
+    @DisplayName("트랜잭션 롤백 시 캐시 무효화가 반영되지 않는다")
+    void evict_transactionRolledBack_preservesCache() {
+        // given
+        Cache cache = cacheManager.getCache(CACHE_NAME);
+        assertThat(cache).isNotNull();
+
+        String key = "item-1";
+        CachedValue value = new CachedValue(key, 1);
+        cache.put(key, value);
+
+        // when
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            cache.evict(key);
+            status.setRollbackOnly();
+        });
+
+        // then
+        assertThat(cache.get(key, CachedValue.class)).isEqualTo(value);
+    }
+
+    @Test
+    @DisplayName("트랜잭션 커밋 이후 캐시 저장이 반영된다")
+    void put_transactionCommitted_storesCache() {
+        // given
+        Cache cache = cacheManager.getCache(CACHE_NAME);
+        assertThat(cache).isNotNull();
+
+        String key = "item-1";
+        CachedValue value = new CachedValue(key, 1);
+
+        // when
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            cache.put(key, value);
+            assertThat(cache.get(key)).isNull();
+        });
+
+        // then
+        assertThat(cache.get(key, CachedValue.class)).isEqualTo(value);
     }
 
     @TestConfiguration(proxyBeanMethods = false)
