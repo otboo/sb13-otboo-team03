@@ -18,8 +18,11 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class OutboxEventServiceTest {
@@ -84,10 +87,32 @@ class OutboxEventServiceTest {
     }
 
     @Test
+    void aggregateType이_null이면_저장하지_않는다() {
+        NotificationEvent event = event();
+
+        assertThatThrownBy(() -> outboxEventService.publish(event, null, "partition-key"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("aggregateType은 필수입니다.");
+
+        verify(outboxEventRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void partitionKey가_비어_있으면_저장하지_않는다() {
         NotificationEvent event = event();
 
         assertThatThrownBy(() -> outboxEventService.publish(event, "USER", ""))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("partitionKey은 필수입니다.");
+
+        verify(outboxEventRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void partitionKey가_null이면_저장하지_않는다() {
+        NotificationEvent event = event();
+
+        assertThatThrownBy(() -> outboxEventService.publish(event, "USER", null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("partitionKey은 필수입니다.");
 
@@ -113,6 +138,43 @@ class OutboxEventServiceTest {
         assertThatThrownBy(() -> outboxEventService.publish(event, "USER", "partition-key"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("schemaVersion은 0 이상 32767 이하여야 합니다.");
+
+        verify(outboxEventRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void schemaVersion이_음수이면_저장하지_않는다() {
+        NotificationEvent event = new NotificationEvent(
+                UUID.randomUUID(),
+                NotificationEventType.USER_ROLE_CHANGED,
+                -1,
+                Instant.now(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                null,
+                null,
+                "권한 변경",
+                "내용",
+                NotificationLevel.INFO
+        );
+
+        assertThatThrownBy(() -> outboxEventService.publish(event, "USER", "partition-key"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("schemaVersion은 0 이상 32767 이하여야 합니다.");
+
+        verify(outboxEventRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void payload_변환에_실패하면_저장하지_않는다() throws Exception {
+        ObjectMapper failingObjectMapper = mock(ObjectMapper.class);
+        when(failingObjectMapper.writeValueAsString(any(NotificationEvent.class)))
+                .thenThrow(new IllegalStateException("serialize failed"));
+        OutboxEventService service = new OutboxEventService(outboxEventRepository, failingObjectMapper);
+
+        assertThatThrownBy(() -> service.publish(event(), "USER", "partition-key"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("알림 이벤트 payload 변환에 실패했습니다.");
 
         verify(outboxEventRepository, never()).save(org.mockito.ArgumentMatchers.any());
     }
