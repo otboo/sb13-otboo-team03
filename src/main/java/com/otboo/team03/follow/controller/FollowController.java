@@ -91,4 +91,31 @@ public class FollowController {
 
     return ResponseEntity.ok(response);
   }
+
+  @GetMapping("/followings")
+  public ResponseEntity<CursorResponse<FollowDto>> getFollowings(
+      @RequestParam UUID followerId,
+      @RequestParam int limit,
+      @RequestParam(required = false) String cursor,
+      @RequestParam(required = false) UUID idAfter,
+      @RequestParam(required = false) String nameLike,
+      Authentication authentication
+  ) {
+    if (authentication == null
+        || !authentication.isAuthenticated()
+        || !(authentication.getPrincipal()
+        instanceof OtbooUserDetails)) {
+      throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
+    }
+
+    CursorResponse<FollowDto> response = followService.getFollowings(
+        followerId,
+        limit,
+        cursor,
+        idAfter,
+        nameLike
+    );
+
+    return ResponseEntity.ok(response);
+  }
 }
