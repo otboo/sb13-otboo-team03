@@ -224,4 +224,63 @@ public class FollowService {
         "DESCENDING"
     );
   }
+
+  @Transactional(readOnly = true)
+  public CursorResponse<FollowDto> getFollowings(
+      UUID followerId,
+      int limit,
+      String cursor,
+      UUID idAfter,
+      String nameLike
+  ) {
+    if (followerId == null
+        || limit <= 0
+        || limit == Integer.MAX_VALUE) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if (cursor != null
+        || idAfter != null
+        || (nameLike != null && !nameLike.isBlank())) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    List<Follow> fetched =
+        followRepository.findByFollowerIdOrderByCreatedAtDescIdDesc(
+            followerId,
+            PageRequest.of(0, limit + 1)
+        );
+
+    boolean hasNext = fetched.size() > limit;
+
+    List<Follow> page = hasNext
+        ? fetched.subList(0, limit)
+        : fetched;
+
+    List<FollowDto> data = page.isEmpty()
+        ? List.of()
+        : followDtoAssembler.toDtos(page);
+
+    String nextCursor = null;
+    UUID nextIdAfter = null;
+
+    if (hasNext) {
+      Follow lastFollow = page.get(page.size() - 1);
+
+      nextCursor = lastFollow.getCreatedAt().toString();
+      nextIdAfter = lastFollow.getId();
+    }
+
+    long totalCount = followRepository.countByFollowerId(followerId);
+
+    return new CursorResponse<>(
+        data,
+        nextCursor,
+        nextIdAfter,
+        hasNext,
+        totalCount,
+        "createdAt",
+        "DESCENDING"
+    );
+  }
 }

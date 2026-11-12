@@ -23,6 +23,13 @@ public interface FollowRepository extends JpaRepository<Follow, UUID> {
 
   long countByFolloweeId(UUID followeeId);
 
+  List<Follow> findByFollowerIdOrderByCreatedAtDescIdDesc(
+      UUID followerId,
+      Pageable pageable
+  );
+
+  long countByFollowerId(UUID followerId);
+
   @Query("""
       SELECT f
       FROM Follow f, User u
