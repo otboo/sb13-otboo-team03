@@ -854,4 +854,66 @@ class FollowServiceTest {
         userRepository
     );
   }
+
+  @Test
+  void 팔로잉_첫_페이지_조회시_다음_커서와_전체_건수를_반환한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID firstFollowId = UUID.randomUUID();
+    UUID secondFollowId = UUID.randomUUID();
+
+    Instant createdAt = Instant.parse("2026-11-12T01:00:00Z");
+
+    Follow first = mock(Follow.class);
+    Follow second = mock(Follow.class);
+    Follow extra = mock(Follow.class);
+
+    FollowDto firstDto = new FollowDto(
+        firstFollowId,
+        new UserSummary(UUID.randomUUID(), "첫 번째 팔로잉", null),
+        new UserSummary(followerId, "나", null)
+    );
+
+    FollowDto secondDto = new FollowDto(
+        secondFollowId,
+        new UserSummary(UUID.randomUUID(), "두 번째 팔로잉", null),
+        new UserSummary(followerId, "나", null)
+    );
+
+    when(followRepository.findByFollowerIdOrderByCreatedAtDescIdDesc(
+        followerId,
+        PageRequest.of(0, 3)
+    )).thenReturn(List.of(first, second, extra));
+
+    when(followRepository.countByFollowerId(followerId))
+        .thenReturn(5L);
+
+    when(followDtoAssembler.toDtos(List.of(first, second)))
+        .thenReturn(List.of(firstDto, secondDto));
+
+    when(second.getId()).thenReturn(secondFollowId);
+    when(second.getCreatedAt()).thenReturn(createdAt);
+
+    // when
+    CursorResponse<FollowDto> result = followService.getFollowings(
+        followerId, 2, null, null, null
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(List.of(firstDto, secondDto), result.data()),
+        () -> assertEquals("첫 번째 팔로잉",
+            result.data().get(0).followee().name()),
+        () -> assertEquals("두 번째 팔로잉",
+            result.data().get(1).followee().name()),
+        () -> assertTrue(result.hasNext()),
+        () -> assertEquals(createdAt.toString(), result.nextCursor()),
+        () -> assertEquals(secondFollowId, result.nextIdAfter()),
+        () -> assertEquals(5L, result.totalCount()),
+        () -> assertEquals("createdAt", result.sortBy()),
+        () -> assertEquals("DESCENDING", result.sortDirection())
+    );
+
+    verify(followDtoAssembler).toDtos(List.of(first, second));
+  }
 }
