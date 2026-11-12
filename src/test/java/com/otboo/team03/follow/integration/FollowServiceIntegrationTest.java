@@ -683,4 +683,59 @@ class FollowServiceIntegrationTest extends PostgresTestSupport {
         )
     );
   }
+
+  @Test
+  void 팔로잉_목록_크기가_증가해도_SQL_조회_횟수는_일정하다() {
+    // given
+    User follower = createUser("나");
+
+    for (int i = 0; i < 5; i++) {
+      User followee = createUser("팔로잉 대상 " + i);
+
+      followRepository.saveAndFlush(
+          new Follow(follower.getId(), followee.getId())
+      );
+    }
+
+    entityManager.clear();
+
+    SessionFactory sessionFactory = entityManager
+        .getEntityManagerFactory()
+        .unwrap(SessionFactory.class);
+
+    Statistics statistics = sessionFactory.getStatistics();
+    boolean previousEnabled = statistics.isStatisticsEnabled();
+
+    statistics.setStatisticsEnabled(true);
+
+    try {
+      // when
+      statistics.clear();
+
+      CursorResponse<FollowDto> smallPage = followService.getFollowings(
+          follower.getId(), 2, null, null, null
+      );
+
+      long smallPageQueries = statistics.getPrepareStatementCount();
+
+      entityManager.clear();
+      statistics.clear();
+
+      CursorResponse<FollowDto> largePage = followService.getFollowings(
+          follower.getId(), 5, null, null, null
+      );
+
+      long largePageQueries = statistics.getPrepareStatementCount();
+
+      // then
+      assertAll(
+          () -> assertEquals(2, smallPage.data().size()),
+          () -> assertEquals(5, largePage.data().size()),
+          () -> assertEquals(smallPageQueries, largePageQueries),
+          () -> assertEquals(4L, largePageQueries)
+      );
+    } finally {
+      statistics.setStatisticsEnabled(previousEnabled);
+    }
+  }
 }
