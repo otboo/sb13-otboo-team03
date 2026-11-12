@@ -17,6 +17,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.security.authentication.AuthenticationServiceException;
+import org.springframework.security.authentication.LockedException;
 
 import java.util.Optional;
 
@@ -142,6 +143,62 @@ class PasswordAuthenticationFlowTest {
             // when & then
             assertThatThrownBy(() -> authenticate(TEMPORARY_PASSWORD))
                     .isInstanceOf(AuthenticationServiceException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("계정 잠금 및 잘못된 임시 비밀번호")
+    class AuthenticationFailureTest {
+
+        @Test
+        @DisplayName("잠긴 계정은 기존 비밀번호로 로그인할 수 없다")
+        void authenticate_lockedAccount_rejectsOriginalPassword() {
+            // given
+            User user = new User(EMAIL, passwordEncoder.encode(ORIGINAL_PASSWORD), "테스트 사용자");
+            user.changeLocked(true);
+
+            when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+
+            // when & then
+            assertThatThrownBy(() -> authenticate(ORIGINAL_PASSWORD))
+                    .isInstanceOf(LockedException.class);
+
+            verifyNoInteractions(temporaryPasswordRepository);
+        }
+
+        @Test
+        @DisplayName("잠긴 계정은 임시 비밀번호로 로그인할 수 없고 임시 비밀번호를 소모하지 않는다")
+        void authenticate_lockedAccount_doesNotConsumeTemporaryPassword() {
+            // given
+            User user = new User(EMAIL, passwordEncoder.encode(ORIGINAL_PASSWORD), "테스트 사용자");
+            user.changeLocked(true);
+
+            when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+
+            // when & then
+            assertThatThrownBy(() -> authenticate(TEMPORARY_PASSWORD))
+                    .isInstanceOf(LockedException.class);
+
+            verifyNoInteractions(temporaryPasswordRepository);
+        }
+
+        @Test
+        @DisplayName("틀린 임시 비밀번호를 입력하면 인증에 실패하고 임시 비밀번호를 소모하지 않는다")
+        void authenticate_wrongTemporaryPassword_doesNotConsumeTemporaryPassword() {
+            // given
+            givenUser();
+
+            String encodedTemporaryPassword = passwordEncoder.encode(TEMPORARY_PASSWORD);
+
+            when(temporaryPasswordRepository.findByEmail(EMAIL))
+                    .thenReturn(Optional.of(encodedTemporaryPassword));
+
+            // when & then
+            assertThatThrownBy(() -> authenticate("wrongPassword123!"))
+                    .isInstanceOf(BadCredentialsException.class);
+
+            verify(temporaryPasswordRepository).findByEmail(EMAIL);
+            verify(temporaryPasswordRepository, never()).consumeIfMatches(anyString(), anyString());
         }
     }
 
