@@ -3,6 +3,7 @@ package com.otboo.team03.notification.sse;
 import com.otboo.team03.notification.dto.response.NotificationDto;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -54,14 +55,51 @@ public class SseConnectionManager {
                         .name(NOTIFICATION_EVENT_NAME)
                         .data(notification));
             } catch (IOException exception) {
-                log.warn("SSE 알림 전송에 실패했습니다. receiverId={}", receiverId, exception);
-                remove(receiverId, emitter);
+                handleSendFailure(receiverId, emitter, exception,
+                        "SSE 알림 전송에 실패했습니다.");
             } catch (IllegalStateException exception) {
-                log.warn("SSE 연결이 종료된 상태입니다. receiverId={}", receiverId, exception);
-                remove(receiverId, emitter);
-                emitter.completeWithError(exception);
+                handleSendFailure(receiverId, emitter, exception,
+                        "SSE 연결이 종료된 상태입니다.");
             }
         }
+    }
+
+    @Scheduled(fixedDelayString = "${scheduler.sse-heartbeat.fixed-delay:PT15S}")
+    public void sendHeartbeats() {
+        for (var entry : emitters.entrySet()) {
+            for (SseEmitter emitter : entry.getValue()) {
+                try {
+                    emitter.send(SseEmitter.event().comment("heartbeat"));
+                } catch (IOException exception) {
+                    handleSendFailure(entry.getKey(), emitter, exception,
+                            "SSE heartbeat 전송에 실패했습니다.");
+                } catch (IllegalStateException exception) {
+                    handleSendFailure(entry.getKey(), emitter, exception,
+                            "SSE heartbeat 전송 중 연결이 종료되었습니다.");
+                }
+            }
+        }
+    }
+
+    private void handleSendFailure(
+            UUID receiverId,
+            SseEmitter emitter,
+            RuntimeException exception,
+            String message
+    ) {
+        log.warn("{} receiverId={}", message, receiverId, exception);
+        remove(receiverId, emitter);
+        emitter.completeWithError(exception);
+    }
+
+    private void handleSendFailure(
+            UUID receiverId,
+            SseEmitter emitter,
+            IOException exception,
+            String message
+    ) {
+        log.warn("{} receiverId={}", message, receiverId, exception);
+        remove(receiverId, emitter);
     }
 
     private void remove(UUID receiverId, SseEmitter emitter) {

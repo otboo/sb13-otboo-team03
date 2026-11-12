@@ -40,6 +40,17 @@ class SseConnectionManagerTest {
     }
 
     @Test
+    void 연결된_모든_SSE에_heartbeat를_전송한다() throws Exception {
+        UUID receiverId = UUID.randomUUID();
+        SseEmitter emitter = mock(SseEmitter.class);
+        connectionManager.register(receiverId, emitter);
+
+        connectionManager.sendHeartbeats();
+
+        verify(emitter).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    @Test
     void 한_연결의_IllegalStateException이_다른_연결_전송을_중단시키지_않는다() throws Exception {
         UUID receiverId = UUID.randomUUID();
         SseEmitter failedEmitter = mock(SseEmitter.class);
