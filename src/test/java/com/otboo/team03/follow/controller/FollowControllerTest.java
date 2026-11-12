@@ -895,4 +895,57 @@ class FollowControllerTest {
 
     verifyNoInteractions(followService);
   }
+
+  @Test
+  void 인증되지_않은_Authentication_객체는_팔로잉_조회를_거부한다()
+      throws Exception {
+    // given
+    Authentication unauthenticated =
+        new UsernamePasswordAuthenticationToken(
+            authentication(followerId).getPrincipal(),
+            null
+        );
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/followings")
+            .principal(unauthenticated)
+            .param("followerId", followerId.toString())
+            .param("limit", "10")
+    );
+
+    // then
+    result.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    verifyNoInteractions(followService);
+  }
+
+  @Test
+  void 잘못된_Principal_타입은_팔로잉_조회를_거부한다()
+      throws Exception {
+    // given
+    Authentication invalidPrincipal =
+        new UsernamePasswordAuthenticationToken(
+            "invalid-principal",
+            null,
+            authentication(followerId).getAuthorities()
+        );
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/followings")
+            .principal(invalidPrincipal)
+            .param("followerId", followerId.toString())
+            .param("limit", "10")
+    );
+
+    // then
+    result.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    verifyNoInteractions(followService);
+  }
 }
