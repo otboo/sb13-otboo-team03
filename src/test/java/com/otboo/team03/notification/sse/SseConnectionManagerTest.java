@@ -87,9 +87,11 @@ class SseConnectionManagerTest {
 
     @Test
     void 연결이_없는_사용자에게는_전송하지_않는다() {
-        connectionManager.send(UUID.randomUUID(), notification(UUID.randomUUID()));
+        UUID receiverId = UUID.randomUUID();
 
-        assertThat(connectionManager.connectionCount(UUID.randomUUID())).isZero();
+        connectionManager.send(receiverId, notification(receiverId));
+
+        assertThat(connectionManager.connectionCount(receiverId)).isZero();
     }
 
     @Test
