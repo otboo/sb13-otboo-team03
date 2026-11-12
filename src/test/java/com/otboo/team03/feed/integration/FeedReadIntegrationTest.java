@@ -1,6 +1,7 @@
 package com.otboo.team03.feed.integration;
 
 import com.jayway.jsonpath.JsonPath;
+import com.otboo.team03.feed.repository.FeedBatchQueryRepository;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.security.jwt.JwtTokenProvider;
 import com.otboo.team03.user.entity.User;
@@ -15,6 +16,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.junit.jupiter.Container;
@@ -25,7 +27,8 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.UUID;
 
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -70,6 +73,9 @@ class FeedReadIntegrationTest {
 
   @MockitoBean
   private JwtRegistry jwtRegistry;
+
+  @MockitoSpyBean
+  private FeedBatchQueryRepository batchQueryRepository;
 
   @Test
   void 피드를_생성일시_내림차순으로_첫_페이지_조회한다()
@@ -1854,5 +1860,91 @@ class FeedReadIntegrationTest {
         userId,
         Timestamp.from(Instant.now())
     );
+  }
+
+  @Test
+  void 피드_목록_크기가_증가해도_일괄_조회_횟수는_일정하다()
+      throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "피드 작성자"
+        )
+    );
+
+    UUID weatherId = UUID.randomUUID();
+    insertWeather(weatherId);
+
+    Instant baseTime =
+        Instant.parse("2026-11-10T01:00:00Z");
+
+    for (int i = 0; i < 5; i++) {
+      insertFeed(
+          author.getId(),
+          weatherId,
+          "피드 " + i,
+          baseTime.plusSeconds(i)
+      );
+    }
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    clearInvocations(batchQueryRepository);
+
+    // when
+    mockMvc.perform(
+            get("/api/feeds")
+                .header("Authorization", "Bearer " + accessToken)
+                .param("limit", "2")
+                .param("sortBy", "createdAt")
+                .param("sortDirection", "DESCENDING")
+        )
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2));
+
+    long smallPageCalls = mockingDetails(batchQueryRepository)
+        .getInvocations()
+        .stream()
+        .filter(invocation ->
+            invocation.getMethod().getName().startsWith("find"))
+        .count();
+
+    clearInvocations(batchQueryRepository);
+
+    mockMvc.perform(
+            get("/api/feeds")
+                .header("Authorization", "Bearer " + accessToken)
+                .param("limit", "5")
+                .param("sortBy", "createdAt")
+                .param("sortDirection", "DESCENDING")
+        )
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(5));
+
+    long largePageCalls = mockingDetails(batchQueryRepository)
+        .getInvocations()
+        .stream()
+        .filter(invocation ->
+            invocation.getMethod().getName().startsWith("find"))
+        .count();
+
+    // then
+    assertEquals(6L, smallPageCalls);
+    assertEquals(6L, largePageCalls);
+
+    verify(batchQueryRepository).findAuthors(anySet());
+    verify(batchQueryRepository).findWeathers(anySet());
+    verify(batchQueryRepository).findCounts(anySet());
+    verify(batchQueryRepository).findLikedFeedIds(
+        anySet(), eq(author.getId())
+    );
+    verify(batchQueryRepository).findClothes(anySet());
+    verify(batchQueryRepository).findClothesAttributes(anySet());
   }
 }

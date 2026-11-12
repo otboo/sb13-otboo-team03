@@ -21,6 +21,7 @@ import com.otboo.team03.feed.repository.FeedClothesRepository;
 import com.otboo.team03.feed.repository.FeedCommentRepository;
 import com.otboo.team03.feed.repository.FeedLikeRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
+import com.otboo.team03.feed.repository.FeedSearchQueryRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
@@ -73,6 +74,9 @@ class FeedServiceTest {
 
   @Mock
   private FeedCommentRepository feedCommentRepository;
+
+  @Mock
+  private FeedSearchQueryRepository feedSearchQueryRepository;
 
   @Test
   void 피드_생성시_의상을_연결하고_FeedDto를_반환한다() {
@@ -902,11 +906,9 @@ class FeedServiceTest {
     when(feedCommentRepository.countByFeedId(feedId))
         .thenReturn(3L);
 
-    when(feedDtoAssembler.toCommentDto(firstComment))
-        .thenReturn(firstDto);
-
-    when(feedDtoAssembler.toCommentDto(secondComment))
-        .thenReturn(secondDto);
+    when(feedDtoAssembler.toCommentDtos(
+        List.of(firstComment, secondComment)
+    )).thenReturn(List.of(firstDto, secondDto));
 
     when(secondComment.getCreatedAt())
         .thenReturn(secondTime);
@@ -939,7 +941,12 @@ class FeedServiceTest {
             PageRequest.of(0, 3)
         );
 
-    verify(feedDtoAssembler, never()).toCommentDto(thirdComment);
+    verify(feedDtoAssembler).toCommentDtos(
+        List.of(firstComment, secondComment)
+    );
+
+    verify(feedDtoAssembler, never())
+        .toCommentDto(any(FeedComment.class));
   }
 
   @Test
@@ -993,11 +1000,9 @@ class FeedServiceTest {
     when(feedCommentRepository.countByFeedId(feedId))
         .thenReturn(5L);
 
-    when(feedDtoAssembler.toCommentDto(firstComment))
-        .thenReturn(firstDto);
-
-    when(feedDtoAssembler.toCommentDto(secondComment))
-        .thenReturn(secondDto);
+    when(feedDtoAssembler.toCommentDtos(
+        List.of(firstComment, secondComment)
+    )).thenReturn(List.of(firstDto, secondDto));
 
     when(secondComment.getCreatedAt())
         .thenReturn(secondTime);
@@ -1037,8 +1042,12 @@ class FeedServiceTest {
             any(PageRequest.class)
         );
 
+    verify(feedDtoAssembler).toCommentDtos(
+        List.of(firstComment, secondComment)
+    );
+
     verify(feedDtoAssembler, never())
-        .toCommentDto(thirdComment);
+        .toCommentDto(any(FeedComment.class));
   }
 
   @Test
@@ -1068,8 +1077,9 @@ class FeedServiceTest {
         feedId, cursorTime, idAfter, 3
     )).thenReturn(List.of(comment));
 
-    when(feedDtoAssembler.toCommentDto(comment))
-        .thenReturn(expectedDto);
+    when(feedDtoAssembler.toCommentDtos(
+        List.of(comment)
+    )).thenReturn(List.of(expectedDto));
 
     when(feedCommentRepository.countByFeedId(feedId))
         .thenReturn(3L);
@@ -1235,5 +1245,148 @@ class FeedServiceTest {
 
     verifyNoInteractions(feedCommentRepository);
     verifyNoInteractions(feedDtoAssembler);
+  }
+
+  @Test
+  void 피드_목록_조회시_단건_DTO_변환을_반복하지_않는다() {
+    // given
+    UUID viewerId = UUID.randomUUID();
+    UUID secondFeedId = UUID.randomUUID();
+
+    Instant createdAt =
+        Instant.parse("2026-11-10T01:00:00Z");
+
+    Feed first = mock(Feed.class);
+    Feed second = mock(Feed.class);
+    Feed extra = mock(Feed.class);
+
+    when(feedSearchQueryRepository.findByFilters(
+        null,
+        null,
+        null,
+        null,
+        "createdAt",
+        "DESCENDING",
+        null,
+        null,
+        null,
+        3
+    )).thenReturn(List.of(first, second, extra));
+
+    when(feedSearchQueryRepository.countByFilters(
+        null, null, null, null
+    )).thenReturn(3L);
+
+    when(second.getId()).thenReturn(secondFeedId);
+    when(second.getCreatedAt()).thenReturn(createdAt);
+
+    FeedDto firstDto = mock(FeedDto.class);
+    FeedDto secondDto = mock(FeedDto.class);
+
+    when(feedDtoAssembler.toDtos(
+        List.of(first, second),
+        viewerId
+    )).thenReturn(List.of(firstDto, secondDto));
+
+    // when
+    CursorResponse<FeedDto> result = feedService.getFeedList(
+        2,
+        "createdAt",
+        "DESCENDING",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        viewerId
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(
+            List.of(firstDto, secondDto),
+            result.data()
+        ),
+        () -> assertTrue(result.hasNext()),
+        () -> assertEquals(3L, result.totalCount()),
+        () -> assertEquals(createdAt.toString(), result.nextCursor()),
+        () -> assertEquals(secondFeedId, result.nextIdAfter())
+    );
+
+    verify(feedDtoAssembler).toDtos(
+        List.of(first, second),
+        viewerId
+    );
+
+    verify(feedDtoAssembler, never()).toDto(
+        any(Feed.class),
+        eq(viewerId)
+    );
+  }
+
+  @Test
+  void 댓글_목록_조회시_단건_DTO_변환을_반복하지_않는다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID secondCommentId = UUID.randomUUID();
+
+    Instant createdAt =
+        Instant.parse("2026-11-10T01:00:00Z");
+
+    FeedComment first = mock(FeedComment.class);
+    FeedComment second = mock(FeedComment.class);
+    FeedComment extra = mock(FeedComment.class);
+
+    CommentDto firstDto = mock(CommentDto.class);
+    CommentDto secondDto = mock(CommentDto.class);
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    when(feedCommentRepository.findByFeedIdOrderByCreatedAtDescIdDesc(
+        feedId,
+        PageRequest.of(0, 3)
+    )).thenReturn(List.of(first, second, extra));
+
+    when(feedCommentRepository.countByFeedId(feedId))
+        .thenReturn(3L);
+
+    when(second.getId())
+        .thenReturn(secondCommentId);
+
+    when(second.getCreatedAt())
+        .thenReturn(createdAt);
+
+    when(feedDtoAssembler.toCommentDtos(
+        List.of(first, second)
+    )).thenReturn(List.of(firstDto, secondDto));
+
+    // when
+    CursorResponse<CommentDto> result = feedService.getFeedComments(
+        feedId,
+        2,
+        null,
+        null
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(
+            List.of(firstDto, secondDto),
+            result.data()
+        ),
+        () -> assertTrue(result.hasNext()),
+        () -> assertEquals(3L, result.totalCount()),
+        () -> assertEquals(createdAt.toString(), result.nextCursor()),
+        () -> assertEquals(secondCommentId, result.nextIdAfter())
+    );
+
+    verify(feedDtoAssembler).toCommentDtos(
+        List.of(first, second)
+    );
+
+    verify(feedDtoAssembler, never())
+        .toCommentDto(any(FeedComment.class));
   }
 }

@@ -211,6 +211,27 @@ class ClothesServiceTest {
     }
 
     @Test
+    @DisplayName("이미 조회한 의상과 속성을 DB 접근 없이 DTO로 변환한다")
+    void toClothesDtoDoesNotAccessRepositories() {
+        UUID clothesId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        UUID definitionId = UUID.randomUUID();
+        Clothes clothes = new Clothes("검정 상의", ClothesType.TOP, "https://example.com/top.png", owner(ownerId));
+        ReflectionTestUtils.setField(clothes, "id", clothesId);
+        var definition = new ClothesAttributeDefinition("색상", List.of("검정", "흰색"));
+        ReflectionTestUtils.setField(definition, "id", definitionId);
+        var attribute = new ClothesAttribute(clothes, definition, "검정");
+
+        ClothesDto result = clothesService.toClothesDto(clothes, List.of(attribute));
+
+        assertThat(result).isEqualTo(new ClothesDto(clothesId, ownerId, "검정 상의",
+                "https://example.com/top.png", ClothesType.TOP,
+                List.of(new ClothesAttributeWithDefDto(definitionId, "색상", List.of("검정", "흰색"), "검정"))));
+        verifyNoInteractions(clothesRepository, clothesAttributeRepository,
+                clothesAttributeDefinitionRepository, userRepository);
+    }
+
+    @Test
     @DisplayName("없는 의상을 조회하면 NOT_FOUND_CLOTHES 예외가 발생한다")
     void findByIdWhenMissing() {
         // given: Optional.empty는 조회된 의상이 없는 상황이다.
