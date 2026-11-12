@@ -3,6 +3,9 @@ package com.otboo.team03.user.service;
 import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.dto.CursorResponse;
+import com.otboo.team03.notification.event.NotificationEvent;
+import com.otboo.team03.notification.event.NotificationEventType;
+import com.otboo.team03.notification.outbox.service.OutboxEventPublisher;
 import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
 import com.otboo.team03.user.dto.request.UserListRequest;
@@ -61,6 +64,9 @@ class UserServiceTest {
 
     @Mock
     private RedisTemporaryPasswordRepository temporaryPasswordRepository;
+
+    @Mock
+    private OutboxEventPublisher outboxEventPublisher;
 
     @InjectMocks
     private UserService userService;
@@ -161,6 +167,15 @@ class UserServiceTest {
             assertThat(result.name()).isEqualTo(user.getName());
             verify(userRepository).findById(userId);
             verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+            verify(outboxEventPublisher).publish(
+                    argThat(event -> event.eventType() == NotificationEventType.USER_ROLE_CHANGED
+                            && event.aggregateId().equals(userId)
+                            && event.receiverId().equals(userId)
+                            && event.actorId() != null
+                            && event.relatedId().equals(userId)),
+                    eq("USER"),
+                    eq(userId.toString())
+            );
         }
 
         @Test
@@ -196,6 +211,9 @@ class UserServiceTest {
             verify(userRepository).findById(userId);
             verify(userRepository, never()).save(any(User.class));
             verify(jwtRegistry, never()).invalidateJwtInformationByUserId(userId);
+            verify(outboxEventPublisher, never()).publish(
+                    any(NotificationEvent.class), anyString(), anyString()
+            );
             assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
         }
 
@@ -401,6 +419,9 @@ class UserServiceTest {
             assertThat(user.getPassword()).isEqualTo("encodedNewPassword");
             verify(passwordEncoder).encode(newPassword);
             verify(userRepository).findById(userId);
+            verify(outboxEventPublisher, never()).publish(
+                    any(NotificationEvent.class), anyString(), anyString()
+            );
         }
 
         @Test
