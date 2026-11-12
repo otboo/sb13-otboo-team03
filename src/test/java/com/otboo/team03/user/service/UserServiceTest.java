@@ -496,6 +496,31 @@ class UserServiceTest {
             verify(temporaryPasswordRepository).delete(user.getEmail());
             verify(jwtRegistry).invalidateJwtInformationByUserId(userId);
         }
+
+        @Test
+        @DisplayName("임시 비밀번호 삭제 실패 시에도 JWT 세션을 무효화한다")
+        void changePassword_afterCommit_temporaryPasswordDeleteFailure() {
+            // given
+            UUID userId = UUID.randomUUID();
+            User user = new User("user@example.com", "encodedOldPassword", "일반 사용자");
+
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+            when(passwordEncoder.encode("newPassword123!")).thenReturn("encodedNewPassword");
+
+            doThrow(new RedisConnectionFailureException("Redis 연결 실패"))
+                    .when(temporaryPasswordRepository).delete(user.getEmail());
+
+            // when
+            userService.changePassword(userId, "newPassword123!");
+
+            // then
+            assertThatCode(() -> TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit))
+                    .doesNotThrowAnyException();
+
+            verify(temporaryPasswordRepository).delete(user.getEmail());
+            verify(jwtRegistry).invalidateJwtInformationByUserId(userId);
+        }
     }
 
     @Nested

@@ -1,5 +1,6 @@
 package com.otboo.team03.global.config;
 
+import com.otboo.team03.global.security.PasswordAuthenticationProvider;
 import com.otboo.team03.global.security.jwt.JwtAuthenticationFilter;
 import com.otboo.team03.global.security.jwt.JwtLoginFailureHandler;
 import com.otboo.team03.global.security.jwt.JwtLoginSuccessHandler;
@@ -32,6 +33,7 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                   PasswordAuthenticationProvider passwordAuthenticationProvider,
                                                    JwtLoginSuccessHandler jwtLoginSuccessHandler,
                                                    JwtLoginFailureHandler jwtLoginFailureHandler,
                                                    JwtLogoutHandler jwtLogoutHandler,
@@ -39,6 +41,7 @@ public class SecurityConfig {
                                                    AuthenticationEntryPoint authenticationEntryPoint,
                                                    AccessDeniedHandler accessDeniedHandler) throws Exception {
         http
+                .authenticationProvider(passwordAuthenticationProvider)
                 .csrf(csrf -> csrf.spa())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/actuator/health/readiness").permitAll()

@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.stereotype.Component;
@@ -26,7 +27,9 @@ public class JwtLoginFailureHandler implements AuthenticationFailureHandler {
                                         HttpServletResponse response,
                                         AuthenticationException exception) throws IOException {
 
-        ErrorCode errorCode = ErrorCode.AUTHENTICATION_FAILED;
+        ErrorCode errorCode = exception instanceof AuthenticationServiceException
+                ? ErrorCode.AUTHENTICATION_SERVICE_UNAVAILABLE
+                : ErrorCode.AUTHENTICATION_FAILED;
 
         response.setStatus(errorCode.getHttpStatus().value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);

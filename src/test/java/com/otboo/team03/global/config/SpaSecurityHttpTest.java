@@ -1,6 +1,7 @@
 package com.otboo.team03.global.config;
 
 import com.otboo.team03.global.security.OtbooUserDetailsService;
+import com.otboo.team03.global.security.PasswordAuthenticationProvider;
 import com.otboo.team03.global.security.jwt.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringBootConfiguration;
@@ -174,6 +175,9 @@ class SpaSecurityHttpTest {
         }
         @Bean AccessDeniedHandler deniedHandler() {
             return (request, response, exception) -> response.setStatus(403);
+        }
+        @Bean PasswordAuthenticationProvider passwordAuthenticationProvider() {
+            return mock(PasswordAuthenticationProvider.class);
         }
     }
 

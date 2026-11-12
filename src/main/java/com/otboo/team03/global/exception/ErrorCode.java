@@ -10,10 +10,12 @@ public enum ErrorCode {
     DUPLICATE_EMAIL(HttpStatus.BAD_REQUEST, "이미 사용 중인 이메일입니다."),
     NOT_FOUND_USER(HttpStatus.NOT_FOUND, "사용자가 존재하지 않습니다."),
     LAST_ADMIN_ROLE_CHANGE_FORBIDDEN(HttpStatus.CONFLICT, "마지막 관리자의 권한은 변경할 수 없습니다."),
+    PASSWORD_RESET_RATE_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "비밀번호 초기화 요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요."),
 
     // auth
     AUTHENTICATION_REQUIRED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
     AUTHENTICATION_FAILED(HttpStatus.UNAUTHORIZED, "인증에 실패했습니다."),
+    AUTHENTICATION_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "인증 서비스를 일시적으로 이용할 수 없습니다."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "접근 권한이 없습니다."),
 
     // jwt

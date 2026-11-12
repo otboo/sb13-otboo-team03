@@ -147,35 +147,39 @@ class AuthIntegrationTest {
             }
         }
 
-
         @Test
-        @DisplayName("임시 비밀번호 활성화 중 기존 비밀번호는 거부하고 임시 비밀번호로 로그인할 수 있다")
-        void login_withTemporaryPassword_acceptsOnlyTemporaryPassword() throws Exception {
+        @DisplayName("임시 비밀번호가 있어도 기존 비밀번호로 로그인할 수 있고, 임시 비밀번호는 한 번만 사용할 수 있다")
+        void login_withTemporaryPassword_allowsOriginalAndConsumesTemporaryOnce() throws Exception {
             // given
             String email = UUID.randomUUID() + "@example.com";
             String originalPassword = "password123!";
             String temporaryPassword = "temporary1!!";
 
-            User user = userRepository.saveAndFlush(new User(email, passwordEncoder.encode(originalPassword), "테스트 사용자"));
+            User user = userRepository.saveAndFlush(
+                    new User(email, passwordEncoder.encode(originalPassword), "테스트 사용자")
+            );
 
             try {
                 temporaryPasswordRepository.save(email, passwordEncoder.encode(temporaryPassword));
 
-                Cookie csrfCookie = mvc.perform(get("/api/auth/csrf-token"))
-                        .andExpect(status().isNoContent())
-                        .andReturn().getResponse().getCookie("XSRF-TOKEN");
+                // 기존 비밀번호 로그인 성공
+                Cookie csrfCookie = getCsrfCookie();
 
-                assertThat(csrfCookie).isNotNull();
-
-                // 기존 비밀번호 로그인 실패
                 mvc.perform(post("/api/auth/sign-in")
                                 .cookie(csrfCookie)
                                 .header("X-XSRF-TOKEN", csrfCookie.getValue())
                                 .param("username", email)
                                 .param("password", originalPassword))
-                        .andExpect(status().isUnauthorized());
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                        .andExpect(cookie().exists("REFRESH_TOKEN"));
 
-                // 임시 비밀번호 로그인 성공
+                // 기존 비밀번호 로그인은 임시 비밀번호를 소모하지 않는다.
+                assertThat(temporaryPasswordRepository.findByEmail(email)).isPresent();
+
+                // 임시 비밀번호 최초 로그인 성공
+                csrfCookie = getCsrfCookie();
+
                 mvc.perform(post("/api/auth/sign-in")
                                 .cookie(csrfCookie)
                                 .header("X-XSRF-TOKEN", csrfCookie.getValue())
@@ -184,6 +188,19 @@ class AuthIntegrationTest {
                         .andExpect(status().isOk())
                         .andExpect(jsonPath("$.accessToken").isNotEmpty())
                         .andExpect(cookie().exists("REFRESH_TOKEN"));
+
+                // 성공한 임시 비밀번호는 Redis에서 삭제된다.
+                assertThat(temporaryPasswordRepository.findByEmail(email)).isEmpty();
+
+                // 임시 비밀번호 재사용 시 로그인 실패
+                csrfCookie = getCsrfCookie();
+
+                mvc.perform(post("/api/auth/sign-in")
+                                .cookie(csrfCookie)
+                                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                                .param("username", email)
+                                .param("password", temporaryPassword))
+                        .andExpect(status().isUnauthorized());
 
             } finally {
                 temporaryPasswordRepository.delete(email);
@@ -452,15 +469,14 @@ class AuthIntegrationTest {
                                 """))
                     .andExpect(status().isBadRequest());
         }
-
-        private Cookie getCsrfCookie() throws Exception {
-            Cookie csrfCookie = mvc.perform(get("/api/auth/csrf-token"))
-                    .andExpect(status().isNoContent())
-                    .andReturn().getResponse().getCookie("XSRF-TOKEN");
-
-            assertThat(csrfCookie).isNotNull();
-            return csrfCookie;
-        }
     }
 
+    private Cookie getCsrfCookie() throws Exception {
+        Cookie csrfCookie = mvc.perform(get("/api/auth/csrf-token"))
+                .andExpect(status().isNoContent())
+                .andReturn().getResponse().getCookie("XSRF-TOKEN");
+
+        assertThat(csrfCookie).isNotNull();
+        return csrfCookie;
+    }
 }

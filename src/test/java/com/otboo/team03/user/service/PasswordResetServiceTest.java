@@ -1,8 +1,10 @@
 
 package com.otboo.team03.user.service;
 
+import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.exception.UserNotFoundException;
+import com.otboo.team03.user.repository.RedisPasswordResetRateLimitRepository;
 import com.otboo.team03.user.repository.RedisTemporaryPasswordRepository;
 import com.otboo.team03.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -38,6 +40,9 @@ class PasswordResetServiceTest {
     @Mock
     private MailService mailService;
 
+    @Mock
+    private RedisPasswordResetRateLimitRepository rateLimitRepository;
+
     @InjectMocks
     private PasswordResetService passwordResetService;
 
@@ -54,6 +59,7 @@ class PasswordResetServiceTest {
 
             when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
             when(passwordEncoder.encode(anyString())).thenReturn("encodedTemporaryPassword");
+            when(rateLimitRepository.tryAcquire(email)).thenReturn(Optional.of("token"));
 
             // when
             passwordResetService.resetPassword(email);
@@ -93,6 +99,7 @@ class PasswordResetServiceTest {
 
             when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
             when(passwordEncoder.encode(anyString())).thenReturn("encodedTemporaryPassword");
+            when(rateLimitRepository.tryAcquire(email)).thenReturn(Optional.of("token"));
 
             doThrow(new MailSendException("메일 발송 실패"))
                     .when(mailService).sendTemporaryPassword(eq(email), anyString());
@@ -103,27 +110,59 @@ class PasswordResetServiceTest {
 
             verify(temporaryPasswordRepository).save(email, "encodedTemporaryPassword");
             verify(temporaryPasswordRepository).delete(email);
+            verify(rateLimitRepository).release(email, "token");
         }
 
         @Test
-        @DisplayName("성공 - 재발급 시 임시 비밀번호를 새로 저장하고 이메일을 발송한다")
-        void resetPassword_reissue_replacesTemporaryPassword() {
+        @DisplayName("실패 - 동일 이메일로 연속 요청하면 재발급을 차단하고 이메일을 중복 발송하지 않는다")
+        void resetPassword_repeatedRequest_isRateLimited() {
             // given
             String email = "user@example.com";
             User user = new User(email, "encodedPassword", "일반 사용자");
 
             when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
-            when(passwordEncoder.encode(anyString()))
-                    .thenReturn("encodedFirstPassword", "encodedSecondPassword");
+            when(passwordEncoder.encode(anyString())).thenReturn("encodedTemporaryPassword");
+            when(rateLimitRepository.tryAcquire(email))
+                    .thenReturn(Optional.of("token"), Optional.empty());
 
             // when
             passwordResetService.resetPassword(email);
-            passwordResetService.resetPassword(email);
 
             // then
-            verify(temporaryPasswordRepository).save(email, "encodedFirstPassword");
-            verify(temporaryPasswordRepository).save(email, "encodedSecondPassword");
-            verify(mailService, times(2)).sendTemporaryPassword(eq(email), anyString());
+            assertThatThrownBy(() -> passwordResetService.resetPassword(email))
+                    .isInstanceOf(OtbooException.class);
+
+            verify(temporaryPasswordRepository).save(email, "encodedTemporaryPassword");
+            verify(mailService).sendTemporaryPassword(eq(email), anyString());
+        }
+
+        @Test
+        @DisplayName("실패 - 메일 발송과 정리 작업이 모두 실패해도 최초 예외를 보존한다")
+        void resetPassword_mailAndCleanupFailures_preservesOriginalException() {
+            // given
+            String email = "user@example.com";
+            User user = new User(email, "encodedPassword", "일반 사용자");
+
+            MailSendException mailException = new MailSendException("메일 발송 실패");
+            RuntimeException deleteException = new IllegalStateException("임시 비밀번호 삭제 실패");
+            RuntimeException releaseException = new IllegalStateException("요청 제한 해제 실패");
+
+            when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+            when(rateLimitRepository.tryAcquire(email)).thenReturn(Optional.of("token"));
+            when(passwordEncoder.encode(anyString())).thenReturn("encodedTemporaryPassword");
+
+            doThrow(mailException).when(mailService).sendTemporaryPassword(eq(email), anyString());
+            doThrow(deleteException).when(temporaryPasswordRepository).delete(email);
+            doThrow(releaseException).when(rateLimitRepository).release(email, "token");
+
+            // when & then
+            assertThatThrownBy(() -> passwordResetService.resetPassword(email))
+                    .isSameAs(mailException)
+                    .satisfies(exception -> assertThat(exception.getSuppressed())
+                            .containsExactly(deleteException, releaseException));
+
+            verify(temporaryPasswordRepository).delete(email);
+            verify(rateLimitRepository).release(email, "token");
         }
     }
 }
