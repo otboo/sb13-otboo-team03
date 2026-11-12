@@ -48,6 +48,21 @@ class SseConnectionManagerTest {
     }
 
     @Test
+    void 동일_사용자의_여러_SSE_연결에_알림을_전송한다() throws Exception {
+        UUID receiverId = UUID.randomUUID();
+        SseEmitter firstEmitter = mock(SseEmitter.class);
+        SseEmitter secondEmitter = mock(SseEmitter.class);
+        connectionManager.register(receiverId, firstEmitter);
+        connectionManager.register(receiverId, secondEmitter);
+
+        connectionManager.send(receiverId, notification(receiverId));
+
+        verify(firstEmitter).send(any(SseEmitter.SseEventBuilder.class));
+        verify(secondEmitter).send(any(SseEmitter.SseEventBuilder.class));
+        assertThat(connectionManager.connectionCount(receiverId)).isEqualTo(2);
+    }
+
+    @Test
     void 누락된_알림과_함께_SSE_연결을_등록한다() {
         UUID receiverId = UUID.randomUUID();
 
