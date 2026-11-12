@@ -1,8 +1,8 @@
 package com.otboo.team03.global.config;
 
+import com.otboo.team03.Sb13OtbooTeam03Application;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+@SpringBootTest(classes = Sb13OtbooTeam03Application.class)
 @ActiveProfiles("test")
 @Testcontainers
 @Import(CacheConfigIntegrationTest.TestCacheConfiguration.class)
@@ -65,63 +65,53 @@ class CacheConfigIntegrationTest {
         cacheService.reset();
     }
 
-    @Nested
-    @DisplayName("캐시 조회 및 저장")
-    class CacheReadTest {
+    @Test
+    @DisplayName("동일한 키를 재조회하면 캐시를 반환하고 원본 메서드는 한 번만 실행한다")
+    void get_sameKey_returnsCachedValue() {
+        // given
+        String key = "item-1";
 
-        @Test
-        @DisplayName("동일한 키를 재조회하면 캐시를 반환하고 원본 메서드는 한 번만 실행한다")
-        void get_sameKey_returnsCachedValue() {
-            // given
-            String key = "item-1";
+        // when
+        CachedValue first = cacheService.get(key);
+        CachedValue second = cacheService.get(key);
 
-            // when
-            CachedValue first = cacheService.get(key);
-            CachedValue second = cacheService.get(key);
-
-            // then
-            assertThat(second).isEqualTo(first);
-            assertThat(cacheService.executionCount()).isEqualTo(1);
-        }
-
-        @Test
-        @DisplayName("캐시 키에 공통 접두사와 기본 TTL 5분이 적용된다")
-        void get_cachedValue_usesPrefixAndDefaultTtl() {
-            // given
-            String key = "item-1";
-            String redisKey = CACHE_KEY_PREFIX + key;
-
-            // when
-            cacheService.get(key);
-
-            // then
-            assertThat(redisTemplate.hasKey(redisKey)).isTrue();
-            assertThat(redisTemplate.getExpire(redisKey, TimeUnit.SECONDS)).isBetween(1L, 300L);
-        }
+        // then
+        assertThat(second).isEqualTo(first);
+        assertThat(cacheService.executionCount()).isEqualTo(1);
     }
 
-    @Nested
-    @DisplayName("캐시 무효화")
-    class CacheEvictionTest {
+    @Test
+    @DisplayName("캐시 키에 공통 접두사와 기본 TTL 5분이 적용된다")
+    void get_cachedValue_usesPrefixAndDefaultTtl() {
+        // given
+        String key = "item-1";
+        String redisKey = CACHE_KEY_PREFIX + key;
 
-        @Test
-        @DisplayName("캐시 무효화 후 재조회하면 원본 메서드가 다시 실행된다")
-        void evict_existingCache_reloadsValue() {
-            // given
-            String key = "item-1";
-            CachedValue first = cacheService.get(key);
-            cacheService.get(key);
+        // when
+        cacheService.get(key);
 
-            assertThat(cacheService.executionCount()).isEqualTo(1);
+        // then
+        assertThat(redisTemplate.hasKey(redisKey)).isTrue();
+        assertThat(redisTemplate.getExpire(redisKey, TimeUnit.SECONDS)).isBetween(1L, 300L);
+    }
 
-            // when
-            cacheService.evict(key);
-            CachedValue second = cacheService.get(key);
+    @Test
+    @DisplayName("캐시 무효화 후 재조회하면 원본 메서드가 다시 실행된다")
+    void evict_existingCache_reloadsValue() {
+        // given
+        String key = "item-1";
+        CachedValue first = cacheService.get(key);
+        cacheService.get(key);
 
-            // then
-            assertThat(second).isNotEqualTo(first);
-            assertThat(cacheService.executionCount()).isEqualTo(2);
-        }
+        assertThat(cacheService.executionCount()).isEqualTo(1);
+
+        // when
+        cacheService.evict(key);
+        CachedValue second = cacheService.get(key);
+
+        // then
+        assertThat(second).isNotEqualTo(first);
+        assertThat(cacheService.executionCount()).isEqualTo(2);
     }
 
     @TestConfiguration(proxyBeanMethods = false)
