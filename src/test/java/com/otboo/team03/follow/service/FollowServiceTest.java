@@ -983,4 +983,67 @@ class FollowServiceTest {
             any(PageRequest.class)
         );
   }
+
+  @Test
+  void 팔로잉_이름_검색어가_공백이면_전체_목록을_조회한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+    UUID followId = UUID.randomUUID();
+
+    Follow follow = mock(Follow.class);
+
+    FollowDto followDto = new FollowDto(
+        followId,
+        new UserSummary(followeeId, "팔로우 대상", null),
+        new UserSummary(followerId, "나", null)
+    );
+
+    when(followRepository.findByFollowerIdOrderByCreatedAtDescIdDesc(
+        followerId,
+        PageRequest.of(0, 11)
+    )).thenReturn(List.of(follow));
+
+    when(followRepository.countByFollowerId(followerId))
+        .thenReturn(1L);
+
+    when(followDtoAssembler.toDtos(List.of(follow)))
+        .thenReturn(List.of(followDto));
+
+    // when
+    CursorResponse<FollowDto> result = followService.getFollowings(
+        followerId, 10, null, null, "   "
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(1, result.data().size()),
+        () -> assertEquals(followDto, result.data().get(0)),
+        () -> assertEquals(1L, result.totalCount()),
+        () -> assertFalse(result.hasNext()),
+        () -> assertNull(result.nextCursor()),
+        () -> assertNull(result.nextIdAfter())
+    );
+
+    verify(followRepository)
+        .findByFollowerIdOrderByCreatedAtDescIdDesc(
+            followerId,
+            PageRequest.of(0, 11)
+        );
+
+    verify(followRepository, never())
+        .findFollowingsByNameLike(
+            any(UUID.class),
+            anyString(),
+            any(PageRequest.class)
+        );
+
+    verify(followRepository, never())
+        .countFollowingsByNameLike(
+            any(UUID.class),
+            anyString()
+        );
+
+    verify(followDtoAssembler).toDtos(List.of(follow));
+  }
 }
