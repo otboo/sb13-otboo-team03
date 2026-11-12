@@ -458,4 +458,100 @@ class FollowServiceIntegrationTest extends PostgresTestSupport {
       statistics.setStatisticsEnabled(previousEnabled);
     }
   }
+
+  @Test
+  void 팔로잉_이름_검색과_커서_페이지네이션이_DB에서_동작한다() {
+    // given
+    User follower = createUser("나");
+    User otherFollower = createUser("다른 사용자");
+
+    User minsu = createUser("김민수");
+    User minji = createUser("이민지");
+    User seojun = createUser("박서준");
+    User minho = createUser("최민호");
+
+    followRepository.saveAndFlush(
+        new Follow(follower.getId(), minsu.getId())
+    );
+    followRepository.saveAndFlush(
+        new Follow(follower.getId(), minji.getId())
+    );
+    followRepository.saveAndFlush(
+        new Follow(follower.getId(), seojun.getId())
+    );
+    followRepository.saveAndFlush(
+        new Follow(follower.getId(), minho.getId())
+    );
+    followRepository.saveAndFlush(
+        new Follow(otherFollower.getId(), minsu.getId())
+    );
+
+    entityManager.clear();
+
+    // when
+    CursorResponse<FollowDto> firstPage = followService.getFollowings(
+        follower.getId(),
+        2,
+        null,
+        null,
+        "민"
+    );
+
+    CursorResponse<FollowDto> secondPage = followService.getFollowings(
+        follower.getId(),
+        2,
+        firstPage.nextCursor(),
+        firstPage.nextIdAfter(),
+        "민"
+    );
+
+    List<FollowDto> all = Stream.concat(
+        firstPage.data().stream(),
+        secondPage.data().stream()
+    ).toList();
+
+    Set<String> names = Set.copyOf(
+        all.stream()
+            .map(dto -> dto.followee().name())
+            .toList()
+    );
+
+    Set<UUID> followeeIds = Set.copyOf(
+        all.stream()
+            .map(dto -> dto.followee().userId())
+            .toList()
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(2, firstPage.data().size()),
+        () -> assertEquals(1, secondPage.data().size()),
+        () -> assertTrue(firstPage.hasNext()),
+        () -> assertFalse(secondPage.hasNext()),
+        () -> assertNotNull(firstPage.nextCursor()),
+        () -> assertNotNull(firstPage.nextIdAfter()),
+        () -> assertNull(secondPage.nextCursor()),
+        () -> assertNull(secondPage.nextIdAfter()),
+        () -> assertEquals(3L, firstPage.totalCount()),
+        () -> assertEquals(3L, secondPage.totalCount()),
+        () -> assertEquals(3, all.size()),
+        () -> assertEquals(
+            Set.of("김민수", "이민지", "최민호"),
+            names
+        ),
+        () -> assertEquals(
+            Set.of(minsu.getId(), minji.getId(), minho.getId()),
+            followeeIds
+        ),
+        () -> assertTrue(
+            all.stream().allMatch(
+                dto -> follower.getId().equals(
+                    dto.follower().userId()
+                )
+            )
+        ),
+        () -> assertEquals("createdAt", firstPage.sortBy()),
+        () -> assertEquals("DESCENDING", firstPage.sortDirection())
+    );
+  }
 }
