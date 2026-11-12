@@ -4,6 +4,10 @@ import com.otboo.team03.global.config.CacheNames;
 import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.dto.CursorResponse;
+import com.otboo.team03.notification.entity.NotificationLevel;
+import com.otboo.team03.notification.event.NotificationEvent;
+import com.otboo.team03.notification.event.NotificationEventType;
+import com.otboo.team03.notification.outbox.service.OutboxEventPublisher;
 import com.otboo.team03.profile.entity.Profile;
 import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.user.dto.request.UserCreateRequest;
@@ -29,6 +33,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.UUID;
+import java.time.Instant;
 
 import java.util.List;
 
@@ -44,6 +49,7 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final JwtRegistry jwtRegistry;
     private final RedisTemporaryPasswordRepository temporaryPasswordRepository;
+    private final OutboxEventPublisher outboxEventPublisher;
 
     @CacheEvict(cacheNames = CacheNames.USER_LIST, allEntries = true)
     @Transactional
@@ -92,6 +98,23 @@ public class UserService {
         user.changeRole(role);
 
         UUID actorId = getCurrentUserId();
+        outboxEventPublisher.publish(
+                new NotificationEvent(
+                        UUID.randomUUID(),
+                        NotificationEventType.USER_ROLE_CHANGED,
+                        NotificationEvent.CURRENT_SCHEMA_VERSION,
+                        Instant.now(),
+                        userId,
+                        userId,
+                        actorId,
+                        userId,
+                        "권한 변경",
+                        "사용자 권한이 " + role.name() + "으로 변경되었습니다.",
+                        NotificationLevel.INFO
+                ),
+                "USER",
+                userId.toString()
+        );
 
         // DB 트랜잭션 커밋 이후 Redis 세션 무효화
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
