@@ -74,7 +74,11 @@ class RecommendationServiceTest {
         when(algorithm.recommend(clothes, Map.of(clothesId, UNKNOWN),
                 Map.of(clothesId, SleeveLength.UNKNOWN), 10.0, 1)).thenReturn(clothes);
         when(dress.getId()).thenReturn(clothesId);
-        when(clothesService.findById(clothesId)).thenReturn(dto);
+        var definition = new ClothesAttributeDefinition("색상", List.of("검정", "흰색"));
+        var savedAttribute = new ClothesAttribute(dress, definition, "검정");
+        when(clothesAttributeRepository.findAllByClothes_IdIn(List.of(clothesId)))
+                .thenReturn(List.of(savedAttribute));
+        when(clothesService.toClothesDto(dress, List.of(savedAttribute))).thenReturn(dto);
 
         var result = service.recommend(weatherId, userId);
 
@@ -90,6 +94,10 @@ class RecommendationServiceTest {
         verify(weatherRepository).findById(weatherId);
         verify(algorithm).recommend(clothes, Map.of(clothesId, UNKNOWN),
                 Map.of(clothesId, SleeveLength.UNKNOWN), 10.0, 1);
+        verify(clothesAttributeRepository).findAllByClothes_IdIn(List.of(clothesId));
+        verifyNoMoreInteractions(clothesAttributeRepository);
+        verify(clothesService).toClothesDto(dress, List.of(savedAttribute));
+        verifyNoMoreInteractions(clothesService);
     }
 
     @Test
@@ -333,15 +341,15 @@ class RecommendationServiceTest {
                 List.of("얇음", "두꺼움"), preferred == LIGHT ? "얇음" : "두꺼움");
         var topDto = new ClothesDto(selectedTop.getId(), userId, "선택된 상의", "https://example.com/top",
                 ClothesType.TOP, List.of(topAttribute));
-        when(clothesService.findById(selectedTop.getId())).thenReturn(topDto);
+        when(clothesService.toClothesDto(eq(selectedTop), anyList())).thenReturn(topDto);
         var bottomDto = new ClothesDto(bottom.getId(), userId, "하의", null,
                 ClothesType.BOTTOM, List.of());
-        when(clothesService.findById(bottom.getId())).thenReturn(bottomDto);
+        when(clothesService.toClothesDto(eq(bottom), anyList())).thenReturn(bottomDto);
         boolean needsOuter = preferred == HEAVY;
         if (needsOuter) {
             var outerDto = new ClothesDto(outer.getId(), userId, "아우터", null,
                     ClothesType.OUTER, List.of());
-            when(clothesService.findById(outer.getId())).thenReturn(outerDto);
+            when(clothesService.toClothesDto(eq(outer), anyList())).thenReturn(outerDto);
         }
 
         var result = connectedService.recommend(weatherId, userId);
@@ -357,9 +365,9 @@ class RecommendationServiceTest {
         assertThat(result.clothes().get(0).attributes()).containsExactly(topAttribute);
         verify(clothesRepository).findAllByOwner_Id(userId);
         verify(clothesAttributeRepository).findAllByClothes_IdIn(ids);
-        verify(clothesService, never()).findById(rejectedTop.getId());
+        verify(clothesService, never()).toClothesDto(eq(rejectedTop), anyList());
         if (!needsOuter) {
-            verify(clothesService, never()).findById(outer.getId());
+            verify(clothesService, never()).toClothesDto(eq(outer), anyList());
         }
         verifyNoInteractions(algorithm);
     }
@@ -414,15 +422,15 @@ class RecommendationServiceTest {
                 ClothesType.TOP, List.of());
         var bottomDto = new ClothesDto(bottom.getId(), userId, "하의", null,
                 ClothesType.BOTTOM, List.of());
-        when(clothesService.findById(alternative.getId())).thenReturn(topDto);
-        when(clothesService.findById(bottom.getId())).thenReturn(bottomDto);
+        when(clothesService.toClothesDto(eq(alternative), anyList())).thenReturn(topDto);
+        when(clothesService.toClothesDto(eq(bottom), anyList())).thenReturn(bottomDto);
 
         var result = connectedService.recommend(weatherId, userId);
 
         assertThat(result.clothes()).extracting(ootd -> ootd.clothesId())
                 .containsExactly(alternative.getId(), bottom.getId());
         verify(clothesAttributeRepository).findAllByClothes_IdIn(ids);
-        verify(clothesService, never()).findById(first.getId());
+        verify(clothesService, never()).toClothesDto(eq(first), anyList());
         verifyNoInteractions(algorithm);
     }
 
