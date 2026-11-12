@@ -81,7 +81,7 @@ class CacheConfigIntegrationTest {
     private ApplicationContext applicationContext;
 
     private CacheErrorHandler cacheErrorHandler() {
-        return applicationContext.getBean("cacheInterceptor", CacheInterceptor.class).getErrorHandler();
+        return applicationContext.getBean(CacheInterceptor.class).getErrorHandler();
     }
 
     @BeforeEach

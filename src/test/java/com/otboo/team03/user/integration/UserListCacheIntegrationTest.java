@@ -255,6 +255,31 @@ class UserListCacheIntegrationTest {
                 .isInstanceOf(AccessDeniedException.class);
     }
 
+    @Test
+    @DisplayName("limit 값이 다르면 별도의 캐시 키를 사용한다")
+    void get_differentLimits_usesSeparateCacheKeys() {
+        // given
+        UserListRequest limit10 = defaultRequest();
+        UserListRequest limit20 = new UserListRequest(
+                null, null, 20, "email", "ASCENDING", null, null, null
+        );
+        Cache cache = getCache();
+
+        // when: limit 10 조회
+        userService.getUsers(limit10);
+
+        // then
+        assertThat(cache.get(limit10)).isNotNull();
+        assertThat(cache.get(limit20)).isNull();
+
+        // when: limit 20 조회
+        userService.getUsers(limit20);
+
+        // then
+        assertThat(cache.get(limit10)).isNotNull();
+        assertThat(cache.get(limit20)).isNotNull();
+    }
+
     private Cache getCache() {
         Cache cache = cacheManager.getCache(CACHE_NAME);
         assertThat(cache).isNotNull();
