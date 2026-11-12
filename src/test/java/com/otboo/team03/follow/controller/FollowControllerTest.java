@@ -741,4 +741,49 @@ class FollowControllerTest {
         followerId, 2, null, null, "민"
     );
   }
+
+  @Test
+  void 팔로잉_조회에서_커서와_검색어를_서비스에_전달한다()
+      throws Exception {
+    // given
+    UUID idAfter = UUID.randomUUID();
+    String cursor = "2026-11-12T01:00:00Z";
+
+    CursorResponse<FollowDto> response = new CursorResponse<>(
+        List.of(),
+        null,
+        null,
+        false,
+        3L,
+        "createdAt",
+        "DESCENDING"
+    );
+
+    when(followService.getFollowings(
+        followerId, 10, cursor, idAfter, "김"
+    )).thenReturn(response);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/followings")
+            .principal(authentication(followerId))
+            .param("followerId", followerId.toString())
+            .param("limit", "10")
+            .param("cursor", cursor)
+            .param("idAfter", idAfter.toString())
+            .param("nameLike", "김")
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(0))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.nextCursor").value(nullValue()))
+        .andExpect(jsonPath("$.nextIdAfter").value(nullValue()))
+        .andExpect(jsonPath("$.totalCount").value(3));
+
+    verify(followService).getFollowings(
+        followerId, 10, cursor, idAfter, "김"
+    );
+  }
 }
