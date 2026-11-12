@@ -71,3 +71,7 @@ management:
 kakao:
   api:
     key: ${KAKAO_API_KEY:}
+
+scheduler:
+  sse-heartbeat:
+    fixed-delay: ${SSE_HEARTBEAT_FIXED_DELAY:PT15S}
