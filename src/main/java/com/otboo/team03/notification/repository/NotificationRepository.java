@@ -44,4 +44,20 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     );
 
     Optional<Notification> findByIdAndReceiver_Id(UUID notificationId, UUID receiverId);
+
+    @Query("""
+            select n
+            from Notification n
+            where n.receiver.id = :receiverId
+              and (
+                    n.createdAt > :createdAt
+                    or (n.createdAt = :createdAt and n.id > :lastEventId)
+              )
+            order by n.createdAt asc, n.id asc
+            """)
+    List<Notification> findByReceiverIdAfterEvent(
+            @Param("receiverId") UUID receiverId,
+            @Param("createdAt") Instant createdAt,
+            @Param("lastEventId") UUID lastEventId
+    );
 }

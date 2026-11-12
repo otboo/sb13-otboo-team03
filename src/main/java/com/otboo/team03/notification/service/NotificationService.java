@@ -80,6 +80,20 @@ public class NotificationService {
                 .orElseThrow(NotificationNotFoundException::new);
     }
 
+    @Transactional(readOnly = true)
+    public List<NotificationDto> getNotificationsAfterEvent(UUID receiverId, UUID lastEventId) {
+        return notificationRepository.findByIdAndReceiver_Id(lastEventId, receiverId)
+                .map(lastEvent -> notificationRepository.findByReceiverIdAfterEvent(
+                        receiverId,
+                        lastEvent.getCreatedAt(),
+                        lastEvent.getId()
+                ))
+                .orElseGet(List::of)
+                .stream()
+                .map(NotificationDto::from)
+                .toList();
+    }
+
     private void validateLimit(int limit) {
         if (limit <= 0) {
             throw new IllegalArgumentException("limit은 1 이상이어야 합니다.");

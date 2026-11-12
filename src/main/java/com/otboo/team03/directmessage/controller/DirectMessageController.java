@@ -4,9 +4,7 @@ import com.otboo.team03.directmessage.dto.request.DirectMessageCreateRequest;
 import com.otboo.team03.directmessage.dto.response.DirectMessageDto;
 import com.otboo.team03.directmessage.service.DirectMessageService;
 import com.otboo.team03.global.dto.CursorResponse;
-import com.otboo.team03.global.exception.ErrorCode;
-import com.otboo.team03.global.exception.OtbooException;
-import com.otboo.team03.global.security.OtbooUserDetails;
+import com.otboo.team03.global.security.AuthenticatedUserIdExtractor;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -37,7 +35,7 @@ public class DirectMessageController {
             @RequestParam(required = false) UUID idAfter,
             Authentication authentication
     ) {
-        UUID requesterId = getAuthenticatedUserId(authentication);
+        UUID requesterId = AuthenticatedUserIdExtractor.extract(authentication);
 
         return ResponseEntity.ok(directMessageService.getMessages(
                 requesterId,
@@ -53,7 +51,7 @@ public class DirectMessageController {
             @Valid @RequestBody DirectMessageCreateRequest request,
             Authentication authentication
     ) {
-        UUID senderId = getAuthenticatedUserId(authentication);
+        UUID senderId = AuthenticatedUserIdExtractor.extract(authentication);
         DirectMessageDto response = directMessageService.send(
                 senderId,
                 request.receiverId(),
@@ -63,13 +61,4 @@ public class DirectMessageController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
-    private UUID getAuthenticatedUserId(Authentication authentication) {
-        if (authentication == null
-                || !authentication.isAuthenticated()
-                || !(authentication.getPrincipal() instanceof OtbooUserDetails userDetails)) {
-            throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
-        }
-
-        return userDetails.getUserDto().id();
-    }
 }
