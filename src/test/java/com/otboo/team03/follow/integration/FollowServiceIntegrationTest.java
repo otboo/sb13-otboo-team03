@@ -554,4 +554,133 @@ class FollowServiceIntegrationTest extends PostgresTestSupport {
         () -> assertEquals("DESCENDING", firstPage.sortDirection())
     );
   }
+
+  @Test
+  void 동일_생성시각의_팔로잉도_커서로_중복_누락없이_조회한다() {
+    // given
+    User follower = createUser("나");
+    User otherFollower = createUser("다른 사용자");
+
+    User firstFollowee = createUser("팔로잉 A");
+    User secondFollowee = createUser("팔로잉 B");
+    User thirdFollowee = createUser("팔로잉 C");
+    User fourthFollowee = createUser("팔로잉 D");
+    User fifthFollowee = createUser("팔로잉 E");
+
+    Instant sameTime = Instant.parse("2026-11-12T03:00:00Z");
+    Instant olderTime = Instant.parse("2026-11-12T02:00:00Z");
+
+    UUID id5 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000005"
+    );
+    UUID id4 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000004"
+    );
+    UUID id3 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000003"
+    );
+    UUID id2 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000002"
+    );
+    UUID id1 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000001"
+    );
+    UUID otherId = UUID.fromString(
+        "00000000-0000-0000-0000-000000000006"
+    );
+
+    insertPaginationFollow(
+        id3, follower.getId(), thirdFollowee.getId(), sameTime
+    );
+    insertPaginationFollow(
+        id5, follower.getId(), firstFollowee.getId(), sameTime
+    );
+    insertPaginationFollow(
+        id2, follower.getId(), fourthFollowee.getId(), sameTime
+    );
+    insertPaginationFollow(
+        id4, follower.getId(), secondFollowee.getId(), sameTime
+    );
+    insertPaginationFollow(
+        id1, follower.getId(), fifthFollowee.getId(), olderTime
+    );
+    insertPaginationFollow(
+        otherId, otherFollower.getId(), firstFollowee.getId(), sameTime
+    );
+
+    entityManager.clear();
+
+    // when
+    CursorResponse<FollowDto> firstPage = followService.getFollowings(
+        follower.getId(), 2, null, null, null
+    );
+
+    CursorResponse<FollowDto> secondPage = followService.getFollowings(
+        follower.getId(),
+        2,
+        firstPage.nextCursor(),
+        firstPage.nextIdAfter(),
+        null
+    );
+
+    CursorResponse<FollowDto> thirdPage = followService.getFollowings(
+        follower.getId(),
+        2,
+        secondPage.nextCursor(),
+        secondPage.nextIdAfter(),
+        null
+    );
+
+    CursorResponse<FollowDto> emptyPage = followService.getFollowings(
+        follower.getId(),
+        2,
+        olderTime.toString(),
+        id1,
+        null
+    );
+
+    List<UUID> actualIds = Stream.of(
+            firstPage,
+            secondPage,
+            thirdPage
+        )
+        .flatMap(page -> page.data().stream())
+        .map(FollowDto::id)
+        .toList();
+
+    // then
+    assertAll(
+        () -> assertEquals(2, firstPage.data().size()),
+        () -> assertEquals(id5, firstPage.data().get(0).id()),
+        () -> assertEquals(id4, firstPage.data().get(1).id()),
+        () -> assertEquals(sameTime.toString(), firstPage.nextCursor()),
+        () -> assertEquals(id4, firstPage.nextIdAfter()),
+        () -> assertTrue(firstPage.hasNext()),
+        () -> assertEquals(5L, firstPage.totalCount()),
+
+        () -> assertEquals(2, secondPage.data().size()),
+        () -> assertEquals(id3, secondPage.data().get(0).id()),
+        () -> assertEquals(id2, secondPage.data().get(1).id()),
+        () -> assertEquals(sameTime.toString(), secondPage.nextCursor()),
+        () -> assertEquals(id2, secondPage.nextIdAfter()),
+        () -> assertTrue(secondPage.hasNext()),
+        () -> assertEquals(5L, secondPage.totalCount()),
+
+        () -> assertEquals(1, thirdPage.data().size()),
+        () -> assertEquals(id1, thirdPage.data().get(0).id()),
+        () -> assertFalse(thirdPage.hasNext()),
+        () -> assertNull(thirdPage.nextCursor()),
+        () -> assertNull(thirdPage.nextIdAfter()),
+        () -> assertEquals(5L, thirdPage.totalCount()),
+
+        () -> assertTrue(emptyPage.data().isEmpty()),
+        () -> assertFalse(emptyPage.hasNext()),
+        () -> assertEquals(5L, emptyPage.totalCount()),
+
+        () -> assertEquals(
+            List.of(id5, id4, id3, id2, id1),
+            actualIds
+        )
+    );
+  }
 }
