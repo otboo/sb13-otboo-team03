@@ -1185,4 +1185,128 @@ class FollowServiceTest {
 
     verify(followDtoAssembler).toDtos(List.of(follow));
   }
+
+  @Test
+  void 팔로잉_조회_필수값이_잘못되면_예외가_발생한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+
+    // when
+    OtbooException nullFollowerId = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            null, 10, null, null, null
+        )
+    );
+
+    OtbooException zeroLimit = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            followerId, 0, null, null, null
+        )
+    );
+
+    OtbooException negativeLimit = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            followerId, -1, null, null, null
+        )
+    );
+
+    OtbooException maxLimit = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            followerId, Integer.MAX_VALUE, null, null, null
+        )
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            nullFollowerId.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            zeroLimit.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            negativeLimit.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            maxLimit.getErrorCode()
+        )
+    );
+
+    verifyNoInteractions(
+        followRepository,
+        followDtoAssembler,
+        userRepository
+    );
+  }
+
+  @Test
+  void 팔로잉_조회_커서_형식이나_조합이_잘못되면_예외가_발생한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID idAfter = UUID.randomUUID();
+    String cursor = "2026-11-12T01:00:00Z";
+
+    // when
+    OtbooException missingIdAfter = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            followerId, 10, cursor, null, null
+        )
+    );
+
+    OtbooException missingCursor = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            followerId, 10, null, idAfter, null
+        )
+    );
+
+    OtbooException invalidCursor = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            followerId, 10, "invalid-cursor", idAfter, null
+        )
+    );
+
+    OtbooException blankCursor = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            followerId, 10, "   ", idAfter, null
+        )
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            missingIdAfter.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            missingCursor.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            invalidCursor.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            blankCursor.getErrorCode()
+        )
+    );
+
+    verifyNoInteractions(
+        followRepository,
+        followDtoAssembler,
+        userRepository
+    );
+  }
 }
