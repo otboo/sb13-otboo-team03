@@ -27,6 +27,9 @@ public class PasswordAuthenticationProvider extends DaoAuthenticationProvider {
         super(userDetailsService);
         this.temporaryPasswordRepository = temporaryPasswordRepository;
         setPasswordEncoder(passwordEncoder);
+
+        // 계정 상태 검사 실패 시 임시 비밀번호 조회 및 소모 방지
+        setAlwaysPerformAdditionalChecksOnUser(false);
     }
 
     @Override
