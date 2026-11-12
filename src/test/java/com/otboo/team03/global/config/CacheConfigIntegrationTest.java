@@ -19,6 +19,11 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.cache.interceptor.CacheInterceptor;
+import org.springframework.dao.QueryTimeoutException;
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.context.ApplicationContext;
+import org.springframework.cache.interceptor.CacheErrorHandler;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -29,6 +34,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(
         classes = Sb13OtbooTeam03Application.class,
@@ -69,6 +76,13 @@ class CacheConfigIntegrationTest {
 
     @Autowired
     private PlatformTransactionManager transactionManager;
+
+    @Autowired
+    private ApplicationContext applicationContext;
+
+    private CacheErrorHandler cacheErrorHandler() {
+        return applicationContext.getBean("cacheInterceptor", CacheInterceptor.class).getErrorHandler();
+    }
 
     @BeforeEach
     void setUp() {
@@ -205,6 +219,88 @@ class CacheConfigIntegrationTest {
 
         // then
         assertThat(cache.get(key, CachedValue.class)).isEqualTo(value);
+    }
+
+    @Test
+    @DisplayName("Redis 연결 장애로 캐시 조회에 실패하면 예외를 무시한다")
+    void get_redisConnectionFailure_allowsFallback() {
+        // given
+        Cache cache = cacheManager.getCache(CACHE_NAME);
+        assertThat(cache).isNotNull();
+        RuntimeException failure = new RedisConnectionFailureException("Redis 연결 실패");
+
+        // when & then
+        assertThatCode(() -> cacheErrorHandler().handleCacheGetError(failure, cache, "item-1"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("Redis 연결 장애로 캐시 저장에 실패하면 예외를 무시한다")
+    void put_redisConnectionFailure_allowsFallback() {
+        // given
+        Cache cache = cacheManager.getCache(CACHE_NAME);
+        assertThat(cache).isNotNull();
+        RuntimeException failure = new RedisConnectionFailureException("Redis 연결 실패");
+
+        // when & then
+        assertThatCode(() -> cacheErrorHandler().handleCachePutError(failure, cache, "item-1", "value"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("Redis 타임아웃으로 캐시 조회 및 저장에 실패하면 예외를 무시한다")
+    void cacheOperation_timeout_allowsFallback() {
+        // given
+        Cache cache = cacheManager.getCache(CACHE_NAME);
+        assertThat(cache).isNotNull();
+        RuntimeException failure = new QueryTimeoutException("Redis 응답 타임아웃");
+
+        // when & then
+        assertThatCode(() -> cacheErrorHandler().handleCacheGetError(failure, cache, "item-1"))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> cacheErrorHandler().handleCachePutError(failure, cache, "item-1", "value"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("캐시 조회 및 저장에서 예상하지 못한 예외는 전파한다")
+    void cacheOperation_unexpectedFailure_propagates() {
+        // given
+        Cache cache = cacheManager.getCache(CACHE_NAME);
+        assertThat(cache).isNotNull();
+        RuntimeException failure = new IllegalStateException("예상하지 못한 오류");
+
+        // when & then
+        assertThatThrownBy(() -> cacheErrorHandler().handleCacheGetError(failure, cache, "item-1"))
+                .isSameAs(failure);
+        assertThatThrownBy(() -> cacheErrorHandler().handleCachePutError(failure, cache, "item-1", "value"))
+                .isSameAs(failure);
+    }
+
+    @Test
+    @DisplayName("캐시 무효화 실패 시 예외를 전파한다")
+    void evict_redisConnectionFailure_propagates() {
+        // given
+        Cache cache = cacheManager.getCache(CACHE_NAME);
+        assertThat(cache).isNotNull();
+        RuntimeException failure = new RedisConnectionFailureException("Redis 연결 실패");
+
+        // when & then
+        assertThatThrownBy(() -> cacheErrorHandler().handleCacheEvictError(failure, cache, "item-1"))
+                .isSameAs(failure);
+    }
+
+    @Test
+    @DisplayName("캐시 전체 삭제 실패 시 예외를 전파한다")
+    void clear_redisConnectionFailure_propagates() {
+        // given
+        Cache cache = cacheManager.getCache(CACHE_NAME);
+        assertThat(cache).isNotNull();
+        RuntimeException failure = new RedisConnectionFailureException("Redis 연결 실패");
+
+        // when & then
+        assertThatThrownBy(() -> cacheErrorHandler().handleCacheClearError(failure, cache))
+                .isSameAs(failure);
     }
 
     @TestConfiguration(proxyBeanMethods = false)
