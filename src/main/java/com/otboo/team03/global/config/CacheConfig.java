@@ -2,9 +2,13 @@ package com.otboo.team03.global.config;
 
 import java.time.Duration;
 import java.util.Map;
+
+import com.otboo.team03.global.cache.RedisCacheErrorHandler;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.cache.annotation.CachingConfigurer;
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.interceptor.CacheErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
@@ -17,7 +21,7 @@ import org.springframework.data.redis.serializer.RedisSerializationContext;
 @Configuration(proxyBeanMethods = false)
 @EnableCaching
 @EnableConfigurationProperties(CacheConfig.CacheProperties.class)
-public class CacheConfig {
+public class CacheConfig implements CachingConfigurer {
 
     @Bean
     public RedisCacheManager cacheManager(
@@ -42,6 +46,12 @@ public class CacheConfig {
         properties.ttls().forEach((name, ttl) -> builder.withCacheConfiguration(name, defaults.entryTtl(ttl)));
 
         return builder.build();
+    }
+
+    @Bean
+    @Override
+    public CacheErrorHandler errorHandler() {
+        return new RedisCacheErrorHandler();
     }
 
     @ConfigurationProperties(prefix = "otboo.cache")
