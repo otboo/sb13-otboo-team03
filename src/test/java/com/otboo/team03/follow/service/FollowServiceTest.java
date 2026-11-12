@@ -916,4 +916,71 @@ class FollowServiceTest {
 
     verify(followDtoAssembler).toDtos(List.of(first, second));
   }
+
+  @Test
+  void 팔로잉_이름으로_검색하면_일치하는_목록과_전체_건수를_반환한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID lastFollowId = UUID.randomUUID();
+    Instant createdAt = Instant.parse("2026-11-12T01:00:00Z");
+
+    Follow first = mock(Follow.class);
+    Follow second = mock(Follow.class);
+    Follow extra = mock(Follow.class);
+
+    FollowDto firstDto = new FollowDto(
+        UUID.randomUUID(),
+        new UserSummary(UUID.randomUUID(), "김민수", null),
+        new UserSummary(followerId, "나", null)
+    );
+
+    FollowDto secondDto = new FollowDto(
+        lastFollowId,
+        new UserSummary(UUID.randomUUID(), "이민지", null),
+        new UserSummary(followerId, "나", null)
+    );
+
+    when(followRepository.findFollowingsByNameLike(
+        followerId,
+        "민",
+        PageRequest.of(0, 3)
+    )).thenReturn(List.of(first, second, extra));
+
+    when(followRepository.countFollowingsByNameLike(
+        followerId,
+        "민"
+    )).thenReturn(5L);
+
+    when(followDtoAssembler.toDtos(List.of(first, second)))
+        .thenReturn(List.of(firstDto, secondDto));
+
+    when(second.getId()).thenReturn(lastFollowId);
+    when(second.getCreatedAt()).thenReturn(createdAt);
+
+    // when
+    CursorResponse<FollowDto> result = followService.getFollowings(
+        followerId, 2, null, null, "민"
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(2, result.data().size()),
+        () -> assertEquals("김민수", result.data().get(0).followee().name()),
+        () -> assertEquals("이민지", result.data().get(1).followee().name()),
+        () -> assertEquals(5L, result.totalCount()),
+        () -> assertTrue(result.hasNext()),
+        () -> assertEquals(createdAt.toString(), result.nextCursor()),
+        () -> assertEquals(lastFollowId, result.nextIdAfter()),
+        () -> assertEquals("createdAt", result.sortBy()),
+        () -> assertEquals("DESCENDING", result.sortDirection())
+    );
+
+    verify(followDtoAssembler).toDtos(List.of(first, second));
+
+    verify(followRepository, never())
+        .findByFollowerIdOrderByCreatedAtDescIdDesc(
+            any(UUID.class),
+            any(PageRequest.class)
+        );
+  }
 }
