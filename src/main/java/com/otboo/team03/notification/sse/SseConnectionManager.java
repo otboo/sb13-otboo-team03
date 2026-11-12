@@ -1,8 +1,8 @@
 package com.otboo.team03.notification.sse;
 
 import com.otboo.team03.notification.dto.response.NotificationDto;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.stereotype.Component;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.Set;
@@ -19,13 +19,18 @@ public class SseConnectionManager {
 
     public SseEmitter connect(UUID receiverId) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT);
-        emitters.computeIfAbsent(receiverId, ignored -> ConcurrentHashMap.newKeySet())
-                .add(emitter);
-
         Runnable cleanup = () -> remove(receiverId, emitter);
         emitter.onCompletion(cleanup);
         emitter.onTimeout(cleanup);
         emitter.onError(ignored -> cleanup.run());
+
+        emitters.compute(receiverId, (id, connections) -> {
+            Set<SseEmitter> updatedConnections = connections == null
+                    ? ConcurrentHashMap.newKeySet()
+                    : connections;
+            updatedConnections.add(emitter);
+            return updatedConnections;
+        });
 
         return emitter;
     }
@@ -50,15 +55,10 @@ public class SseConnectionManager {
     }
 
     private void remove(UUID receiverId, SseEmitter emitter) {
-        Set<SseEmitter> receiverEmitters = emitters.get(receiverId);
-        if (receiverEmitters == null) {
-            return;
-        }
-
-        receiverEmitters.remove(emitter);
-        if (receiverEmitters.isEmpty()) {
-            emitters.remove(receiverId, receiverEmitters);
-        }
+        emitters.computeIfPresent(receiverId, (id, connections) -> {
+            connections.remove(emitter);
+            return connections.isEmpty() ? null : connections;
+        });
     }
 
     void disconnect(UUID receiverId, SseEmitter emitter) {
