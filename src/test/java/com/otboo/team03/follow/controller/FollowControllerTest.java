@@ -668,4 +668,77 @@ class FollowControllerTest {
 
     verifyNoInteractions(followService);
   }
+
+  @Test
+  void 팔로잉_목록_조회에_성공하면_200과_커서_응답을_반환한다()
+      throws Exception {
+    // given
+    UUID firstFollowId = UUID.randomUUID();
+    UUID lastFollowId = UUID.randomUUID();
+    UUID firstFolloweeId = UUID.randomUUID();
+    UUID lastFolloweeId = UUID.randomUUID();
+    String nextCursor = "2026-11-12T01:00:00Z";
+
+    FollowDto firstDto = new FollowDto(
+        firstFollowId,
+        new UserSummary(firstFolloweeId, "김민수", "/images/minsu.png"),
+        new UserSummary(followerId, "나", null)
+    );
+
+    FollowDto secondDto = new FollowDto(
+        lastFollowId,
+        new UserSummary(lastFolloweeId, "이민지", "/images/minji.png"),
+        new UserSummary(followerId, "나", null)
+    );
+
+    CursorResponse<FollowDto> response = new CursorResponse<>(
+        List.of(firstDto, secondDto),
+        nextCursor,
+        lastFollowId,
+        true,
+        5L,
+        "createdAt",
+        "DESCENDING"
+    );
+
+    when(followService.getFollowings(
+        followerId, 2, null, null, "민"
+    )).thenReturn(response);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/followings")
+            .principal(authentication(followerId))
+            .param("followerId", followerId.toString())
+            .param("limit", "2")
+            .param("nameLike", "민")
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(firstFollowId.toString()))
+        .andExpect(jsonPath("$.data[0].followee.userId")
+            .value(firstFolloweeId.toString()))
+        .andExpect(jsonPath("$.data[0].followee.name")
+            .value("김민수"))
+        .andExpect(jsonPath("$.data[0].followee.profileImageUrl")
+            .value("/images/minsu.png"))
+        .andExpect(jsonPath("$.data[0].follower.userId")
+            .value(followerId.toString()))
+        .andExpect(jsonPath("$.data[1].followee.name")
+            .value("이민지"))
+        .andExpect(jsonPath("$.nextCursor").value(nextCursor))
+        .andExpect(jsonPath("$.nextIdAfter")
+            .value(lastFollowId.toString()))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andExpect(jsonPath("$.totalCount").value(5))
+        .andExpect(jsonPath("$.sortBy").value("createdAt"))
+        .andExpect(jsonPath("$.sortDirection").value("DESCENDING"));
+
+    verify(followService).getFollowings(
+        followerId, 2, null, null, "민"
+    );
+  }
 }
