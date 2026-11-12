@@ -35,13 +35,15 @@ class SseConnectionManagerTest {
     }
 
     @Test
-    void 사용자에게_연결된_SSE로_알림을_전송한다() {
+    void 사용자에게_연결된_SSE로_알림을_전송한다() throws Exception {
         UUID receiverId = UUID.randomUUID();
-        connectionManager.connect(receiverId);
+        SseEmitter emitter = mock(SseEmitter.class);
+        connectionManager.register(receiverId, emitter);
         NotificationDto notification = notification(receiverId);
 
         connectionManager.send(receiverId, notification);
 
+        verify(emitter).send(any(SseEmitter.SseEventBuilder.class));
         assertThat(connectionManager.connectionCount(receiverId)).isEqualTo(1);
     }
 
