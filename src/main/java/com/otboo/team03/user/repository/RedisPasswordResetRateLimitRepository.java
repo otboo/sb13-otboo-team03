@@ -12,7 +12,6 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -45,11 +44,9 @@ public class RedisPasswordResetRateLimitRepository {
     }
 
     private String getKey(String email) {
-        String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
-
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(normalizedEmail.getBytes(StandardCharsets.UTF_8));
+            byte[] hash = digest.digest(email.getBytes(StandardCharsets.UTF_8));
             return KEY_PREFIX + HexFormat.of().formatHex(hash);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 알고리즘을 사용할 수 없습니다.", e);

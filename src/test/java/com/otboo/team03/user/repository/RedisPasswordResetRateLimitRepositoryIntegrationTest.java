@@ -186,4 +186,21 @@ class RedisPasswordResetRateLimitRepositoryIntegrationTest {
             executor.shutdownNow();
         }
     }
+
+    @Test
+    @DisplayName("이메일 대소문자가 다르면 서로 다른 요청 제한 키를 사용한다")
+    void tryAcquire_differentEmailCase_usesDifferentKeys() {
+        // given
+        String upperCaseEmail = "User@example.com";
+        String lowerCaseEmail = "user@example.com";
+
+        // when
+        Optional<String> first = repositoryA.tryAcquire(upperCaseEmail);
+        Optional<String> second = repositoryB.tryAcquire(lowerCaseEmail);
+
+        // then
+        assertThat(first).isPresent();
+        assertThat(second).isPresent();
+        assertThat(redisTemplate.keys("auth:password-reset:limit:*")).hasSize(2);
+    }
 }
