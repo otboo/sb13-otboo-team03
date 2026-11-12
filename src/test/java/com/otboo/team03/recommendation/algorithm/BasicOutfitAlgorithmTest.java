@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -357,6 +359,220 @@ class BasicOutfitAlgorithmTest {
 
             // then
             assertThat(result).containsExactlyInAnyOrder(dress, outer);
+        }
+    }
+
+    @Nested
+    @DisplayName("기본 코디의 추가 아이템 추천")
+    class AdditionalItemRecommendation {
+
+        @ParameterizedTest
+        @CsvSource({"TOP, 28.0", "TOP, 10.0", "DRESS, 28.0", "DRESS, 10.0"})
+        void 기본_코디와_아우터_뒤에_신발_가방_모자_액세서리를_순서대로_추가한다(
+                ClothesType baseType, double temperature) {
+            List<Clothes> base = baseOutfit(baseType);
+            Clothes shoes = new Clothes("신발", ClothesType.SHOES, null, owner);
+            Clothes bag = new Clothes("가방", ClothesType.BAG, null, owner);
+            Clothes hat = new Clothes("모자", ClothesType.HAT, null, owner);
+            Clothes accessory = new Clothes("액세서리", ClothesType.ACCESSORY, null, owner);
+            Clothes outer = new Clothes("아우터", ClothesType.OUTER, null, owner);
+            Clothes underwear = new Clothes("속옷", ClothesType.UNDERWEAR, null, owner);
+            Clothes etc = new Clothes("기타", ClothesType.ETC, null, owner);
+            // 후보 입력 순서와 응답의 종류별 순서가 달라도 정책대로 반환해야 한다.
+            List<Clothes> candidates = new ArrayList<>(
+                    List.of(accessory, underwear, hat, outer, etc, bag, shoes));
+            candidates.addAll(base);
+
+            var result = algorithm.recommend(candidates, temperature, 3);
+
+            List<Clothes> expected = new ArrayList<>(base);
+            if (temperature < 15.0) {
+                expected.add(outer);
+            }
+            expected.addAll(List.of(shoes, bag, hat, accessory));
+            assertThat(result).containsExactlyElementsOf(expected);
+        }
+
+        @ParameterizedTest
+        @EnumSource(value = ClothesType.class, names = {"SHOES", "BAG", "HAT", "ACCESSORY"})
+        void 추가_아이템은_속성_점수와_관계없이_원래_입력_순서에서_종류별_하나를_선택한다(
+                ClothesType type) {
+            List<Clothes> base = baseOutfit(ClothesType.TOP);
+            Clothes first = mock(Clothes.class);
+            Clothes second = mock(Clothes.class);
+            UUID firstId = UUID.randomUUID();
+            UUID secondId = UUID.randomUUID();
+            when(first.getId()).thenReturn(firstId);
+            when(second.getId()).thenReturn(secondId);
+            when(first.getType()).thenReturn(type);
+            when(second.getType()).thenReturn(type);
+            List<Clothes> candidates = new ArrayList<>(List.of(first, second));
+            candidates.addAll(base);
+            List<Clothes> reversed = new ArrayList<>(List.of(second, first));
+            reversed.addAll(base);
+            // 더운 날 두께 정렬로는 두 번째 후보가 앞서지만, 추가 아이템은 원래 순서를 따른다.
+            Map<UUID, ThicknessLevel> thickness = Map.of(firstId, HEAVY, secondId, LIGHT);
+            Map<UUID, SleeveLength> sleeves = Map.of(
+                    firstId, SleeveLength.LONG, secondId, SleeveLength.SHORT);
+
+            var thicknessOnlyResult = algorithm.recommend(candidates, thickness, 28.0, 3);
+            var result = algorithm.recommend(candidates, thickness, sleeves, 28.0, 3);
+            var reversedResult = algorithm.recommend(reversed, thickness, sleeves, 28.0, 3);
+
+            List<Clothes> expected = new ArrayList<>(base);
+            expected.add(first);
+            List<Clothes> reversedExpected = new ArrayList<>(base);
+            reversedExpected.add(second);
+            assertThat(thicknessOnlyResult).containsExactlyElementsOf(expected);
+            assertThat(result).containsExactlyElementsOf(expected);
+            assertThat(reversedResult).containsExactlyElementsOf(reversedExpected);
+        }
+
+        @ParameterizedTest
+        @CsvSource({"TOP, true", "TOP, false", "DRESS, true", "DRESS, false"})
+        void 양말은_신발이_선택된_경우에만_신발_뒤에_추가한다(ClothesType baseType, boolean hasShoes) {
+            List<Clothes> base = baseOutfit(baseType);
+            Clothes shoes = new Clothes("신발", ClothesType.SHOES, null, owner);
+            Clothes socks = new Clothes("양말", ClothesType.SOCKS, null, owner);
+            List<Clothes> candidates = new ArrayList<>(List.of(socks));
+            candidates.addAll(base);
+            if (hasShoes) {
+                candidates.add(shoes);
+            }
+
+            var result = algorithm.recommend(candidates, 28.0, 3);
+
+            List<Clothes> expected = new ArrayList<>(base);
+            if (hasShoes) {
+                expected.addAll(List.of(shoes, socks));
+            }
+            assertThat(result).containsExactlyElementsOf(expected);
+        }
+
+        @ParameterizedTest
+        @CsvSource({
+                "14.9, 3, true",
+                "15.0, 3, false",
+                "15.1, 3, false",
+                "17.0, 1, true",
+                "13.0, 5, false",
+                "19.0, 1, false",
+                "11.0, 5, false",
+                "7.0, 5, true",
+                "28.0, 3, false"
+        })
+        void 스카프는_아우터가_없어도_보정_온도_15도_미만일_때만_추가한다(
+                double temperature, int sensitivity, boolean needsScarf) {
+            List<Clothes> base = baseOutfit(ClothesType.DRESS);
+            Clothes scarf = new Clothes("스카프", ClothesType.SCARF, null, owner);
+            List<Clothes> candidates = new ArrayList<>(List.of(scarf));
+            candidates.addAll(base);
+
+            var result = algorithm.recommend(candidates, temperature, sensitivity);
+
+            List<Clothes> expected = new ArrayList<>(base);
+            if (needsScarf) {
+                expected.add(scarf);
+            }
+            assertThat(result).containsExactlyElementsOf(expected);
+        }
+
+        @ParameterizedTest
+        @EnumSource(value = ClothesType.class, names = {"SOCKS", "SCARF"})
+        void 양말과_스카프도_속성_점수와_관계없이_원래_입력_순서의_첫_후보를_선택한다(ClothesType type) {
+            List<Clothes> base = baseOutfit(ClothesType.TOP);
+            Clothes first = mock(Clothes.class);
+            Clothes second = mock(Clothes.class);
+            UUID firstId = UUID.randomUUID();
+            UUID secondId = UUID.randomUUID();
+            when(first.getId()).thenReturn(firstId);
+            when(second.getId()).thenReturn(secondId);
+            when(first.getType()).thenReturn(type);
+            when(second.getType()).thenReturn(type);
+            List<Clothes> candidates = new ArrayList<>(List.of(first, second));
+            List<Clothes> reversed = new ArrayList<>(List.of(second, first));
+            List<Clothes> expected = new ArrayList<>(base);
+            List<Clothes> reversedExpected = new ArrayList<>(base);
+            if (type == ClothesType.SOCKS) {
+                Clothes shoes = new Clothes("신발", ClothesType.SHOES, null, owner);
+                candidates.add(shoes);
+                reversed.add(shoes);
+                expected.add(shoes);
+                reversedExpected.add(shoes);
+            }
+            candidates.addAll(base);
+            reversed.addAll(base);
+            expected.add(first);
+            reversedExpected.add(second);
+            // 추운 날 두께 점수는 두 번째 후보가 높지만, 원래 입력 순서로 선택해야 한다.
+            Map<UUID, ThicknessLevel> thickness = Map.of(firstId, LIGHT, secondId, HEAVY);
+            Map<UUID, SleeveLength> sleeves = Map.of(
+                    firstId, SleeveLength.SHORT, secondId, SleeveLength.LONG);
+
+            var result = algorithm.recommend(candidates, thickness, sleeves, 10.0, 3);
+            var reversedResult = algorithm.recommend(reversed, thickness, sleeves, 10.0, 3);
+
+            assertThat(result).containsExactlyElementsOf(expected);
+            assertThat(reversedResult).containsExactlyElementsOf(reversedExpected);
+        }
+
+        @ParameterizedTest
+        @CsvSource({"TOP", "DRESS"})
+        void 모든_종류가_있으면_기본_코디부터_스카프까지_정해진_순서로_반환한다(ClothesType baseType) {
+            List<Clothes> base = baseOutfit(baseType);
+            Clothes outer = new Clothes("아우터", ClothesType.OUTER, null, owner);
+            Clothes shoes = new Clothes("신발", ClothesType.SHOES, null, owner);
+            Clothes socks = new Clothes("양말", ClothesType.SOCKS, null, owner);
+            Clothes bag = new Clothes("가방", ClothesType.BAG, null, owner);
+            Clothes hat = new Clothes("모자", ClothesType.HAT, null, owner);
+            Clothes accessory = new Clothes("액세서리", ClothesType.ACCESSORY, null, owner);
+            Clothes scarf = new Clothes("스카프", ClothesType.SCARF, null, owner);
+            List<Clothes> candidates = new ArrayList<>(List.of(scarf, accessory, socks, hat, bag, shoes, outer));
+            candidates.addAll(base);
+
+            // 실제 17℃에서 민감도 1이면 보정 13℃로 아우터와 스카프를 함께 추가한다.
+            var result = algorithm.recommend(candidates, Map.of(), Map.of(), 17.0, 1);
+
+            List<Clothes> expected = new ArrayList<>(base);
+            expected.addAll(List.of(outer, shoes, socks, bag, hat, accessory, scarf));
+            assertThat(result).containsExactlyElementsOf(expected);
+        }
+
+        @ParameterizedTest
+        @CsvSource({"TOP", "DRESS"})
+        void 추가_아이템이_없어도_기본_코디를_반환한다(ClothesType baseType) {
+            List<Clothes> base = baseOutfit(baseType);
+
+            var result = algorithm.recommend(base, 28.0, 3);
+
+            assertThat(result).containsExactlyElementsOf(base);
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"없음", "TOP", "BOTTOM"})
+        void 기본_코디를_구성할_수_없으면_추가_아이템이_있어도_빈_목록을_반환한다(String availableType) {
+            List<Clothes> candidates = new ArrayList<>(List.of(
+                    new Clothes("신발", ClothesType.SHOES, null, owner),
+                    new Clothes("가방", ClothesType.BAG, null, owner),
+                    new Clothes("모자", ClothesType.HAT, null, owner),
+                    new Clothes("액세서리", ClothesType.ACCESSORY, null, owner),
+                    new Clothes("양말", ClothesType.SOCKS, null, owner),
+                    new Clothes("스카프", ClothesType.SCARF, null, owner),
+                    new Clothes("아우터", ClothesType.OUTER, null, owner)));
+            if (!availableType.equals("없음")) {
+                candidates.add(new Clothes("단일 의상", ClothesType.valueOf(availableType), null, owner));
+            }
+
+            var result = algorithm.recommend(candidates, 10.0, 3);
+
+            assertThat(result).isEmpty();
+        }
+
+        private List<Clothes> baseOutfit(ClothesType type) {
+            return type == ClothesType.TOP
+                    ? List.of(new Clothes("상의", ClothesType.TOP, null, owner),
+                            new Clothes("하의", ClothesType.BOTTOM, null, owner))
+                    : List.of(new Clothes("원피스", ClothesType.DRESS, null, owner));
         }
     }
 
