@@ -30,4 +30,11 @@ public record UserListRequest(
         UserRole roleEqual,
         Boolean locked
 ) {
+    public boolean isDefaultFirstPage() {
+        return cursor == null
+                && idAfter == null
+                && (emailLike == null || emailLike.isBlank())
+                && roleEqual == null
+                && locked == null;
+    }
 }

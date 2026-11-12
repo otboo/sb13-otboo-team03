@@ -1,5 +1,6 @@
 package com.otboo.team03.profile.service;
 
+import com.otboo.team03.global.config.CacheNames;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.global.storage.ImageStorage;
@@ -14,6 +15,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -39,6 +41,11 @@ public class ProfileServiceImpl implements ProfileService {
     return profileDtoAssembler.toDto(profile);
   }
 
+  @CacheEvict(
+          cacheNames = CacheNames.USER_LIST,
+          allEntries = true,
+          condition = "#p1 != null && #p1.name() != null"
+  )
   @Override
   @Transactional
   public ProfileDto updateProfile(UUID userId, ProfileUpdateRequest request, MultipartFile image) {

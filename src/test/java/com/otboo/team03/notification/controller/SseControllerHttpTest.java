@@ -3,6 +3,7 @@ package com.otboo.team03.notification.controller;
 import com.otboo.team03.global.config.SecurityConfig;
 import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.global.security.OtbooUserDetailsService;
+import com.otboo.team03.global.security.PasswordAuthenticationProvider;
 import com.otboo.team03.global.security.jwt.JwtAuthenticationFilter;
 import com.otboo.team03.global.security.jwt.JwtLoginFailureHandler;
 import com.otboo.team03.global.security.jwt.JwtLoginSuccessHandler;
@@ -113,6 +114,11 @@ class SseControllerHttpTest {
         @Bean
         JwtLogoutHandler logoutHandler() {
             return mock(JwtLogoutHandler.class);
+        }
+
+        @Bean
+        PasswordAuthenticationProvider passwordAuthenticationProvider() {
+            return mock(PasswordAuthenticationProvider.class);
         }
 
         @Bean

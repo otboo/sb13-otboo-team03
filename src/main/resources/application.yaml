@@ -52,6 +52,10 @@ otboo:
     region: ${AWS_REGION:ap-northeast-2}
     presign-minutes: 5
 
+  cache:
+    default-ttl: 5m
+    ttls: { }
+
 management:
   endpoints:
     web:
