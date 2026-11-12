@@ -1046,4 +1046,72 @@ class FollowServiceTest {
 
     verify(followDtoAssembler).toDtos(List.of(follow));
   }
+
+  @Test
+  void 팔로잉_커서로_다음_페이지를_조회한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID idAfter = UUID.randomUUID();
+    UUID nextFollowId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+
+    String cursor = "2026-11-12T01:00:00Z";
+    Instant cursorTime = Instant.parse(cursor);
+    Instant nextCreatedAt =
+        Instant.parse("2026-11-11T01:00:00Z");
+
+    Follow first = mock(Follow.class);
+    Follow extra = mock(Follow.class);
+
+    FollowDto firstDto = new FollowDto(
+        nextFollowId,
+        new UserSummary(followeeId, "팔로잉 대상", null),
+        new UserSummary(followerId, "나", null)
+    );
+
+    when(followRepository.findNextFollowingsPage(
+        followerId,
+        cursorTime,
+        idAfter,
+        PageRequest.of(0, 2)
+    )).thenReturn(List.of(first, extra));
+
+    when(followRepository.countByFollowerId(followerId))
+        .thenReturn(3L);
+
+    when(followDtoAssembler.toDtos(List.of(first)))
+        .thenReturn(List.of(firstDto));
+
+    when(first.getId()).thenReturn(nextFollowId);
+    when(first.getCreatedAt()).thenReturn(nextCreatedAt);
+
+    // when
+    CursorResponse<FollowDto> result = followService.getFollowings(
+        followerId, 1, cursor, idAfter, null
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(List.of(firstDto), result.data()),
+        () -> assertEquals(
+            "팔로잉 대상",
+            result.data().get(0).followee().name()
+        ),
+        () -> assertTrue(result.hasNext()),
+        () -> assertEquals(nextCreatedAt.toString(), result.nextCursor()),
+        () -> assertEquals(nextFollowId, result.nextIdAfter()),
+        () -> assertEquals(3L, result.totalCount()),
+        () -> assertEquals("createdAt", result.sortBy()),
+        () -> assertEquals("DESCENDING", result.sortDirection())
+    );
+
+    verify(followRepository).findNextFollowingsPage(
+        followerId,
+        cursorTime,
+        idAfter,
+        PageRequest.of(0, 2)
+    );
+
+    verify(followDtoAssembler).toDtos(List.of(first));
+  }
 }
