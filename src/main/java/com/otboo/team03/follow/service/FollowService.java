@@ -258,10 +258,6 @@ public class FollowService {
             ? null
             : nameLike.trim();
 
-    if (cursorTime != null && normalizedNameLike != null) {
-      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
-    }
-
     List<Follow> fetched;
 
     if (cursorTime == null) {
@@ -279,12 +275,22 @@ public class FollowService {
         );
       }
     } else {
-      fetched = followRepository.findNextFollowingsPage(
-          followerId,
-          cursorTime,
-          idAfter,
-          PageRequest.of(0, limit + 1)
-      );
+      if (normalizedNameLike == null) {
+        fetched = followRepository.findNextFollowingsPage(
+            followerId,
+            cursorTime,
+            idAfter,
+            PageRequest.of(0, limit + 1)
+        );
+      } else {
+        fetched = followRepository.findNextFollowingsPageByNameLike(
+            followerId,
+            normalizedNameLike,
+            cursorTime,
+            idAfter,
+            PageRequest.of(0, limit + 1)
+        );
+      }
     }
 
     boolean hasNext = fetched.size() > limit;

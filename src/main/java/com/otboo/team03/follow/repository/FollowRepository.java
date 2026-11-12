@@ -136,4 +136,24 @@ public interface FollowRepository extends JpaRepository<Follow, UUID> {
       @Param("idAfter") UUID idAfter,
       Pageable pageable
   );
+
+  @Query(value = """
+    SELECT f.*
+    FROM follows f
+    JOIN users u ON f.followee_id = u.id
+    WHERE f.follower_id = :followerId
+      AND LOWER(u.name) LIKE LOWER(CONCAT('%', :nameLike, '%'))
+      AND (
+        f.created_at < :cursor
+        OR (f.created_at = :cursor AND f.id < :idAfter)
+      )
+    ORDER BY f.created_at DESC, f.id DESC
+    """, nativeQuery = true)
+  List<Follow> findNextFollowingsPageByNameLike(
+      @Param("followerId") UUID followerId,
+      @Param("nameLike") String nameLike,
+      @Param("cursor") Instant cursor,
+      @Param("idAfter") UUID idAfter,
+      Pageable pageable
+  );
 }
