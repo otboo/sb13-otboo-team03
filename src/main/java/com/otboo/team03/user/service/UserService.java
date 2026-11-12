@@ -1,5 +1,6 @@
 package com.otboo.team03.user.service;
 
+import com.otboo.team03.global.config.CacheNames;
 import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.dto.CursorResponse;
@@ -17,6 +18,8 @@ import com.otboo.team03.user.repository.RedisTemporaryPasswordRepository;
 import com.otboo.team03.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -42,6 +45,7 @@ public class UserService {
     private final JwtRegistry jwtRegistry;
     private final RedisTemporaryPasswordRepository temporaryPasswordRepository;
 
+    @CacheEvict(cacheNames = CacheNames.USER_LIST, allEntries = true)
     @Transactional
     public UserDto createUser(UserCreateRequest request) {
         if (userRepository.existsByEmail(request.email())) {
@@ -59,7 +63,7 @@ public class UserService {
         return UserDto.from(savedUser);
     }
 
-
+    @CacheEvict(cacheNames = CacheNames.USER_LIST, allEntries = true)
     @Transactional
     @PreAuthorize("hasRole('ADMIN') and #userId != authentication.principal.userDto.id")
     public UserDto updateRole(UUID userId, UserRole role) {
@@ -108,7 +112,10 @@ public class UserService {
     }
 
 
-
+    @Cacheable(
+            cacheNames = CacheNames.USER_LIST,
+            condition = "#p0.isDefaultFirstPage()"
+    )
     @PreAuthorize("hasRole('ADMIN')")
     @Transactional(readOnly = true)
     public CursorResponse<UserDto> getUsers(UserListRequest request) {
@@ -173,6 +180,7 @@ public class UserService {
         });
     }
 
+    @CacheEvict(cacheNames = CacheNames.USER_LIST, allEntries = true)
     @Transactional
     @PreAuthorize("hasRole('ADMIN') and #userId != authentication.principal.userDto.id")
     public UserDto updateLock(UUID userId, boolean locked) {

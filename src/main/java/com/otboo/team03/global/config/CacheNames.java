@@ -6,7 +6,7 @@ public final class CacheNames {
     public static final String KEY_PREFIX = "otboo:cache:";
 
     // 각 도메인 담당자는 캐시 적용 시 이곳에 캐시 이름 상수를 추가하여 사용
-
+    public static final String USER_LIST = "user-list";
 
     private CacheNames() {
     }
