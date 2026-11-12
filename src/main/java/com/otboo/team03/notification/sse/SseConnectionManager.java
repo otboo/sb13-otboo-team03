@@ -1,6 +1,7 @@
 package com.otboo.team03.notification.sse;
 
 import com.otboo.team03.notification.dto.response.NotificationDto;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -10,6 +11,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
+@Slf4j
 public class SseConnectionManager {
 
     private static final long SSE_TIMEOUT = 30 * 60 * 1000L;
@@ -24,6 +26,12 @@ public class SseConnectionManager {
         emitter.onTimeout(cleanup);
         emitter.onError(ignored -> cleanup.run());
 
+        register(receiverId, emitter);
+
+        return emitter;
+    }
+
+    void register(UUID receiverId, SseEmitter emitter) {
         emitters.compute(receiverId, (id, connections) -> {
             Set<SseEmitter> updatedConnections = connections == null
                     ? ConcurrentHashMap.newKeySet()
@@ -31,8 +39,6 @@ public class SseConnectionManager {
             updatedConnections.add(emitter);
             return updatedConnections;
         });
-
-        return emitter;
     }
 
     public void send(UUID receiverId, NotificationDto notification) {
@@ -48,6 +54,10 @@ public class SseConnectionManager {
                         .name(NOTIFICATION_EVENT_NAME)
                         .data(notification));
             } catch (IOException exception) {
+                log.warn("SSE 알림 전송에 실패했습니다. receiverId={}", receiverId, exception);
+                remove(receiverId, emitter);
+            } catch (IllegalStateException exception) {
+                log.warn("SSE 연결이 종료된 상태입니다. receiverId={}", receiverId, exception);
                 remove(receiverId, emitter);
                 emitter.completeWithError(exception);
             }

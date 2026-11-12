@@ -9,6 +9,10 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 class SseConnectionManagerTest {
 
@@ -32,6 +36,23 @@ class SseConnectionManagerTest {
 
         connectionManager.send(receiverId, notification);
 
+        assertThat(connectionManager.connectionCount(receiverId)).isEqualTo(1);
+    }
+
+    @Test
+    void 한_연결의_IllegalStateException이_다른_연결_전송을_중단시키지_않는다() throws Exception {
+        UUID receiverId = UUID.randomUUID();
+        SseEmitter failedEmitter = mock(SseEmitter.class);
+        SseEmitter activeEmitter = mock(SseEmitter.class);
+        doThrow(new IllegalStateException("이미 종료된 연결입니다."))
+                .when(failedEmitter)
+                .send(any(SseEmitter.SseEventBuilder.class));
+        connectionManager.register(receiverId, failedEmitter);
+        connectionManager.register(receiverId, activeEmitter);
+
+        connectionManager.send(receiverId, notification(receiverId));
+
+        verify(activeEmitter).send(any(SseEmitter.SseEventBuilder.class));
         assertThat(connectionManager.connectionCount(receiverId)).isEqualTo(1);
     }
 
