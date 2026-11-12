@@ -239,8 +239,18 @@ public class FollowService {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
     }
 
-    if (cursor != null || idAfter != null) {
+    if ((cursor == null) != (idAfter == null)) {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    Instant cursorTime = null;
+
+    if (cursor != null) {
+      try {
+        cursorTime = Instant.parse(cursor);
+      } catch (DateTimeParseException ex) {
+        throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+      }
     }
 
     String normalizedNameLike =
@@ -248,18 +258,31 @@ public class FollowService {
             ? null
             : nameLike.trim();
 
+    if (cursorTime != null && normalizedNameLike != null) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
     List<Follow> fetched;
 
-    if (normalizedNameLike == null) {
-      fetched =
-          followRepository.findByFollowerIdOrderByCreatedAtDescIdDesc(
-              followerId,
-              PageRequest.of(0, limit + 1)
-          );
+    if (cursorTime == null) {
+      if (normalizedNameLike == null) {
+        fetched =
+            followRepository.findByFollowerIdOrderByCreatedAtDescIdDesc(
+                followerId,
+                PageRequest.of(0, limit + 1)
+            );
+      } else {
+        fetched = followRepository.findFollowingsByNameLike(
+            followerId,
+            normalizedNameLike,
+            PageRequest.of(0, limit + 1)
+        );
+      }
     } else {
-      fetched = followRepository.findFollowingsByNameLike(
+      fetched = followRepository.findNextFollowingsPage(
           followerId,
-          normalizedNameLike,
+          cursorTime,
+          idAfter,
           PageRequest.of(0, limit + 1)
       );
     }
