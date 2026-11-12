@@ -6,8 +6,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -95,6 +100,53 @@ class SseConnectionManagerTest {
 
         assertThat(connectionManager.connectionCount(receiverId)).isZero();
         verify(emitter).complete();
+    }
+
+    @Test
+    void 연결_추가와_삭제가_동시에_발생해도_연결_목록의_정합성을_유지한다() throws Exception {
+        UUID receiverId = UUID.randomUUID();
+        int operationCount = 20;
+        List<SseEmitter> emittersToRemove = new ArrayList<>();
+        for (int index = 0; index < operationCount; index++) {
+            SseEmitter emitter = mock(SseEmitter.class);
+            emittersToRemove.add(emitter);
+            connectionManager.register(receiverId, emitter);
+        }
+
+        int taskCount = operationCount * 2;
+        CountDownLatch ready = new CountDownLatch(taskCount);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(taskCount);
+        List<Future<?>> futures = new ArrayList<>();
+
+        try {
+            for (SseEmitter emitter : emittersToRemove) {
+                futures.add(executor.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    connectionManager.disconnect(receiverId, emitter);
+                    return null;
+                }));
+            }
+            for (int index = 0; index < operationCount; index++) {
+                futures.add(executor.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    connectionManager.connect(receiverId);
+                    return null;
+                }));
+            }
+
+            ready.await();
+            start.countDown();
+            for (Future<?> future : futures) {
+                future.get();
+            }
+
+            assertThat(connectionManager.connectionCount(receiverId)).isEqualTo(operationCount);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     private NotificationDto notification(UUID receiverId) {
