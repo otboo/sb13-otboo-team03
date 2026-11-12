@@ -1114,4 +1114,75 @@ class FollowServiceTest {
 
     verify(followDtoAssembler).toDtos(List.of(first));
   }
+
+  @Test
+  void 이름_검색_조건을_유지하며_팔로잉_다음_페이지를_조회한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+    UUID idAfter = UUID.randomUUID();
+    UUID followId = UUID.randomUUID();
+
+    String cursor = "2026-11-12T01:00:00Z";
+    Instant cursorTime = Instant.parse(cursor);
+
+    Follow follow = mock(Follow.class);
+
+    FollowDto followDto = new FollowDto(
+        followId,
+        new UserSummary(followeeId, "김민수", null),
+        new UserSummary(followerId, "나", null)
+    );
+
+    when(followRepository.findNextFollowingsPageByNameLike(
+        followerId,
+        "민",
+        cursorTime,
+        idAfter,
+        PageRequest.of(0, 3)
+    )).thenReturn(List.of(follow));
+
+    when(followRepository.countFollowingsByNameLike(
+        followerId,
+        "민"
+    )).thenReturn(3L);
+
+    when(followDtoAssembler.toDtos(List.of(follow)))
+        .thenReturn(List.of(followDto));
+
+    // when
+    CursorResponse<FollowDto> result = followService.getFollowings(
+        followerId, 2, cursor, idAfter, "  민  "
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(1, result.data().size()),
+        () -> assertEquals(
+            "김민수",
+            result.data().get(0).followee().name()
+        ),
+        () -> assertFalse(result.hasNext()),
+        () -> assertNull(result.nextCursor()),
+        () -> assertNull(result.nextIdAfter()),
+        () -> assertEquals(3L, result.totalCount()),
+        () -> assertEquals("createdAt", result.sortBy()),
+        () -> assertEquals("DESCENDING", result.sortDirection())
+    );
+
+    verify(followRepository).findNextFollowingsPageByNameLike(
+        followerId,
+        "민",
+        cursorTime,
+        idAfter,
+        PageRequest.of(0, 3)
+    );
+
+    verify(followRepository).countFollowingsByNameLike(
+        followerId,
+        "민"
+    );
+
+    verify(followDtoAssembler).toDtos(List.of(follow));
+  }
 }
