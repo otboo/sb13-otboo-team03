@@ -1,8 +1,6 @@
 package com.otboo.team03.notification.controller;
 
-import com.otboo.team03.global.exception.ErrorCode;
-import com.otboo.team03.global.exception.OtbooException;
-import com.otboo.team03.global.security.OtbooUserDetails;
+import com.otboo.team03.global.security.AuthenticatedUserIdExtractor;
 import com.otboo.team03.notification.sse.SseConnectionManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -23,16 +21,6 @@ public class SseController {
 
     @GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter connect(Authentication authentication) {
-        return sseConnectionManager.connect(getAuthenticatedUserId(authentication));
-    }
-
-    private UUID getAuthenticatedUserId(Authentication authentication) {
-        if (authentication == null
-                || !authentication.isAuthenticated()
-                || !(authentication.getPrincipal() instanceof OtbooUserDetails userDetails)) {
-            throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
-        }
-
-        return userDetails.getUserDto().id();
+        return sseConnectionManager.connect(AuthenticatedUserIdExtractor.extract(authentication));
     }
 }

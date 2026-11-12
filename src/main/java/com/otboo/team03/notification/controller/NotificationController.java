@@ -1,9 +1,7 @@
 package com.otboo.team03.notification.controller;
 
 import com.otboo.team03.global.dto.CursorResponse;
-import com.otboo.team03.global.exception.ErrorCode;
-import com.otboo.team03.global.exception.OtbooException;
-import com.otboo.team03.global.security.OtbooUserDetails;
+import com.otboo.team03.global.security.AuthenticatedUserIdExtractor;
 import com.otboo.team03.notification.dto.response.NotificationDto;
 import com.otboo.team03.notification.service.NotificationService;
 import lombok.RequiredArgsConstructor;
@@ -33,7 +31,7 @@ public class NotificationController {
             @RequestParam(required = false) UUID idAfter,
             Authentication authentication
     ) {
-        UUID receiverId = getAuthenticatedUserId(authentication);
+        UUID receiverId = AuthenticatedUserIdExtractor.extract(authentication);
 
         return ResponseEntity.ok(notificationService.getNotifications(
                 receiverId,
@@ -48,19 +46,10 @@ public class NotificationController {
             @PathVariable UUID notificationId,
             Authentication authentication
     ) {
-        UUID receiverId = getAuthenticatedUserId(authentication);
+        UUID receiverId = AuthenticatedUserIdExtractor.extract(authentication);
         notificationService.markAsRead(receiverId, notificationId, Instant.now());
 
         return ResponseEntity.noContent().build();
     }
 
-    private UUID getAuthenticatedUserId(Authentication authentication) {
-        if (authentication == null
-                || !authentication.isAuthenticated()
-                || !(authentication.getPrincipal() instanceof OtbooUserDetails userDetails)) {
-            throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
-        }
-
-        return userDetails.getUserDto().id();
-    }
 }
