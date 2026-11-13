@@ -854,4 +854,459 @@ class FollowServiceTest {
         userRepository
     );
   }
+
+  @Test
+  void 팔로잉_첫_페이지_조회시_다음_커서와_전체_건수를_반환한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID firstFollowId = UUID.randomUUID();
+    UUID secondFollowId = UUID.randomUUID();
+
+    Instant createdAt = Instant.parse("2026-11-12T01:00:00Z");
+
+    Follow first = mock(Follow.class);
+    Follow second = mock(Follow.class);
+    Follow extra = mock(Follow.class);
+
+    FollowDto firstDto = new FollowDto(
+        firstFollowId,
+        new UserSummary(UUID.randomUUID(), "첫 번째 팔로잉", null),
+        new UserSummary(followerId, "나", null)
+    );
+
+    FollowDto secondDto = new FollowDto(
+        secondFollowId,
+        new UserSummary(UUID.randomUUID(), "두 번째 팔로잉", null),
+        new UserSummary(followerId, "나", null)
+    );
+
+    when(followRepository.findByFollowerIdOrderByCreatedAtDescIdDesc(
+        followerId,
+        PageRequest.of(0, 3)
+    )).thenReturn(List.of(first, second, extra));
+
+    when(followRepository.countByFollowerId(followerId))
+        .thenReturn(5L);
+
+    when(followDtoAssembler.toDtos(List.of(first, second)))
+        .thenReturn(List.of(firstDto, secondDto));
+
+    when(second.getId()).thenReturn(secondFollowId);
+    when(second.getCreatedAt()).thenReturn(createdAt);
+
+    // when
+    CursorResponse<FollowDto> result = followService.getFollowings(
+        followerId, 2, null, null, null
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(List.of(firstDto, secondDto), result.data()),
+        () -> assertEquals("첫 번째 팔로잉",
+            result.data().get(0).followee().name()),
+        () -> assertEquals("두 번째 팔로잉",
+            result.data().get(1).followee().name()),
+        () -> assertTrue(result.hasNext()),
+        () -> assertEquals(createdAt.toString(), result.nextCursor()),
+        () -> assertEquals(secondFollowId, result.nextIdAfter()),
+        () -> assertEquals(5L, result.totalCount()),
+        () -> assertEquals("createdAt", result.sortBy()),
+        () -> assertEquals("DESCENDING", result.sortDirection())
+    );
+
+    verify(followDtoAssembler).toDtos(List.of(first, second));
+  }
+
+  @Test
+  void 팔로잉_이름으로_검색하면_일치하는_목록과_전체_건수를_반환한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID lastFollowId = UUID.randomUUID();
+    Instant createdAt = Instant.parse("2026-11-12T01:00:00Z");
+
+    Follow first = mock(Follow.class);
+    Follow second = mock(Follow.class);
+    Follow extra = mock(Follow.class);
+
+    FollowDto firstDto = new FollowDto(
+        UUID.randomUUID(),
+        new UserSummary(UUID.randomUUID(), "김민수", null),
+        new UserSummary(followerId, "나", null)
+    );
+
+    FollowDto secondDto = new FollowDto(
+        lastFollowId,
+        new UserSummary(UUID.randomUUID(), "이민지", null),
+        new UserSummary(followerId, "나", null)
+    );
+
+    when(followRepository.findFollowingsByNameLike(
+        followerId,
+        "민",
+        PageRequest.of(0, 3)
+    )).thenReturn(List.of(first, second, extra));
+
+    when(followRepository.countFollowingsByNameLike(
+        followerId,
+        "민"
+    )).thenReturn(5L);
+
+    when(followDtoAssembler.toDtos(List.of(first, second)))
+        .thenReturn(List.of(firstDto, secondDto));
+
+    when(second.getId()).thenReturn(lastFollowId);
+    when(second.getCreatedAt()).thenReturn(createdAt);
+
+    // when
+    CursorResponse<FollowDto> result = followService.getFollowings(
+        followerId, 2, null, null, "민"
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(2, result.data().size()),
+        () -> assertEquals("김민수", result.data().get(0).followee().name()),
+        () -> assertEquals("이민지", result.data().get(1).followee().name()),
+        () -> assertEquals(5L, result.totalCount()),
+        () -> assertTrue(result.hasNext()),
+        () -> assertEquals(createdAt.toString(), result.nextCursor()),
+        () -> assertEquals(lastFollowId, result.nextIdAfter()),
+        () -> assertEquals("createdAt", result.sortBy()),
+        () -> assertEquals("DESCENDING", result.sortDirection())
+    );
+
+    verify(followDtoAssembler).toDtos(List.of(first, second));
+
+    verify(followRepository, never())
+        .findByFollowerIdOrderByCreatedAtDescIdDesc(
+            any(UUID.class),
+            any(PageRequest.class)
+        );
+  }
+
+  @Test
+  void 팔로잉_이름_검색어가_공백이면_전체_목록을_조회한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+    UUID followId = UUID.randomUUID();
+
+    Follow follow = mock(Follow.class);
+
+    FollowDto followDto = new FollowDto(
+        followId,
+        new UserSummary(followeeId, "팔로우 대상", null),
+        new UserSummary(followerId, "나", null)
+    );
+
+    when(followRepository.findByFollowerIdOrderByCreatedAtDescIdDesc(
+        followerId,
+        PageRequest.of(0, 11)
+    )).thenReturn(List.of(follow));
+
+    when(followRepository.countByFollowerId(followerId))
+        .thenReturn(1L);
+
+    when(followDtoAssembler.toDtos(List.of(follow)))
+        .thenReturn(List.of(followDto));
+
+    // when
+    CursorResponse<FollowDto> result = followService.getFollowings(
+        followerId, 10, null, null, "   "
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(1, result.data().size()),
+        () -> assertEquals(followDto, result.data().get(0)),
+        () -> assertEquals(1L, result.totalCount()),
+        () -> assertFalse(result.hasNext()),
+        () -> assertNull(result.nextCursor()),
+        () -> assertNull(result.nextIdAfter())
+    );
+
+    verify(followRepository)
+        .findByFollowerIdOrderByCreatedAtDescIdDesc(
+            followerId,
+            PageRequest.of(0, 11)
+        );
+
+    verify(followRepository, never())
+        .findFollowingsByNameLike(
+            any(UUID.class),
+            anyString(),
+            any(PageRequest.class)
+        );
+
+    verify(followRepository, never())
+        .countFollowingsByNameLike(
+            any(UUID.class),
+            anyString()
+        );
+
+    verify(followDtoAssembler).toDtos(List.of(follow));
+  }
+
+  @Test
+  void 팔로잉_커서로_다음_페이지를_조회한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID idAfter = UUID.randomUUID();
+    UUID nextFollowId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+
+    String cursor = "2026-11-12T01:00:00Z";
+    Instant cursorTime = Instant.parse(cursor);
+    Instant nextCreatedAt =
+        Instant.parse("2026-11-11T01:00:00Z");
+
+    Follow first = mock(Follow.class);
+    Follow extra = mock(Follow.class);
+
+    FollowDto firstDto = new FollowDto(
+        nextFollowId,
+        new UserSummary(followeeId, "팔로잉 대상", null),
+        new UserSummary(followerId, "나", null)
+    );
+
+    when(followRepository.findNextFollowingsPage(
+        followerId,
+        cursorTime,
+        idAfter,
+        PageRequest.of(0, 2)
+    )).thenReturn(List.of(first, extra));
+
+    when(followRepository.countByFollowerId(followerId))
+        .thenReturn(3L);
+
+    when(followDtoAssembler.toDtos(List.of(first)))
+        .thenReturn(List.of(firstDto));
+
+    when(first.getId()).thenReturn(nextFollowId);
+    when(first.getCreatedAt()).thenReturn(nextCreatedAt);
+
+    // when
+    CursorResponse<FollowDto> result = followService.getFollowings(
+        followerId, 1, cursor, idAfter, null
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(List.of(firstDto), result.data()),
+        () -> assertEquals(
+            "팔로잉 대상",
+            result.data().get(0).followee().name()
+        ),
+        () -> assertTrue(result.hasNext()),
+        () -> assertEquals(nextCreatedAt.toString(), result.nextCursor()),
+        () -> assertEquals(nextFollowId, result.nextIdAfter()),
+        () -> assertEquals(3L, result.totalCount()),
+        () -> assertEquals("createdAt", result.sortBy()),
+        () -> assertEquals("DESCENDING", result.sortDirection())
+    );
+
+    verify(followRepository).findNextFollowingsPage(
+        followerId,
+        cursorTime,
+        idAfter,
+        PageRequest.of(0, 2)
+    );
+
+    verify(followDtoAssembler).toDtos(List.of(first));
+  }
+
+  @Test
+  void 이름_검색_조건을_유지하며_팔로잉_다음_페이지를_조회한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+    UUID idAfter = UUID.randomUUID();
+    UUID followId = UUID.randomUUID();
+
+    String cursor = "2026-11-12T01:00:00Z";
+    Instant cursorTime = Instant.parse(cursor);
+
+    Follow follow = mock(Follow.class);
+
+    FollowDto followDto = new FollowDto(
+        followId,
+        new UserSummary(followeeId, "김민수", null),
+        new UserSummary(followerId, "나", null)
+    );
+
+    when(followRepository.findNextFollowingsPageByNameLike(
+        followerId,
+        "민",
+        cursorTime,
+        idAfter,
+        PageRequest.of(0, 3)
+    )).thenReturn(List.of(follow));
+
+    when(followRepository.countFollowingsByNameLike(
+        followerId,
+        "민"
+    )).thenReturn(3L);
+
+    when(followDtoAssembler.toDtos(List.of(follow)))
+        .thenReturn(List.of(followDto));
+
+    // when
+    CursorResponse<FollowDto> result = followService.getFollowings(
+        followerId, 2, cursor, idAfter, "  민  "
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(1, result.data().size()),
+        () -> assertEquals(
+            "김민수",
+            result.data().get(0).followee().name()
+        ),
+        () -> assertFalse(result.hasNext()),
+        () -> assertNull(result.nextCursor()),
+        () -> assertNull(result.nextIdAfter()),
+        () -> assertEquals(3L, result.totalCount()),
+        () -> assertEquals("createdAt", result.sortBy()),
+        () -> assertEquals("DESCENDING", result.sortDirection())
+    );
+
+    verify(followRepository).findNextFollowingsPageByNameLike(
+        followerId,
+        "민",
+        cursorTime,
+        idAfter,
+        PageRequest.of(0, 3)
+    );
+
+    verify(followRepository).countFollowingsByNameLike(
+        followerId,
+        "민"
+    );
+
+    verify(followDtoAssembler).toDtos(List.of(follow));
+  }
+
+  @Test
+  void 팔로잉_조회_필수값이_잘못되면_예외가_발생한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+
+    // when
+    OtbooException nullFollowerId = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            null, 10, null, null, null
+        )
+    );
+
+    OtbooException zeroLimit = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            followerId, 0, null, null, null
+        )
+    );
+
+    OtbooException negativeLimit = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            followerId, -1, null, null, null
+        )
+    );
+
+    OtbooException maxLimit = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            followerId, Integer.MAX_VALUE, null, null, null
+        )
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            nullFollowerId.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            zeroLimit.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            negativeLimit.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            maxLimit.getErrorCode()
+        )
+    );
+
+    verifyNoInteractions(
+        followRepository,
+        followDtoAssembler,
+        userRepository
+    );
+  }
+
+  @Test
+  void 팔로잉_조회_커서_형식이나_조합이_잘못되면_예외가_발생한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID idAfter = UUID.randomUUID();
+    String cursor = "2026-11-12T01:00:00Z";
+
+    // when
+    OtbooException missingIdAfter = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            followerId, 10, cursor, null, null
+        )
+    );
+
+    OtbooException missingCursor = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            followerId, 10, null, idAfter, null
+        )
+    );
+
+    OtbooException invalidCursor = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            followerId, 10, "invalid-cursor", idAfter, null
+        )
+    );
+
+    OtbooException blankCursor = assertThrows(
+        OtbooException.class,
+        () -> followService.getFollowings(
+            followerId, 10, "   ", idAfter, null
+        )
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            missingIdAfter.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            missingCursor.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            invalidCursor.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            blankCursor.getErrorCode()
+        )
+    );
+
+    verifyNoInteractions(
+        followRepository,
+        followDtoAssembler,
+        userRepository
+    );
+  }
 }

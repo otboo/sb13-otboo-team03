@@ -668,4 +668,284 @@ class FollowControllerTest {
 
     verifyNoInteractions(followService);
   }
+
+  @Test
+  void 팔로잉_목록_조회에_성공하면_200과_커서_응답을_반환한다()
+      throws Exception {
+    // given
+    UUID firstFollowId = UUID.randomUUID();
+    UUID lastFollowId = UUID.randomUUID();
+    UUID firstFolloweeId = UUID.randomUUID();
+    UUID lastFolloweeId = UUID.randomUUID();
+    String nextCursor = "2026-11-12T01:00:00Z";
+
+    FollowDto firstDto = new FollowDto(
+        firstFollowId,
+        new UserSummary(firstFolloweeId, "김민수", "/images/minsu.png"),
+        new UserSummary(followerId, "나", null)
+    );
+
+    FollowDto secondDto = new FollowDto(
+        lastFollowId,
+        new UserSummary(lastFolloweeId, "이민지", "/images/minji.png"),
+        new UserSummary(followerId, "나", null)
+    );
+
+    CursorResponse<FollowDto> response = new CursorResponse<>(
+        List.of(firstDto, secondDto),
+        nextCursor,
+        lastFollowId,
+        true,
+        5L,
+        "createdAt",
+        "DESCENDING"
+    );
+
+    when(followService.getFollowings(
+        followerId, 2, null, null, "민"
+    )).thenReturn(response);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/followings")
+            .principal(authentication(followerId))
+            .param("followerId", followerId.toString())
+            .param("limit", "2")
+            .param("nameLike", "민")
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(firstFollowId.toString()))
+        .andExpect(jsonPath("$.data[0].followee.userId")
+            .value(firstFolloweeId.toString()))
+        .andExpect(jsonPath("$.data[0].followee.name")
+            .value("김민수"))
+        .andExpect(jsonPath("$.data[0].followee.profileImageUrl")
+            .value("/images/minsu.png"))
+        .andExpect(jsonPath("$.data[0].follower.userId")
+            .value(followerId.toString()))
+        .andExpect(jsonPath("$.data[1].followee.name")
+            .value("이민지"))
+        .andExpect(jsonPath("$.nextCursor").value(nextCursor))
+        .andExpect(jsonPath("$.nextIdAfter")
+            .value(lastFollowId.toString()))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andExpect(jsonPath("$.totalCount").value(5))
+        .andExpect(jsonPath("$.sortBy").value("createdAt"))
+        .andExpect(jsonPath("$.sortDirection").value("DESCENDING"));
+
+    verify(followService).getFollowings(
+        followerId, 2, null, null, "민"
+    );
+  }
+
+  @Test
+  void 팔로잉_조회에서_커서와_검색어를_서비스에_전달한다()
+      throws Exception {
+    // given
+    UUID idAfter = UUID.randomUUID();
+    String cursor = "2026-11-12T01:00:00Z";
+
+    CursorResponse<FollowDto> response = new CursorResponse<>(
+        List.of(),
+        null,
+        null,
+        false,
+        3L,
+        "createdAt",
+        "DESCENDING"
+    );
+
+    when(followService.getFollowings(
+        followerId, 10, cursor, idAfter, "김"
+    )).thenReturn(response);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/followings")
+            .principal(authentication(followerId))
+            .param("followerId", followerId.toString())
+            .param("limit", "10")
+            .param("cursor", cursor)
+            .param("idAfter", idAfter.toString())
+            .param("nameLike", "김")
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(0))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.nextCursor").value(nullValue()))
+        .andExpect(jsonPath("$.nextIdAfter").value(nullValue()))
+        .andExpect(jsonPath("$.totalCount").value(3));
+
+    verify(followService).getFollowings(
+        followerId, 10, cursor, idAfter, "김"
+    );
+  }
+
+  @Test
+  void 팔로잉_조회에서_선택_파라미터를_생략할_수_있다()
+      throws Exception {
+    // given
+    CursorResponse<FollowDto> response = new CursorResponse<>(
+        List.of(),
+        null,
+        null,
+        false,
+        0L,
+        "createdAt",
+        "DESCENDING"
+    );
+
+    when(followService.getFollowings(
+        followerId, 10, null, null, null
+    )).thenReturn(response);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/followings")
+            .principal(authentication(followerId))
+            .param("followerId", followerId.toString())
+            .param("limit", "10")
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(0))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.totalCount").value(0));
+
+    verify(followService).getFollowings(
+        followerId, 10, null, null, null
+    );
+  }
+
+  @Test
+  void 미인증_사용자는_팔로잉_목록을_조회할_수_없다()
+      throws Exception {
+    // given
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/followings")
+            .param("followerId", followerId.toString())
+            .param("limit", "10")
+    );
+
+    // then
+    result.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    verifyNoInteractions(followService);
+  }
+
+  @Test
+  void 팔로잉_조회에서_필수_파라미터_누락이나_형식_오류는_400을_반환한다()
+      throws Exception {
+    // given
+
+    // when
+    var missingFollowerId = mockMvc.perform(
+        get("/api/follows/followings")
+            .principal(authentication(followerId))
+            .param("limit", "10")
+    );
+
+    var missingLimit = mockMvc.perform(
+        get("/api/follows/followings")
+            .principal(authentication(followerId))
+            .param("followerId", followerId.toString())
+    );
+
+    var invalidFollowerId = mockMvc.perform(
+        get("/api/follows/followings")
+            .principal(authentication(followerId))
+            .param("followerId", "invalid-uuid")
+            .param("limit", "10")
+    );
+
+    var invalidLimit = mockMvc.perform(
+        get("/api/follows/followings")
+            .principal(authentication(followerId))
+            .param("followerId", followerId.toString())
+            .param("limit", "invalid")
+    );
+
+    // then
+    missingFollowerId.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    missingLimit.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    invalidFollowerId.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    invalidLimit.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    verifyNoInteractions(followService);
+  }
+
+  @Test
+  void 인증되지_않은_Authentication_객체는_팔로잉_조회를_거부한다()
+      throws Exception {
+    // given
+    Authentication unauthenticated =
+        new UsernamePasswordAuthenticationToken(
+            authentication(followerId).getPrincipal(),
+            null
+        );
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/followings")
+            .principal(unauthenticated)
+            .param("followerId", followerId.toString())
+            .param("limit", "10")
+    );
+
+    // then
+    result.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    verifyNoInteractions(followService);
+  }
+
+  @Test
+  void 잘못된_Principal_타입은_팔로잉_조회를_거부한다()
+      throws Exception {
+    // given
+    Authentication invalidPrincipal =
+        new UsernamePasswordAuthenticationToken(
+            "invalid-principal",
+            null,
+            authentication(followerId).getAuthorities()
+        );
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/followings")
+            .principal(invalidPrincipal)
+            .param("followerId", followerId.toString())
+            .param("limit", "10")
+    );
+
+    // then
+    result.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    verifyNoInteractions(followService);
+  }
 }

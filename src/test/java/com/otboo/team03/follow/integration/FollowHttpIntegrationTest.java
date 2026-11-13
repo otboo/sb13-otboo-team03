@@ -555,4 +555,140 @@ class FollowHttpIntegrationTest extends PostgresTestSupport {
         Timestamp.from(createdAt)
     );
   }
+
+  @Test
+  void 팔로잉_이름_검색과_커서_페이지네이션을_HTTP로_조회한다()
+      throws Exception {
+    // given
+    User follower = createUser("팔로워");
+    User otherFollower = createUser("다른 사용자");
+
+    User minsu = createUser("김민수");
+    User minji = createUser("이민지");
+    User minho = createUser("최민호");
+    User seojun = createUser("박서준");
+
+    Instant sameTime = Instant.parse("2026-11-12T03:00:00Z");
+
+    UUID id3 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000003"
+    );
+    UUID id2 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000002"
+    );
+    UUID id1 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000001"
+    );
+    UUID excludedId = UUID.fromString(
+        "00000000-0000-0000-0000-000000000004"
+    );
+    UUID otherId = UUID.fromString(
+        "00000000-0000-0000-0000-000000000005"
+    );
+
+    insertPaginationFollow(
+        id3, follower.getId(), minsu.getId(), sameTime
+    );
+    insertPaginationFollow(
+        id2, follower.getId(), minji.getId(), sameTime
+    );
+    insertPaginationFollow(
+        id1, follower.getId(), minho.getId(), sameTime
+    );
+    insertPaginationFollow(
+        excludedId, follower.getId(), seojun.getId(), sameTime
+    );
+    insertPaginationFollow(
+        otherId, otherFollower.getId(), minsu.getId(), sameTime
+    );
+
+    jdbcTemplate.update("""
+      INSERT INTO profiles (
+          user_id, profile_image_url,
+          created_at, updated_at
+      ) VALUES (?, ?, ?, ?)
+      """,
+        minsu.getId(),
+        "https://example.com/minsu.png",
+        Timestamp.from(sameTime),
+        Timestamp.from(sameTime)
+    );
+
+    entityManager.clear();
+
+    String accessToken = accessTokenFor(follower.getId());
+
+    // when
+    var firstPage = mockMvc.perform(
+        get("/api/follows/followings")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("followerId", follower.getId().toString())
+            .param("limit", "2")
+            .param("nameLike", "민")
+    );
+
+    // then
+    firstPage.andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(id3.toString()))
+        .andExpect(jsonPath("$.data[0].followee.userId")
+            .value(minsu.getId().toString()))
+        .andExpect(jsonPath("$.data[0].followee.name")
+            .value("김민수"))
+        .andExpect(jsonPath("$.data[0].followee.profileImageUrl")
+            .value("https://example.com/minsu.png"))
+        .andExpect(jsonPath("$.data[0].follower.userId")
+            .value(follower.getId().toString()))
+        .andExpect(jsonPath("$.data[1].id")
+            .value(id2.toString()))
+        .andExpect(jsonPath("$.data[1].followee.name")
+            .value("이민지"))
+        .andExpect(jsonPath("$.nextCursor")
+            .value(sameTime.toString()))
+        .andExpect(jsonPath("$.nextIdAfter")
+            .value(id2.toString()))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andExpect(jsonPath("$.totalCount").value(3))
+        .andExpect(jsonPath("$.sortBy").value("createdAt"))
+        .andExpect(jsonPath("$.sortDirection")
+            .value("DESCENDING"));
+
+    String responseBody = firstPage
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    String cursor = JsonPath.read(
+        responseBody, "$.nextCursor"
+    );
+    String idAfter = JsonPath.read(
+        responseBody, "$.nextIdAfter"
+    );
+
+    // when
+    var secondPage = mockMvc.perform(
+        get("/api/follows/followings")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("followerId", follower.getId().toString())
+            .param("limit", "2")
+            .param("nameLike", "민")
+            .param("cursor", cursor)
+            .param("idAfter", idAfter)
+    );
+
+    // then
+    secondPage.andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(id1.toString()))
+        .andExpect(jsonPath("$.data[0].followee.userId")
+            .value(minho.getId().toString()))
+        .andExpect(jsonPath("$.data[0].followee.name")
+            .value("최민호"))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.nextCursor").isEmpty())
+        .andExpect(jsonPath("$.nextIdAfter").isEmpty())
+        .andExpect(jsonPath("$.totalCount").value(3));
+  }
 }
