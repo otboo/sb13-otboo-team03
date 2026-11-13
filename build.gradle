@@ -75,6 +75,7 @@ dependencies {
         // Security
         implementation 'org.springframework.boot:spring-boot-starter-security'
         testImplementation 'org.springframework.security:spring-security-test'
+        implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-client'
 
         // JWT
         implementation 'com.nimbusds:nimbus-jose-jwt:10.10'
