@@ -1,10 +1,12 @@
-
 package com.otboo.team03.auth.integration;
 
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.RedisTemporaryPasswordRepository;
 import com.otboo.team03.user.repository.UserRepository;
 import com.otboo.team03.user.service.MailService;
+import com.otboo.team03.auth.entity.SocialAccount;
+import com.otboo.team03.auth.entity.SocialProvider;
+import com.otboo.team03.auth.repository.SocialAccountRepository;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -35,6 +37,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -64,6 +67,9 @@ class AuthIntegrationTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private SocialAccountRepository socialAccountRepository;
 
     @Autowired
     private RedisTemporaryPasswordRepository temporaryPasswordRepository;
@@ -468,6 +474,39 @@ class AuthIntegrationTest {
                                 }
                                 """))
                     .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("카카오 소셜 계정은 비밀번호 초기화를 요청해도 임시 비밀번호를 발급하거나 발송하지 않는다")
+        void resetPassword_kakaoAccount_returns204WithoutIssuingTemporaryPassword() throws Exception {
+            // given
+            String providerUserId = UUID.randomUUID().toString();
+            String email = "kakao_" + providerUserId + "@kakao.com";
+            User user = userRepository.saveAndFlush(new User(email, null, "카카오 사용자"));
+
+            try {
+                socialAccountRepository.saveAndFlush(new SocialAccount(user, SocialProvider.KAKAO, providerUserId));
+                Cookie csrfCookie = getCsrfCookie();
+
+                // when & then
+                mvc.perform(post("/api/auth/reset-password")
+                                .cookie(csrfCookie)
+                                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                            {
+                                "email": "%s"
+                            }
+                            """.formatted(email)))
+                        .andExpect(status().isNoContent());
+
+                assertThat(temporaryPasswordRepository.findByEmail(email)).isEmpty();
+                verify(mailService, never()).sendTemporaryPassword(eq(email), anyString());
+            } finally {
+                temporaryPasswordRepository.delete(email);
+                socialAccountRepository.deleteById(user.getId());
+                userRepository.deleteById(user.getId());
+            }
         }
     }
 
