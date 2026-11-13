@@ -1,5 +1,6 @@
 package com.otboo.team03.global.config;
 
+import com.otboo.team03.auth.service.SocialLoginHandler;
 import com.otboo.team03.global.security.PasswordAuthenticationProvider;
 import com.otboo.team03.global.security.jwt.JwtAuthenticationFilter;
 import com.otboo.team03.global.security.jwt.JwtLoginFailureHandler;
@@ -9,6 +10,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -22,6 +25,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
+import org.springframework.security.web.context.NullSecurityContextRepository;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 
@@ -92,6 +96,34 @@ public class SecurityConfig {
                         .logoutSuccessHandler(new HttpStatusReturningLogoutSuccessHandler(HttpStatus.NO_CONTENT))
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
+        return http.build();
+    }
+
+    // Google, Kakao 로그인 시작과 콜백만 처리하는 전용 필터 체인이다.
+    // 소셜 인증 이후의 API 요청은 기존 JWT 인증으로 처리한다.
+    @Bean
+    @Profile({"dev", "prod"})
+    @Order(1)
+    public SecurityFilterChain socialLoginSecurityFilterChain(HttpSecurity http,
+                                                              SocialLoginHandler socialLoginHandler) throws Exception {
+
+        http
+                // 소셜 로그인 시작과 콜백만 이 필터 체인에서 처리한다.
+                .securityMatcher("/oauth2/authorization/*", "/login/oauth2/code/*")
+                .csrf(csrf -> csrf.spa())
+                .authorizeHttpRequests(auth -> auth
+                        .anyRequest().permitAll()
+                )
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                )
+                .oauth2Login(oauth2 -> oauth2
+                        // OAuth 인증 결과는 세션에 저장하지 않고 기존 JWT 인증으로 이어간다.
+                        .securityContextRepository(new NullSecurityContextRepository())
+                        .successHandler(socialLoginHandler)
+                        .failureHandler(socialLoginHandler)
+                );
 
         return http.build();
     }
