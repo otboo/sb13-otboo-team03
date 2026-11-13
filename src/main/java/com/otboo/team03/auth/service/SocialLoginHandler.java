@@ -43,7 +43,7 @@ public class SocialLoginHandler implements AuthenticationSuccessHandler, Authent
     private final RefreshTokenCookieProvider refreshTokenCookieProvider;
 
     // 소셜 회원 정보로 OTBOO 계정을 찾거나 생성한다.
-    // JWT를 등록하고 Refresh Token 쿠키를 내려준 뒤 피드로 이동한다.
+    // JWT를 등록하고 Refresh Token 쿠키를 내려준 뒤 추천 화면으로 이동한다.
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request,
                                         HttpServletResponse response,
