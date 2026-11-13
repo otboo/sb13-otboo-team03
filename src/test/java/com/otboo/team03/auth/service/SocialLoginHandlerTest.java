@@ -177,7 +177,7 @@ class SocialLoginHandlerTest {
         assertThat(registered.getRefreshToken()).isEqualTo(REFRESH_TOKEN);
 
         assertThat(response.getStatus()).isEqualTo(302);
-        assertThat(response.getRedirectedUrl()).isEqualTo("/#/feeds");
+        assertThat(response.getRedirectedUrl()).isEqualTo("/#/recommendations");
         assertThat(response.getHeader(HttpHeaders.SET_COOKIE)).contains("REFRESH_TOKEN=" + REFRESH_TOKEN, "HttpOnly");
     }
 

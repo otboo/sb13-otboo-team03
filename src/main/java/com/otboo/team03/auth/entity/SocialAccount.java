@@ -6,6 +6,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.util.UUID;
+
 @Entity
 @Table(name = "social_accounts")
 @Getter
@@ -13,6 +15,10 @@ import lombok.NoArgsConstructor;
 public class SocialAccount {
 
     @Id
+    @Column(name = "user_id")
+    private UUID userId;
+
+    @MapsId
     @OneToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id")
     private User user;

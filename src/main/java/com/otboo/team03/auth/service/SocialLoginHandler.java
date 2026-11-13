@@ -33,7 +33,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SocialLoginHandler implements AuthenticationSuccessHandler, AuthenticationFailureHandler {
 
-    private static final String SUCCESS_URL = "/#/feeds";
+    private static final String SUCCESS_URL = "/#/recommendations";
     private static final String FAILURE_URL = "/#/auth/login?error=oauth_failed&error_message=";
 
     private final SocialAccountService socialAccountService;
