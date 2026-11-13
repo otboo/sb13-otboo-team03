@@ -458,4 +458,284 @@ class FollowServiceIntegrationTest extends PostgresTestSupport {
       statistics.setStatisticsEnabled(previousEnabled);
     }
   }
+
+  @Test
+  void 팔로잉_이름_검색과_커서_페이지네이션이_DB에서_동작한다() {
+    // given
+    User follower = createUser("나");
+    User otherFollower = createUser("다른 사용자");
+
+    User minsu = createUser("김민수");
+    User minji = createUser("이민지");
+    User seojun = createUser("박서준");
+    User minho = createUser("최민호");
+
+    followRepository.saveAndFlush(
+        new Follow(follower.getId(), minsu.getId())
+    );
+    followRepository.saveAndFlush(
+        new Follow(follower.getId(), minji.getId())
+    );
+    followRepository.saveAndFlush(
+        new Follow(follower.getId(), seojun.getId())
+    );
+    followRepository.saveAndFlush(
+        new Follow(follower.getId(), minho.getId())
+    );
+    followRepository.saveAndFlush(
+        new Follow(otherFollower.getId(), minsu.getId())
+    );
+
+    entityManager.clear();
+
+    // when
+    CursorResponse<FollowDto> firstPage = followService.getFollowings(
+        follower.getId(),
+        2,
+        null,
+        null,
+        "민"
+    );
+
+    CursorResponse<FollowDto> secondPage = followService.getFollowings(
+        follower.getId(),
+        2,
+        firstPage.nextCursor(),
+        firstPage.nextIdAfter(),
+        "민"
+    );
+
+    List<FollowDto> all = Stream.concat(
+        firstPage.data().stream(),
+        secondPage.data().stream()
+    ).toList();
+
+    Set<String> names = Set.copyOf(
+        all.stream()
+            .map(dto -> dto.followee().name())
+            .toList()
+    );
+
+    Set<UUID> followeeIds = Set.copyOf(
+        all.stream()
+            .map(dto -> dto.followee().userId())
+            .toList()
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(2, firstPage.data().size()),
+        () -> assertEquals(1, secondPage.data().size()),
+        () -> assertTrue(firstPage.hasNext()),
+        () -> assertFalse(secondPage.hasNext()),
+        () -> assertNotNull(firstPage.nextCursor()),
+        () -> assertNotNull(firstPage.nextIdAfter()),
+        () -> assertNull(secondPage.nextCursor()),
+        () -> assertNull(secondPage.nextIdAfter()),
+        () -> assertEquals(3L, firstPage.totalCount()),
+        () -> assertEquals(3L, secondPage.totalCount()),
+        () -> assertEquals(3, all.size()),
+        () -> assertEquals(
+            Set.of("김민수", "이민지", "최민호"),
+            names
+        ),
+        () -> assertEquals(
+            Set.of(minsu.getId(), minji.getId(), minho.getId()),
+            followeeIds
+        ),
+        () -> assertTrue(
+            all.stream().allMatch(
+                dto -> follower.getId().equals(
+                    dto.follower().userId()
+                )
+            )
+        ),
+        () -> assertEquals("createdAt", firstPage.sortBy()),
+        () -> assertEquals("DESCENDING", firstPage.sortDirection())
+    );
+  }
+
+  @Test
+  void 동일_생성시각의_팔로잉도_커서로_중복_누락없이_조회한다() {
+    // given
+    User follower = createUser("나");
+    User otherFollower = createUser("다른 사용자");
+
+    User firstFollowee = createUser("팔로잉 A");
+    User secondFollowee = createUser("팔로잉 B");
+    User thirdFollowee = createUser("팔로잉 C");
+    User fourthFollowee = createUser("팔로잉 D");
+    User fifthFollowee = createUser("팔로잉 E");
+
+    Instant sameTime = Instant.parse("2026-11-12T03:00:00Z");
+    Instant olderTime = Instant.parse("2026-11-12T02:00:00Z");
+
+    UUID id5 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000005"
+    );
+    UUID id4 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000004"
+    );
+    UUID id3 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000003"
+    );
+    UUID id2 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000002"
+    );
+    UUID id1 = UUID.fromString(
+        "00000000-0000-0000-0000-000000000001"
+    );
+    UUID otherId = UUID.fromString(
+        "00000000-0000-0000-0000-000000000006"
+    );
+
+    insertPaginationFollow(
+        id3, follower.getId(), thirdFollowee.getId(), sameTime
+    );
+    insertPaginationFollow(
+        id5, follower.getId(), firstFollowee.getId(), sameTime
+    );
+    insertPaginationFollow(
+        id2, follower.getId(), fourthFollowee.getId(), sameTime
+    );
+    insertPaginationFollow(
+        id4, follower.getId(), secondFollowee.getId(), sameTime
+    );
+    insertPaginationFollow(
+        id1, follower.getId(), fifthFollowee.getId(), olderTime
+    );
+    insertPaginationFollow(
+        otherId, otherFollower.getId(), firstFollowee.getId(), sameTime
+    );
+
+    entityManager.clear();
+
+    // when
+    CursorResponse<FollowDto> firstPage = followService.getFollowings(
+        follower.getId(), 2, null, null, null
+    );
+
+    CursorResponse<FollowDto> secondPage = followService.getFollowings(
+        follower.getId(),
+        2,
+        firstPage.nextCursor(),
+        firstPage.nextIdAfter(),
+        null
+    );
+
+    CursorResponse<FollowDto> thirdPage = followService.getFollowings(
+        follower.getId(),
+        2,
+        secondPage.nextCursor(),
+        secondPage.nextIdAfter(),
+        null
+    );
+
+    CursorResponse<FollowDto> emptyPage = followService.getFollowings(
+        follower.getId(),
+        2,
+        olderTime.toString(),
+        id1,
+        null
+    );
+
+    List<UUID> actualIds = Stream.of(
+            firstPage,
+            secondPage,
+            thirdPage
+        )
+        .flatMap(page -> page.data().stream())
+        .map(FollowDto::id)
+        .toList();
+
+    // then
+    assertAll(
+        () -> assertEquals(2, firstPage.data().size()),
+        () -> assertEquals(id5, firstPage.data().get(0).id()),
+        () -> assertEquals(id4, firstPage.data().get(1).id()),
+        () -> assertEquals(sameTime.toString(), firstPage.nextCursor()),
+        () -> assertEquals(id4, firstPage.nextIdAfter()),
+        () -> assertTrue(firstPage.hasNext()),
+        () -> assertEquals(5L, firstPage.totalCount()),
+
+        () -> assertEquals(2, secondPage.data().size()),
+        () -> assertEquals(id3, secondPage.data().get(0).id()),
+        () -> assertEquals(id2, secondPage.data().get(1).id()),
+        () -> assertEquals(sameTime.toString(), secondPage.nextCursor()),
+        () -> assertEquals(id2, secondPage.nextIdAfter()),
+        () -> assertTrue(secondPage.hasNext()),
+        () -> assertEquals(5L, secondPage.totalCount()),
+
+        () -> assertEquals(1, thirdPage.data().size()),
+        () -> assertEquals(id1, thirdPage.data().get(0).id()),
+        () -> assertFalse(thirdPage.hasNext()),
+        () -> assertNull(thirdPage.nextCursor()),
+        () -> assertNull(thirdPage.nextIdAfter()),
+        () -> assertEquals(5L, thirdPage.totalCount()),
+
+        () -> assertTrue(emptyPage.data().isEmpty()),
+        () -> assertFalse(emptyPage.hasNext()),
+        () -> assertEquals(5L, emptyPage.totalCount()),
+
+        () -> assertEquals(
+            List.of(id5, id4, id3, id2, id1),
+            actualIds
+        )
+    );
+  }
+
+  @Test
+  void 팔로잉_목록_크기가_증가해도_SQL_조회_횟수는_일정하다() {
+    // given
+    User follower = createUser("나");
+
+    for (int i = 0; i < 5; i++) {
+      User followee = createUser("팔로잉 대상 " + i);
+
+      followRepository.saveAndFlush(
+          new Follow(follower.getId(), followee.getId())
+      );
+    }
+
+    entityManager.clear();
+
+    SessionFactory sessionFactory = entityManager
+        .getEntityManagerFactory()
+        .unwrap(SessionFactory.class);
+
+    Statistics statistics = sessionFactory.getStatistics();
+    boolean previousEnabled = statistics.isStatisticsEnabled();
+
+    statistics.setStatisticsEnabled(true);
+
+    try {
+      // when
+      statistics.clear();
+
+      CursorResponse<FollowDto> smallPage = followService.getFollowings(
+          follower.getId(), 2, null, null, null
+      );
+
+      long smallPageQueries = statistics.getPrepareStatementCount();
+
+      entityManager.clear();
+      statistics.clear();
+
+      CursorResponse<FollowDto> largePage = followService.getFollowings(
+          follower.getId(), 5, null, null, null
+      );
+
+      long largePageQueries = statistics.getPrepareStatementCount();
+
+      // then
+      assertAll(
+          () -> assertEquals(2, smallPage.data().size()),
+          () -> assertEquals(5, largePage.data().size()),
+          () -> assertEquals(smallPageQueries, largePageQueries),
+          () -> assertEquals(4L, largePageQueries)
+      );
+    } finally {
+      statistics.setStatisticsEnabled(previousEnabled);
+    }
+  }
 }

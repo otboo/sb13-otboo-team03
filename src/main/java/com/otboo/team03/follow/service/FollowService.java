@@ -224,4 +224,110 @@ public class FollowService {
         "DESCENDING"
     );
   }
+
+  @Transactional(readOnly = true)
+  public CursorResponse<FollowDto> getFollowings(
+      UUID followerId,
+      int limit,
+      String cursor,
+      UUID idAfter,
+      String nameLike
+  ) {
+    if (followerId == null
+        || limit <= 0
+        || limit == Integer.MAX_VALUE) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if ((cursor == null) != (idAfter == null)) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    Instant cursorTime = null;
+
+    if (cursor != null) {
+      try {
+        cursorTime = Instant.parse(cursor);
+      } catch (DateTimeParseException ex) {
+        throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+      }
+    }
+
+    String normalizedNameLike =
+        nameLike == null || nameLike.isBlank()
+            ? null
+            : nameLike.trim();
+
+    List<Follow> fetched;
+
+    if (cursorTime == null) {
+      if (normalizedNameLike == null) {
+        fetched =
+            followRepository.findByFollowerIdOrderByCreatedAtDescIdDesc(
+                followerId,
+                PageRequest.of(0, limit + 1)
+            );
+      } else {
+        fetched = followRepository.findFollowingsByNameLike(
+            followerId,
+            normalizedNameLike,
+            PageRequest.of(0, limit + 1)
+        );
+      }
+    } else {
+      if (normalizedNameLike == null) {
+        fetched = followRepository.findNextFollowingsPage(
+            followerId,
+            cursorTime,
+            idAfter,
+            PageRequest.of(0, limit + 1)
+        );
+      } else {
+        fetched = followRepository.findNextFollowingsPageByNameLike(
+            followerId,
+            normalizedNameLike,
+            cursorTime,
+            idAfter,
+            PageRequest.of(0, limit + 1)
+        );
+      }
+    }
+
+    boolean hasNext = fetched.size() > limit;
+
+    List<Follow> page = hasNext
+        ? fetched.subList(0, limit)
+        : fetched;
+
+    List<FollowDto> data = page.isEmpty()
+        ? List.of()
+        : followDtoAssembler.toDtos(page);
+
+    String nextCursor = null;
+    UUID nextIdAfter = null;
+
+    if (hasNext) {
+      Follow lastFollow = page.get(page.size() - 1);
+
+      nextCursor = lastFollow.getCreatedAt().toString();
+      nextIdAfter = lastFollow.getId();
+    }
+
+    long totalCount = normalizedNameLike == null
+        ? followRepository.countByFollowerId(followerId)
+        : followRepository.countFollowingsByNameLike(
+            followerId,
+            normalizedNameLike
+        );
+
+    return new CursorResponse<>(
+        data,
+        nextCursor,
+        nextIdAfter,
+        hasNext,
+        totalCount,
+        "createdAt",
+        "DESCENDING"
+    );
+  }
 }
