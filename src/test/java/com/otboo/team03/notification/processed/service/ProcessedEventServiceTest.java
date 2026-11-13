@@ -65,6 +65,15 @@ class ProcessedEventServiceTest {
     }
 
     @Test
+    void Consumer_이름이_null이면_거부한다() {
+        assertThatThrownBy(() -> processedEventService.tryMarkProcessed(
+                null, UUID.randomUUID()
+        )).isInstanceOf(IllegalArgumentException.class);
+
+        verifyNoInteractions(processedEventRepository);
+    }
+
+    @Test
     void 이벤트_ID가_null이면_거부한다() {
         assertThatThrownBy(() -> processedEventService.tryMarkProcessed(
                 "notification-consumer", null
