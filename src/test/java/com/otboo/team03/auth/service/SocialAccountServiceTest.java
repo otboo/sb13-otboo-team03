@@ -8,6 +8,7 @@ import com.otboo.team03.profile.entity.Profile;
 import com.otboo.team03.profile.repository.ProfileRepository;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
+import com.otboo.team03.global.config.CacheNames;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.cache.CacheManager;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.cache.Cache;
+import org.springframework.security.authentication.LockedException;
 
 import java.util.Optional;
 
@@ -27,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
 class SocialAccountServiceTest {
@@ -135,6 +139,85 @@ class SocialAccountServiceTest {
             then(userRepository).should(never()).save(any(User.class));
             then(profileRepository).shouldHaveNoInteractions();
             then(socialAccountRepository).should(never()).save(any(SocialAccount.class));
+        }
+
+        @Test
+        @DisplayName("제공자가 없거나 회원 ID가 비어 있으면 소셜 계정 조회 없이 거부한다")
+        void resolveUser_invalidIdentity_rejectsBeforeLookup() {
+            // given
+            SocialIdentity missingProvider = new SocialIdentity(null, GOOGLE_ID, EMAIL, NAME, true);
+            SocialIdentity blankProviderUserId = new SocialIdentity(SocialProvider.GOOGLE, " ", EMAIL, NAME, true);
+
+            // when & then
+            assertThatThrownBy(() -> socialAccountService.resolveUser(missingProvider))
+                    .isInstanceOf(BadCredentialsException.class);
+            assertThatThrownBy(() -> socialAccountService.resolveUser(blankProviderUserId))
+                    .isInstanceOf(BadCredentialsException.class);
+
+            then(socialAccountRepository).shouldHaveNoInteractions();
+            then(userRepository).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("기존 사용자에게 소셜 계정이 이미 연결되어 있으면 다른 Google 계정을 자동 연동하지 않는다")
+        void resolveUser_alreadyLinkedUser_rejectsAnotherGoogleAccount() {
+            // given
+            User existingUser = new User(EMAIL, "encodedPassword", NAME);
+            given(userRepository.findByEmail(EMAIL)).willReturn(Optional.of(existingUser));
+            given(socialAccountRepository.existsByUser(existingUser)).willReturn(true);
+
+            // when & then
+            assertThatThrownBy(() -> socialAccountService.resolveUser(GOOGLE_IDENTITY))
+                    .isInstanceOf(BadCredentialsException.class);
+
+            then(socialAccountRepository).should(never()).save(any(SocialAccount.class));
+            then(userRepository).should(never()).save(any(User.class));
+        }
+
+        @Test
+        @DisplayName("이미 연결된 소셜 계정이라도 사용자가 잠겨 있으면 로그인을 거부한다")
+        void resolveUser_lockedLinkedUser_rejectsLogin() {
+            // given
+            User lockedUser = new User(EMAIL, null, NAME);
+            lockedUser.changeLocked(true);
+            SocialAccount account = new SocialAccount(lockedUser, SocialProvider.GOOGLE, GOOGLE_ID);
+            given(socialAccountRepository.findByProviderAndProviderUserId(SocialProvider.GOOGLE, GOOGLE_ID))
+                    .willReturn(Optional.of(account));
+
+            // when & then
+            assertThatThrownBy(() -> socialAccountService.resolveUser(GOOGLE_IDENTITY))
+                    .isInstanceOf(LockedException.class);
+
+            then(userRepository).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("닉네임이 없는 Kakao 사용자는 기본 이름과 가상 이메일로 가입하고 사용자 목록 캐시를 비운다")
+        void resolveUser_kakaoWithoutNickname_createsUserAndClearsCache() {
+            // given
+            String kakaoId = "12345";
+            String virtualEmail = "카카오 사용자_12345@kakao.com";
+            SocialIdentity identity = new SocialIdentity(SocialProvider.KAKAO, kakaoId, null, null, false);
+            Cache userListCache = mock(Cache.class);
+
+            given(userRepository.findByEmail(virtualEmail)).willReturn(Optional.empty());
+            given(userRepository.save(any(User.class))).willAnswer(invocation -> invocation.getArgument(0));
+            given(cacheManager.getCache(CacheNames.USER_LIST)).willReturn(userListCache);
+
+            // when
+            User user = socialAccountService.resolveUser(identity);
+
+            // then
+            assertThat(user.getName()).isEqualTo("카카오 사용자");
+            assertThat(user.getEmail()).isEqualTo(virtualEmail);
+            assertThat(user.getPassword()).isNull();
+
+            ArgumentCaptor<SocialAccount> captor = ArgumentCaptor.forClass(SocialAccount.class);
+            then(socialAccountRepository).should().save(captor.capture());
+            assertThat(captor.getValue().getUser()).isSameAs(user);
+            assertThat(captor.getValue().getProvider()).isEqualTo(SocialProvider.KAKAO);
+            assertThat(captor.getValue().getProviderUserId()).isEqualTo(kakaoId);
+            then(userListCache).should().clear();
         }
     }
 

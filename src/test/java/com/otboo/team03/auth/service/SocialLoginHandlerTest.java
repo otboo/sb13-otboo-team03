@@ -13,6 +13,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -27,6 +29,7 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.oidc.OidcIdToken;
 import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Duration;
@@ -150,6 +153,48 @@ class SocialLoginHandlerTest {
             assertThat(response.getStatus()).isEqualTo(302);
             assertThat(response.getRedirectedUrl()).isEqualTo(LOGIN_FAILURE_URL + "login_failed");
             assertThat(response.getHeader(HttpHeaders.SET_COOKIE)).isNull();
+            then(jwtTokenProvider).shouldHaveNoInteractions();
+            then(jwtRegistry).shouldHaveNoInteractions();
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"unsupported", "google", "kakao"})
+        @DisplayName("지원하지 않는 제공자이거나 필수 회원 정보가 없으면 로그인 화면으로 돌아간다")
+        void onAuthenticationSuccess_invalidOAuthIdentity_redirectsToLogin(String registrationId) throws Exception {
+            // given
+            DefaultOAuth2User principal = new DefaultOAuth2User(
+                    List.of(new SimpleGrantedAuthority("OAUTH2_USER")),
+                    Map.of("sub", "test-user"),
+                    "sub"
+            );
+            OAuth2AuthenticationToken authentication =
+                    new OAuth2AuthenticationToken(principal, principal.getAuthorities(), registrationId);
+
+            // when
+            handler.onAuthenticationSuccess(request, response, authentication);
+
+            // then
+            assertLoginRejected();
+        }
+
+        @Test
+        @DisplayName("OAuth 인증 객체가 아니면 JWT를 발급하지 않고 로그인 화면으로 돌아간다")
+        void onAuthenticationSuccess_nonOAuthAuthentication_redirectsToLogin() throws Exception {
+            // given
+            var authentication = UsernamePasswordAuthenticationToken.unauthenticated("test-user", null);
+
+            // when
+            handler.onAuthenticationSuccess(request, response, authentication);
+
+            // then
+            assertLoginRejected();
+        }
+
+        private void assertLoginRejected() {
+            assertThat(response.getStatus()).isEqualTo(302);
+            assertThat(response.getRedirectedUrl()).isEqualTo(LOGIN_FAILURE_URL + "login_failed");
+            assertThat(response.getHeader(HttpHeaders.SET_COOKIE)).isNull();
+            then(socialAccountService).shouldHaveNoInteractions();
             then(jwtTokenProvider).shouldHaveNoInteractions();
             then(jwtRegistry).shouldHaveNoInteractions();
         }
