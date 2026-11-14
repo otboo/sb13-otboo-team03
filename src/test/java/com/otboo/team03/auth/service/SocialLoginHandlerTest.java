@@ -113,6 +113,28 @@ class SocialLoginHandlerTest {
             then(socialAccountService).should().resolveUser(identity);
             assertLoginResponse(user);
         }
+
+        @Test
+        @DisplayName("Kakao 닉네임이 없어도 로그인에 성공한다")
+        void onAuthenticationSuccess_kakaoWithoutNickname_succeeds() throws Exception {
+            // given
+            SocialIdentity identity = new SocialIdentity(SocialProvider.KAKAO, "12345", null, null, false);
+            User user = stubLogin(identity, "카카오 사용자_12345@kakao.com");
+            DefaultOAuth2User principal = new DefaultOAuth2User(
+                    List.of(new SimpleGrantedAuthority("OAUTH2_USER")),
+                    Map.of("id", 12345L, "kakao_account", Map.of("profile", Map.of())),
+                    "id"
+            );
+            OAuth2AuthenticationToken authentication =
+                    new OAuth2AuthenticationToken(principal, principal.getAuthorities(), "kakao");
+
+            // when
+            handler.onAuthenticationSuccess(request, response, authentication);
+
+            // then
+            then(socialAccountService).should().resolveUser(identity);
+            assertLoginResponse(user);
+        }
     }
 
     @Nested
@@ -185,6 +207,20 @@ class SocialLoginHandlerTest {
 
             // when
             handler.onAuthenticationSuccess(request, response, authentication);
+
+            // then
+            assertLoginRejected();
+        }
+
+        @Test
+        @DisplayName("OAuth 서버 오류가 발생하면 상세 메시지를 숨기고 로그인 화면으로 돌아간다")
+        void onAuthenticationFailure_serverError_redirectsToLogin() throws Exception {
+            // given
+            OAuth2AuthenticationException exception =
+                    new OAuth2AuthenticationException(new OAuth2Error("server_error", "제공자 내부 오류", null));
+
+            // when
+            handler.onAuthenticationFailure(request, response, exception);
 
             // then
             assertLoginRejected();
