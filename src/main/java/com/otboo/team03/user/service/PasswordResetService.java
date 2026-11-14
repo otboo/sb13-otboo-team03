@@ -5,6 +5,9 @@ import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.RedisPasswordResetRateLimitRepository;
 import com.otboo.team03.user.repository.RedisTemporaryPasswordRepository;
 import com.otboo.team03.user.repository.UserRepository;
+import com.otboo.team03.auth.entity.SocialProvider;
+import com.otboo.team03.auth.repository.SocialAccountRepository;
+import com.otboo.team03.user.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -24,10 +27,16 @@ public class PasswordResetService {
     private final PasswordEncoder passwordEncoder;
     private final MailService mailService;
     private final RedisPasswordResetRateLimitRepository rateLimitRepository;
+    private final SocialAccountRepository socialAccountRepository;
 
     public void resetPassword(String email) {
-        userRepository.findByEmail(email)
+        User user = userRepository.findByEmail(email)
                 .orElseThrow(UserNotFoundException::new);
+
+        // 카카오 계정의 가상 이메일에는 임시 비밀번호를 발급하지 않는다.
+        if (socialAccountRepository.existsByUserIdAndProvider(user.getId(), SocialProvider.KAKAO)) {
+            return;
+        }
 
         String token = rateLimitRepository.tryAcquire(email)
                 .orElseThrow(PasswordResetRateLimitException::new);
