@@ -2,6 +2,7 @@ package com.otboo.team03.follow.service;
 
 import com.otboo.team03.follow.dto.request.FollowCreateRequest;
 import com.otboo.team03.follow.dto.response.FollowDto;
+import com.otboo.team03.follow.dto.response.FollowSummaryDto;
 import com.otboo.team03.follow.dto.response.UserSummary;
 import com.otboo.team03.follow.entity.Follow;
 import com.otboo.team03.follow.mapper.FollowDtoAssembler;
@@ -1307,6 +1308,38 @@ class FollowServiceTest {
         followRepository,
         followDtoAssembler,
         userRepository
+    );
+  }
+
+  @Test
+  void 팔로우_요약_조회시_팔로워수와_팔로잉수를_반환한다() {
+    // given
+    UUID requesterId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+
+    when(userRepository.existsById(followeeId))
+        .thenReturn(true);
+
+    when(followRepository.countByFolloweeId(followeeId))
+        .thenReturn(5L);
+
+    when(followRepository.countByFollowerId(followeeId))
+        .thenReturn(3L);
+
+    // when
+    FollowSummaryDto result = followService.getSummary(
+        followeeId,
+        requesterId
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(followeeId, result.followeeId()),
+        () -> assertEquals(5L, result.followerCount()),
+        () -> assertEquals(3L, result.followingCount()),
+        () -> assertFalse(result.followedByMe()),
+        () -> assertNull(result.followedByMeId()),
+        () -> assertFalse(result.followingMe())
     );
   }
 }
