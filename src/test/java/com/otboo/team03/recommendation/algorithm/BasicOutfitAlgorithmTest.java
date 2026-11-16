@@ -652,6 +652,21 @@ class BasicOutfitAlgorithmTest {
             assertThat(result).containsExactly(alternativeDress);
         }
 
+        @ParameterizedTest
+        @EnumSource(value = ClothesType.class, names = {"SHOES", "BAG", "HAT", "ACCESSORY"})
+        void 기본_코디를_바꿀_수_없어도_같은_종류의_다른_추가_아이템으로_교체한다(ClothesType type) {
+            Clothes top = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+            Clothes previousItem = clothes(type);
+            Clothes alternativeItem = clothes(type);
+            List<Clothes> candidates = List.of(top, bottom, previousItem, alternativeItem);
+            Set<UUID> previousOutfitIds = Set.of(top.getId(), bottom.getId(), previousItem.getId());
+
+            var result = algorithm.recommend(candidates, Map.of(), Map.of(), 28.0, 3, previousOutfitIds);
+
+            assertThat(result).containsExactly(top, bottom, alternativeItem);
+        }
+
         @Nested
         @DisplayName("두께 동점 시 소매 길이로 선택")
         class SleeveBasedRecommendation {
