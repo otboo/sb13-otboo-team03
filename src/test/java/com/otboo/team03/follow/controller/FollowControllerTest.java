@@ -986,4 +986,85 @@ class FollowControllerTest {
 
     verify(followService).getSummary(followeeId, followerId);
   }
+
+  @Test
+  void 미인증_또는_잘못된_인증_정보로는_팔로우_요약을_조회할_수_없다()
+      throws Exception {
+    // given
+    Authentication unauthenticated =
+        new UsernamePasswordAuthenticationToken(
+            authentication(followerId).getPrincipal(),
+            null
+        );
+
+    Authentication invalidPrincipal =
+        new UsernamePasswordAuthenticationToken(
+            "invalid-principal",
+            null,
+            authentication(followerId).getAuthorities()
+        );
+
+    // when
+    var missingAuthentication = mockMvc.perform(
+        get("/api/follows/summary")
+            .param("userId", followeeId.toString())
+    );
+
+    var notAuthenticated = mockMvc.perform(
+        get("/api/follows/summary")
+            .principal(unauthenticated)
+            .param("userId", followeeId.toString())
+    );
+
+    var wrongPrincipal = mockMvc.perform(
+        get("/api/follows/summary")
+            .principal(invalidPrincipal)
+            .param("userId", followeeId.toString())
+    );
+
+    // then
+    missingAuthentication.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    notAuthenticated.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    wrongPrincipal.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    verifyNoInteractions(followService);
+  }
+
+  @Test
+  void 팔로우_요약_조회에서_userId가_누락되거나_형식이_잘못되면_400을_반환한다()
+      throws Exception {
+    // given
+    Authentication authenticated = authentication(followerId);
+
+    // when
+    var missingUserId = mockMvc.perform(
+        get("/api/follows/summary")
+            .principal(authenticated)
+    );
+
+    var invalidUserId = mockMvc.perform(
+        get("/api/follows/summary")
+            .principal(authenticated)
+            .param("userId", "invalid-uuid")
+    );
+
+    // then
+    missingUserId.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    invalidUserId.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    verifyNoInteractions(followService);
+  }
 }
