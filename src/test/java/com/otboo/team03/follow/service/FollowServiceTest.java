@@ -1342,4 +1342,74 @@ class FollowServiceTest {
         () -> assertFalse(result.followingMe())
     );
   }
+
+  @Test
+  void 서로_팔로우하는_경우_양방향_관계와_팔로우_ID를_반환한다() {
+    // given
+    UUID requesterId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+    UUID followId = UUID.randomUUID();
+
+    Follow follow = mock(Follow.class);
+
+    when(userRepository.existsById(followeeId))
+        .thenReturn(true);
+
+    when(follow.getId()).thenReturn(followId);
+
+    when(followRepository.findByFollowerIdAndFolloweeId(
+        requesterId, followeeId
+    )).thenReturn(Optional.of(follow));
+
+    when(followRepository.existsByFollowerIdAndFolloweeId(
+        followeeId, requesterId
+    )).thenReturn(true);
+
+    // when
+    FollowSummaryDto result = followService.getSummary(
+        followeeId, requesterId
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(followeeId, result.followeeId()),
+        () -> assertTrue(result.followedByMe()),
+        () -> assertEquals(followId, result.followedByMeId()),
+        () -> assertTrue(result.followingMe())
+    );
+
+    verify(followRepository).findByFollowerIdAndFolloweeId(
+        requesterId, followeeId
+    );
+
+    verify(followRepository).existsByFollowerIdAndFolloweeId(
+        followeeId, requesterId
+    );
+  }
+
+  @Test
+  void 상대방만_나를_팔로우하면_역방향_관계만_반환한다() {
+    // given
+    UUID requesterId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+
+    when(userRepository.existsById(followeeId))
+        .thenReturn(true);
+
+    when(followRepository.existsByFollowerIdAndFolloweeId(
+        followeeId, requesterId
+    )).thenReturn(true);
+
+    // when
+    FollowSummaryDto result = followService.getSummary(
+        followeeId, requesterId
+    );
+
+    // then
+    assertAll(
+        () -> assertFalse(result.followedByMe()),
+        () -> assertNull(result.followedByMeId()),
+        () -> assertTrue(result.followingMe())
+    );
+  }
 }
