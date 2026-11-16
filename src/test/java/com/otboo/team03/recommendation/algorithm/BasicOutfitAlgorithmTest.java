@@ -627,6 +627,31 @@ class BasicOutfitAlgorithmTest {
             assertThat(result).containsExactly(top, alternativeBottom);
         }
 
+        @Test
+        void 상의_하의_조합이_불가능하면_최상위_동점_원피스로_직전_코디를_바꾼다() {
+            Clothes previousDress = clothes(ClothesType.DRESS);
+            Clothes lowerThicknessDress = clothes(ClothesType.DRESS);
+            Clothes lowerSleeveDress = clothes(ClothesType.DRESS);
+            Clothes alternativeDress = clothes(ClothesType.DRESS);
+            List<Clothes> candidates = List.of(
+                    previousDress, lowerThicknessDress, lowerSleeveDress, alternativeDress);
+            Map<UUID, ThicknessLevel> thickness = Map.of(
+                    previousDress.getId(), LIGHT,
+                    lowerThicknessDress.getId(), MEDIUM,
+                    lowerSleeveDress.getId(), LIGHT,
+                    alternativeDress.getId(), LIGHT);
+            Map<UUID, SleeveLength> sleeves = Map.of(
+                    previousDress.getId(), SleeveLength.SHORT,
+                    lowerThicknessDress.getId(), SleeveLength.SHORT,
+                    lowerSleeveDress.getId(), SleeveLength.LONG,
+                    alternativeDress.getId(), SleeveLength.SHORT);
+            Set<UUID> previousOutfitIds = Set.of(previousDress.getId());
+
+            var result = algorithm.recommend(candidates, thickness, sleeves, 28.0, 3, previousOutfitIds);
+
+            assertThat(result).containsExactly(alternativeDress);
+        }
+
         @Nested
         @DisplayName("두께 동점 시 소매 길이로 선택")
         class SleeveBasedRecommendation {
