@@ -607,6 +607,26 @@ class BasicOutfitAlgorithmTest {
             assertThat(result).containsExactly(alternativeTop, bottom);
         }
 
+        @Test
+        void 상의_대안이_없어도_최상위_동점_하의가_있으면_직전_코디를_바꾼다() {
+            Clothes top = clothes(ClothesType.TOP);
+            Clothes previousBottom = clothes(ClothesType.BOTTOM);
+            Clothes lowerThicknessBottom = clothes(ClothesType.BOTTOM);
+            Clothes alternativeBottom = clothes(ClothesType.BOTTOM);
+            List<Clothes> candidates = List.of(
+                    top, previousBottom, lowerThicknessBottom, alternativeBottom);
+            Map<UUID, ThicknessLevel> thickness = Map.of(
+                    top.getId(), LIGHT,
+                    previousBottom.getId(), LIGHT,
+                    lowerThicknessBottom.getId(), MEDIUM,
+                    alternativeBottom.getId(), LIGHT);
+            Set<UUID> previousOutfitIds = Set.of(top.getId(), previousBottom.getId());
+
+            var result = algorithm.recommend(candidates, thickness, Map.of(), 28.0, 3, previousOutfitIds);
+
+            assertThat(result).containsExactly(top, alternativeBottom);
+        }
+
         @Nested
         @DisplayName("두께 동점 시 소매 길이로 선택")
         class SleeveBasedRecommendation {
