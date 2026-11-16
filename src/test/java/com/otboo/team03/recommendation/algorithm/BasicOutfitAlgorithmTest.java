@@ -710,6 +710,35 @@ class BasicOutfitAlgorithmTest {
             assertThat(result).containsExactly(dress, alternativeScarf);
         }
 
+        @Test
+        void 양말과_스카프도_대안이_없으면_직전_아이템을_유지한다() {
+            Clothes dress = clothes(ClothesType.DRESS);
+            Clothes shoes = clothes(ClothesType.SHOES);
+            Clothes socks = clothes(ClothesType.SOCKS);
+            Clothes scarf = clothes(ClothesType.SCARF);
+            List<Clothes> candidates = List.of(dress, shoes, socks, scarf);
+            Set<UUID> previousOutfitIds = Set.of(dress.getId(), shoes.getId(), socks.getId(), scarf.getId());
+
+            var result = algorithm.recommend(candidates, Map.of(), Map.of(), 17.0, 1, previousOutfitIds);
+
+            assertThat(result).containsExactlyElementsOf(candidates);
+        }
+
+        @Test
+        void 직전_양말과_스카프가_있어도_신발이_없고_보정_온도가_15도면_둘_다_추가하지_않는다() {
+            Clothes dress = clothes(ClothesType.DRESS);
+            Clothes socks = clothes(ClothesType.SOCKS);
+            Clothes alternativeSocks = clothes(ClothesType.SOCKS);
+            Clothes scarf = clothes(ClothesType.SCARF);
+            Clothes alternativeScarf = clothes(ClothesType.SCARF);
+            List<Clothes> candidates = List.of(dress, socks, alternativeSocks, scarf, alternativeScarf);
+            Set<UUID> previousOutfitIds = Set.of(dress.getId(), socks.getId(), scarf.getId());
+
+            var result = algorithm.recommend(candidates, Map.of(), Map.of(), 15.0, 3, previousOutfitIds);
+
+            assertThat(result).containsExactly(dress);
+        }
+
         @Nested
         @DisplayName("두께 동점 시 소매 길이로 선택")
         class SleeveBasedRecommendation {

@@ -86,6 +86,14 @@ public class BasicOutfitAlgorithm {
         return clothes.stream().filter(item -> item.getType() == type).findFirst();
     }
 
+    private Optional<Clothes> selectAdditionalItem(List<Clothes> clothes, ClothesType type, Set<UUID> previousOutfitIds) {
+        return clothes.stream()
+                .filter(candidate -> candidate.getType() == type)
+                .filter(candidate -> candidate.getId() == null || !previousOutfitIds.contains(candidate.getId()))
+                .findFirst()
+                .or(() -> firstOfType(clothes, type));
+    }
+
     private ThicknessLevel thicknessOf(Clothes clothes, Map<UUID, ThicknessLevel> thicknessByClothesId) {
         UUID clothesId = clothes.getId();
         return clothesId == null ? ThicknessLevel.UNKNOWN : thicknessByClothesId.getOrDefault(clothesId, ThicknessLevel.UNKNOWN);
@@ -109,18 +117,14 @@ public class BasicOutfitAlgorithm {
         }
 
         for (ClothesType type : ADDITIONAL_ITEM_TYPES) {
-            Optional<Clothes> item = originalClothes.stream()
-                    .filter(candidate -> candidate.getType() == type)
-                    .filter(candidate -> candidate.getId() == null || !previousOutfitIds.contains(candidate.getId()))
-                    .findFirst()
-                    .or(() -> firstOfType(originalClothes, type));
+            Optional<Clothes> item = selectAdditionalItem(originalClothes, type, previousOutfitIds);
             item.ifPresent(outfit::add);
             if (type == ClothesType.SHOES && item.isPresent()) {
-                firstOfType(originalClothes, ClothesType.SOCKS).ifPresent(outfit::add);
+                selectAdditionalItem(originalClothes, ClothesType.SOCKS, previousOutfitIds).ifPresent(outfit::add);
             }
         }
         if (adjustedTemperature < SCARF_TEMPERATURE_THRESHOLD) {
-            firstOfType(originalClothes, ClothesType.SCARF).ifPresent(outfit::add);
+            selectAdditionalItem(originalClothes, ClothesType.SCARF, previousOutfitIds).ifPresent(outfit::add);
         }
         return List.copyOf(outfit);
     }
