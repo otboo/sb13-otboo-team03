@@ -12,6 +12,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Component
@@ -29,7 +30,8 @@ public class BasicOutfitAlgorithm {
     public List<Clothes> recommend(List<Clothes> clothes,
                                   Map<UUID, ThicknessLevel> thicknessByClothesId,
                                   Map<UUID, SleeveLength> sleeveByClothesId,
-                                  double temperature, int sensitivity) {
+                                  double temperature, int sensitivity,
+                                  Set<UUID> previousOutfitIds) {
         double adjustedTemperature = adjustTemperature(temperature, sensitivity);
         Comparator<Clothes> byThicknessDescending = Comparator.comparingInt((Clothes item) ->
                 suitabilityScorer.scoreThickness(thicknessOf(item, thicknessByClothesId),
@@ -37,19 +39,23 @@ public class BasicOutfitAlgorithm {
         Comparator<Clothes> bySleeveDescending = Comparator.comparingInt((Clothes item) ->
                 suitabilityScorer.scoreSleeve(item.getType(), sleeveOf(item, sleeveByClothesId),
                         adjustedTemperature, sensitivity)).reversed();
+        Comparator<Clothes> byPreviouslyRecommendedTop = Comparator.comparing((Clothes item) ->
+                item.getType() == ClothesType.TOP && item.getId() != null
+                        && previousOutfitIds.contains(item.getId()));
 
         List<Clothes> rankedClothes = clothes.stream()
-                .sorted(byThicknessDescending.thenComparing(bySleeveDescending))
+                .sorted(byThicknessDescending.thenComparing(bySleeveDescending)
+                        .thenComparing(byPreviouslyRecommendedTop))
                 .toList();
 
-        // 두께와 소매 점수가 모두 같으면 입력 순서를 유지한다.
+        // 두께·소매가 동점인 상의는 직전 추천에 없는 후보를 우선하고, 나머지 동점은 입력 순서를 유지한다.
         return recommendAtAdjustedTemperature(rankedClothes, clothes, adjustedTemperature);
     }
 
     public List<Clothes> recommend(List<Clothes> clothes,
                                   Map<UUID, ThicknessLevel> thicknessByClothesId,
                                   double temperature, int sensitivity) {
-        return recommend(clothes, thicknessByClothesId, Map.of(), temperature, sensitivity);
+        return recommend(clothes, thicknessByClothesId, Map.of(), temperature, sensitivity, Set.of());
     }
 
     public List<Clothes> recommend(List<Clothes> clothes, double temperature, int sensitivity) {
