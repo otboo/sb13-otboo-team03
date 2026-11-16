@@ -1412,4 +1412,90 @@ class FollowServiceTest {
         () -> assertTrue(result.followingMe())
     );
   }
+
+  @Test
+  void 팔로우_요약_조회에서_사용자_ID가_null이면_예외가_발생한다() {
+    // given
+    UUID requesterId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+
+    // when
+    OtbooException missingFolloweeId = assertThrows(
+        OtbooException.class,
+        () -> followService.getSummary(null, requesterId)
+    );
+
+    OtbooException missingRequesterId = assertThrows(
+        OtbooException.class,
+        () -> followService.getSummary(followeeId, null)
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            missingFolloweeId.getErrorCode()
+        ),
+        () -> assertEquals(
+            ErrorCode.INVALID_INPUT_VALUE,
+            missingRequesterId.getErrorCode()
+        )
+    );
+
+    verifyNoInteractions(followRepository, userRepository);
+  }
+
+  @Test
+  void 존재하지_않는_사용자의_팔로우_요약은_조회할_수_없다() {
+    // given
+    UUID requesterId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+
+    when(userRepository.existsById(followeeId))
+        .thenReturn(false);
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> followService.getSummary(followeeId, requesterId)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.NOT_FOUND_USER,
+        exception.getErrorCode()
+    );
+
+    verifyNoInteractions(followRepository);
+  }
+
+  @Test
+  void 자기_자신의_팔로우_요약을_조회하면_관계는_없고_집계는_반환한다() {
+    // given
+    UUID userId = UUID.randomUUID();
+
+    when(userRepository.existsById(userId))
+        .thenReturn(true);
+
+    when(followRepository.countByFolloweeId(userId))
+        .thenReturn(5L);
+
+    when(followRepository.countByFollowerId(userId))
+        .thenReturn(3L);
+
+    // when
+    FollowSummaryDto result = followService.getSummary(
+        userId, userId
+    );
+
+    // then
+    assertAll(
+        () -> assertEquals(userId, result.followeeId()),
+        () -> assertEquals(5L, result.followerCount()),
+        () -> assertEquals(3L, result.followingCount()),
+        () -> assertFalse(result.followedByMe()),
+        () -> assertNull(result.followedByMeId()),
+        () -> assertFalse(result.followingMe())
+    );
+  }
 }
