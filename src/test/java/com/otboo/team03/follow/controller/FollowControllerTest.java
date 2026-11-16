@@ -2,6 +2,7 @@ package com.otboo.team03.follow.controller;
 
 import com.otboo.team03.follow.dto.request.FollowCreateRequest;
 import com.otboo.team03.follow.dto.response.FollowDto;
+import com.otboo.team03.follow.dto.response.FollowSummaryDto;
 import com.otboo.team03.follow.dto.response.UserSummary;
 import com.otboo.team03.follow.service.FollowService;
 import com.otboo.team03.global.dto.CursorResponse;
@@ -947,5 +948,42 @@ class FollowControllerTest {
             .value("AUTHENTICATION_REQUIRED"));
 
     verifyNoInteractions(followService);
+  }
+
+  @Test
+  void 팔로우_요약_조회에_성공하면_200과_FollowSummaryDto를_반환한다()
+      throws Exception {
+    // given
+    FollowSummaryDto response = new FollowSummaryDto(
+        followeeId,
+        5L,
+        3L,
+        true,
+        followId,
+        false
+    );
+
+    when(followService.getSummary(followeeId, followerId))
+        .thenReturn(response);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/summary")
+            .principal(authentication(followerId))
+            .param("userId", followeeId.toString())
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.followeeId")
+            .value(followeeId.toString()))
+        .andExpect(jsonPath("$.followerCount").value(5))
+        .andExpect(jsonPath("$.followingCount").value(3))
+        .andExpect(jsonPath("$.followedByMe").value(true))
+        .andExpect(jsonPath("$.followedByMeId")
+            .value(followId.toString()))
+        .andExpect(jsonPath("$.followingMe").value(false));
+
+    verify(followService).getSummary(followeeId, followerId);
   }
 }
