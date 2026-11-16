@@ -738,4 +738,54 @@ class FollowServiceIntegrationTest extends PostgresTestSupport {
       statistics.setStatisticsEnabled(previousEnabled);
     }
   }
+
+  @Test
+  void 팔로잉_커서_조회용_복합_인덱스가_존재한다() {
+    // given
+    String indexName = "idx_follows_followings_cursor";
+
+    // when
+    List<String> indexes = jdbcTemplate.queryForList(
+        """
+        SELECT indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename = 'follows'
+          AND indexname = ?
+        """,
+        String.class,
+        indexName
+    );
+
+    // then
+    assertEquals(1, indexes.size());
+    assertTrue(indexes.get(0).contains(
+        "(follower_id, created_at DESC, id DESC)"
+    ));
+  }
+
+  @Test
+  void 팔로워_커서_조회용_복합_인덱스가_존재한다() {
+    // given
+    String indexName = "idx_follows_followers_cursor";
+
+    // when
+    List<String> indexes = jdbcTemplate.queryForList(
+        """
+        SELECT indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename = 'follows'
+          AND indexname = ?
+        """,
+        String.class,
+        indexName
+    );
+
+    // then
+    assertEquals(1, indexes.size());
+    assertTrue(indexes.get(0).contains(
+        "(followee_id, created_at DESC, id DESC)"
+    ));
+  }
 }
