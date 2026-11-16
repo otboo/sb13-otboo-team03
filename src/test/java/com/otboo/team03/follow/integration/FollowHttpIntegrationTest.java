@@ -828,4 +828,47 @@ class FollowHttpIntegrationTest extends PostgresTestSupport {
         .andExpect(jsonPath("$.exceptionName")
             .value("INVALID_INPUT_VALUE"));
   }
+
+  @Test
+  void 자기_자신의_팔로우_요약을_HTTP로_조회하면_집계만_반환한다()
+      throws Exception {
+    // given
+    User requester = createUser("요청 사용자");
+    User followerA = createUser("팔로워 A");
+    User followerB = createUser("팔로워 B");
+    User followee = createUser("팔로잉 대상");
+
+    followRepository.saveAndFlush(
+        new Follow(followerA.getId(), requester.getId())
+    );
+
+    followRepository.saveAndFlush(
+        new Follow(followerB.getId(), requester.getId())
+    );
+
+    followRepository.saveAndFlush(
+        new Follow(requester.getId(), followee.getId())
+    );
+
+    entityManager.clear();
+
+    String accessToken = accessTokenFor(requester.getId());
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/summary")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("userId", requester.getId().toString())
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.followeeId")
+            .value(requester.getId().toString()))
+        .andExpect(jsonPath("$.followerCount").value(2))
+        .andExpect(jsonPath("$.followingCount").value(1))
+        .andExpect(jsonPath("$.followedByMe").value(false))
+        .andExpect(jsonPath("$.followedByMeId").isEmpty())
+        .andExpect(jsonPath("$.followingMe").value(false));
+  }
 }
