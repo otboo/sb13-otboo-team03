@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import tools.jackson.databind.ObjectMapper;
 
@@ -66,6 +67,27 @@ class OutboxEventRelayServiceTest {
     }
 
     @Test
+    void 배치_크기_기본값으로_대기중인_이벤트를_조회한다() {
+        when(outboxEventRepository
+                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAsc(
+                        eq(OutboxEventStatus.PENDING),
+                        any(Instant.class),
+                        any(Pageable.class)
+                )).thenReturn(List.of());
+
+        int processedCount = relayService.relayPendingEvents();
+
+        assertThat(processedCount).isZero();
+        verify(outboxEventRepository).findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAsc(
+                eq(OutboxEventStatus.PENDING),
+                any(Instant.class),
+                org.mockito.ArgumentMatchers.argThat(pageable ->
+                        pageable.equals(PageRequest.of(0, OutboxEventRelayService.DEFAULT_BATCH_SIZE))
+                )
+        );
+    }
+
+    @Test
     void 발행에_실패하면_재시도할_수_있는_PENDING_상태로_변경한다() throws Exception {
         OutboxEvent event = newEvent();
         when(outboxEventRepository
@@ -84,6 +106,23 @@ class OutboxEventRelayServiceTest {
         assertThat(event.getLastError()).isEqualTo("Kafka 연결 실패");
         assertThat(event.getAvailableAt()).isAfter(event.getCreatedAt());
         verify(outboxEventRepository).save(event);
+    }
+
+    @Test
+    void 발행_예외_메시지가_null이면_예외_클래스명을_저장한다() throws Exception {
+        OutboxEvent event = newEvent();
+        when(outboxEventRepository
+                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAsc(
+                        eq(OutboxEventStatus.PENDING),
+                        any(Instant.class),
+                        any(Pageable.class)
+                )).thenReturn(List.of(event));
+        doThrow(new IllegalStateException())
+                .when(messagePublisher).publish(event);
+
+        relayService.relayPendingEvents(10);
+
+        assertThat(event.getLastError()).isEqualTo(IllegalStateException.class.getSimpleName());
     }
 
     @Test
