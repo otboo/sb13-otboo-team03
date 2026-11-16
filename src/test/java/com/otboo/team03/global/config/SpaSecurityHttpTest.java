@@ -26,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 import com.otboo.team03.clothes.controller.ClothesController;
 import com.otboo.team03.clothes.service.ClothesService;
+import com.otboo.team03.clothes.service.ClothesExtractionService;
 import com.otboo.team03.global.exception.GlobalExceptionHandler;
 import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.user.dto.response.UserDto;
@@ -158,6 +159,7 @@ class SpaSecurityHttpTest {
     })
     @Import({SecurityConfig.class, Api.class, ClothesController.class, GlobalExceptionHandler.class})
     static class Application {
+        @Bean ClothesExtractionService extractionService() { return mock(ClothesExtractionService.class); }
         @Bean ClothesService clothesService() { return mock(ClothesService.class); }
         @Bean JwtLoginSuccessHandler successHandler() { return mock(JwtLoginSuccessHandler.class); }
         @Bean JwtLoginFailureHandler failureHandler() { return mock(JwtLoginFailureHandler.class); }

@@ -4,6 +4,7 @@ import com.otboo.team03.clothes.dto.request.ClothesCreateRequest;
 import com.otboo.team03.clothes.dto.response.ClothesDto;
 import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.clothes.service.ClothesService;
+import com.otboo.team03.clothes.service.ClothesExtractionService;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.GlobalExceptionHandler;
 import com.otboo.team03.global.exception.OtbooException;
@@ -24,6 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class ClothesControllerTest {
     private ClothesService service;
+    private ClothesExtractionService extractionService;
     private MockMvc mvc;
     private final UUID ownerId = UUID.randomUUID();
     private final UUID definitionId = UUID.randomUUID();
@@ -35,7 +37,8 @@ class ClothesControllerTest {
         service = mock(ClothesService.class);
         // 서버를 띄우지 않고 HTTP 요청, JSON 변환, 검증, 예외 응답을 확인한다.
         // 전체 Spring 설정이나 DB 연결을 검증하는 통합 테스트는 아니다.
-        mvc = MockMvcBuilders.standaloneSetup(new ClothesController(service))
+        extractionService = mock(ClothesExtractionService.class);
+        mvc = MockMvcBuilders.standaloneSetup(new ClothesController(service, extractionService))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
     }
 
@@ -268,11 +271,13 @@ class ClothesControllerTest {
 
     @Test
     void extractionReturnsDraftForAuthenticatedUser() throws Exception {
+        when(extractionService.extract(any(), org.mockito.ArgumentMatchers.eq(ownerId)))
+                .thenReturn(new ClothesDto(null, ownerId, "추출된 셔츠", null, null, List.of()));
         mvc.perform(get("/api/clothes/extractions").principal(auth(ownerId))
                         .param("url", "https://www.musinsa.com/products/123"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ownerId").value(ownerId.toString()))
-                .andExpect(jsonPath("$.name").value("추출 API 연결 확인"))
+                .andExpect(jsonPath("$.name").value("추출된 셔츠"))
                 .andExpect(jsonPath("$.id").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.imageUrl").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.type").value(org.hamcrest.Matchers.nullValue()))
@@ -284,10 +289,11 @@ class ClothesControllerTest {
     void extractionRejectsMissingOrBlankUrl() throws Exception {
         mvc.perform(get("/api/clothes/extractions").principal(auth(ownerId)))
                 .andExpect(status().isBadRequest());
+        when(extractionService.extract(any(), any())).thenThrow(new OtbooException(ErrorCode.INVALID_PURCHASE_URL));
         for (String url : List.of("", "   ")) {
             mvc.perform(get("/api/clothes/extractions").principal(auth(ownerId)).param("url", url))
                     .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.exceptionName").value("INVALID_INPUT_VALUE"));
+                    .andExpect(jsonPath("$.exceptionName").value("INVALID_PURCHASE_URL"));
         }
         verifyNoInteractions(service);
     }
