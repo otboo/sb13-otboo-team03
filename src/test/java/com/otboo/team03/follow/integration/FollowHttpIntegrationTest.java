@@ -734,4 +734,53 @@ class FollowHttpIntegrationTest extends PostgresTestSupport {
             .value(myFollow.getId().toString()))
         .andExpect(jsonPath("$.followingMe").value(true));
   }
+
+  @Test
+  void 팔로우_관계가_없으면_요약_정보에_기본값을_반환한다()
+      throws Exception {
+    // given
+    User requester = createUser("요청 사용자");
+    User target = createUser("조회 대상");
+
+    String accessToken = accessTokenFor(requester.getId());
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/summary")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("userId", target.getId().toString())
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.followeeId")
+            .value(target.getId().toString()))
+        .andExpect(jsonPath("$.followerCount").value(0))
+        .andExpect(jsonPath("$.followingCount").value(0))
+        .andExpect(jsonPath("$.followedByMe").value(false))
+        .andExpect(jsonPath("$.followedByMeId").isEmpty())
+        .andExpect(jsonPath("$.followingMe").value(false));
+  }
+
+  @Test
+  void 존재하지_않는_사용자의_팔로우_요약_조회는_404를_반환한다()
+      throws Exception {
+    // given
+    User requester = createUser("요청 사용자");
+    UUID nonexistentUserId = UUID.randomUUID();
+
+    String accessToken = accessTokenFor(requester.getId());
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/summary")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("userId", nonexistentUserId.toString())
+    );
+
+    // then
+    result.andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("NOT_FOUND_USER"));
+  }
 }
