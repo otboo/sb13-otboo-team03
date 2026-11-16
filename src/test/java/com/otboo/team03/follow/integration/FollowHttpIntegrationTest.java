@@ -783,4 +783,49 @@ class FollowHttpIntegrationTest extends PostgresTestSupport {
         .andExpect(jsonPath("$.exceptionName")
             .value("NOT_FOUND_USER"));
   }
+
+  @Test
+  void 미인증_사용자는_팔로우_요약을_조회할_수_없다()
+      throws Exception {
+    // given
+    User target = createUser("조회 대상");
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/summary")
+            .param("userId", target.getId().toString())
+    );
+
+    // then
+    result.andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void 팔로우_요약_조회에서_잘못된_요청은_400을_반환한다()
+      throws Exception {
+    // given
+    User requester = createUser("요청 사용자");
+    String accessToken = accessTokenFor(requester.getId());
+
+    // when
+    var missingUserId = mockMvc.perform(
+        get("/api/follows/summary")
+            .header("Authorization", "Bearer " + accessToken)
+    );
+
+    var invalidUserId = mockMvc.perform(
+        get("/api/follows/summary")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("userId", "invalid-uuid")
+    );
+
+    // then
+    missingUserId.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    invalidUserId.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+  }
 }
