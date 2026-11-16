@@ -16,12 +16,14 @@ import com.otboo.team03.weather.fixture.WeatherFixture;
 import com.otboo.team03.weather.repository.WeatherRepository;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class WeatherServiceTest {
@@ -45,6 +47,7 @@ class WeatherServiceTest {
         latitude, longitude, 61, 125, List.of("서울특별시", "강남구")
     );
     Weather mockWeather = WeatherFixture.createCustom(18.5, SkyStatus.CLEAR, PrecipitationType.NONE);
+    ReflectionTestUtils.setField(mockWeather, "id", UUID.randomUUID());
 
     given(locationService.getLocation(latitude, longitude)).willReturn(mockLocation);
     given(weatherRepository.findAllByLatitudeAndLongitudeAndForecastAtBetweenOrderByForecastAtAsc(
@@ -80,6 +83,6 @@ class WeatherServiceTest {
     // when & then
     assertThatThrownBy(() -> weatherService.getWeathers(longitude, latitude))
         .isInstanceOf(WeatherNotFoundException.class)
-        .hasMessage("해당 지역의 날씨 정보가 존재하지 않습니다.");
+        .hasMessage("날씨 정보가 존재하지 않습니다.");
   }
 }

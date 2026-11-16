@@ -31,7 +31,7 @@ public class WeatherServiceImpl implements WeatherService {
         .findAllByLatitudeAndLongitudeAndForecastAtBetweenOrderByForecastAtAsc(latitude, longitude, now, end);
 
     if (weathers.isEmpty()) {
-      throw new WeatherNotFoundException("해당 지역의 날씨 정보가 존재하지 않습니다.");
+      throw new WeatherNotFoundException();
     }
 
     return weathers.stream()
