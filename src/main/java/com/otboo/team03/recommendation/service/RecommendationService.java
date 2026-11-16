@@ -52,30 +52,25 @@ public class RecommendationService {
         int effectiveSensitivity = sensitivity != null ? sensitivity : 3;
 
         List<Clothes> clothes = clothesRepository.findAllByOwner_Id(userId);
-        List<Clothes> recommended;
-        Map<UUID, List<ClothesAttribute>> attributesByClothesId;
-        if (clothes.isEmpty()) {
-            attributesByClothesId = Map.of();
-            recommended = algorithm.recommend(clothes, temperature, effectiveSensitivity);
-        } else {
-            List<UUID> clothesIds = clothes.stream().map(Clothes::getId).toList();
-            attributesByClothesId = loadAttributesByClothesId(clothesIds);
-            Map<UUID, ThicknessLevel> thicknessByClothesId = new HashMap<>();
-            Map<UUID, SleeveLength> sleeveByClothesId = new HashMap<>();
-            for (UUID clothesId : clothesIds) {
-                List<ThicknessLevel> thicknessLevels = new ArrayList<>();
-                List<SleeveLength> sleeveLengths = new ArrayList<>();
-                for (ClothesAttribute attribute : attributesByClothesId.getOrDefault(clothesId, List.of())) {
-                    String name = attribute.getDefinition().getName();
-                    String value = attribute.getValue();
-                    thicknessLevels.add(attributeAnalyzer.analyze(name, value));
-                    sleeveLengths.add(sleeveAnalyzer.analyze(name, value));
-                }
-                thicknessByClothesId.put(clothesId, attributeEstimator.estimateThickness(thicknessLevels));
-                sleeveByClothesId.put(clothesId, attributeEstimator.estimateSleeveLength(sleeveLengths));
+        List<UUID> clothesIds = clothes.stream().map(Clothes::getId).toList();
+        Map<UUID, List<ClothesAttribute>> attributesByClothesId = clothesIds.isEmpty()
+                ? Map.of() : loadAttributesByClothesId(clothesIds);
+        Map<UUID, ThicknessLevel> thicknessByClothesId = new HashMap<>();
+        Map<UUID, SleeveLength> sleeveByClothesId = new HashMap<>();
+        for (UUID clothesId : clothesIds) {
+            List<ThicknessLevel> thicknessLevels = new ArrayList<>();
+            List<SleeveLength> sleeveLengths = new ArrayList<>();
+            for (ClothesAttribute attribute : attributesByClothesId.getOrDefault(clothesId, List.of())) {
+                String name = attribute.getDefinition().getName();
+                String value = attribute.getValue();
+                thicknessLevels.add(attributeAnalyzer.analyze(name, value));
+                sleeveLengths.add(sleeveAnalyzer.analyze(name, value));
             }
-            recommended = algorithm.recommend(clothes, thicknessByClothesId, sleeveByClothesId, temperature, effectiveSensitivity, Set.of());
+            thicknessByClothesId.put(clothesId, attributeEstimator.estimateThickness(thicknessLevels));
+            sleeveByClothesId.put(clothesId, attributeEstimator.estimateSleeveLength(sleeveLengths));
         }
+        List<Clothes> recommended = algorithm.recommend(
+                clothes, thicknessByClothesId, sleeveByClothesId, temperature, effectiveSensitivity, Set.of());
 
         List<OotdDto> ootds = recommended.stream()
                 .map(c -> clothesService.toClothesDto(c, attributesByClothesId.getOrDefault(c.getId(), List.of())))

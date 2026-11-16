@@ -39,16 +39,17 @@ public class BasicOutfitAlgorithm {
         Comparator<Clothes> bySleeveDescending = Comparator.comparingInt((Clothes item) ->
                 suitabilityScorer.scoreSleeve(item.getType(), sleeveOf(item, sleeveByClothesId),
                         adjustedTemperature, sensitivity)).reversed();
-        Comparator<Clothes> byPreviouslyRecommendedTop = Comparator.comparing((Clothes item) ->
-                item.getType() == ClothesType.TOP && item.getId() != null
+        Comparator<Clothes> byPreviousRecommendation = Comparator.comparing((Clothes item) ->
+                (item.getType() == ClothesType.TOP || item.getType() == ClothesType.BOTTOM)
+                        && item.getId() != null
                         && previousOutfitIds.contains(item.getId()));
 
         List<Clothes> rankedClothes = clothes.stream()
                 .sorted(byThicknessDescending.thenComparing(bySleeveDescending)
-                        .thenComparing(byPreviouslyRecommendedTop))
+                        .thenComparing(byPreviousRecommendation))
                 .toList();
 
-        // 두께·소매가 동점인 상의는 직전 추천에 없는 후보를 우선하고, 나머지 동점은 입력 순서를 유지한다.
+        // 두께·소매가 동점인 상의·하의는 직전 추천에 없는 후보를 우선하고, 나머지 동점은 입력 순서를 유지한다.
         return recommendAtAdjustedTemperature(rankedClothes, clothes, adjustedTemperature);
     }
 
