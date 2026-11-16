@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -140,6 +141,27 @@ class SocialLoginHandlerTest {
             then(socialAccountService).should().resolveUser(identity);
             assertLoginResponse(user);
         }
+
+        @ParameterizedTest
+        @ValueSource(booleans = {false, true})
+        @DisplayName("Kakao 계정 정보나 프로필이 없어도 로그인에 성공한다")
+        void onAuthenticationSuccess_kakaoWithoutProfile_succeeds(boolean hasKakaoAccount) throws Exception {
+            SocialIdentity identity = new SocialIdentity(SocialProvider.KAKAO, "12345", null, null, false);
+            User user = stubLogin(identity, "카카오 사용자_12345@kakao.com");
+            Map<String, Object> attributes = hasKakaoAccount
+                    ? Map.of("id", 12345L, "kakao_account", Map.of())
+                    : Map.of("id", 12345L);
+            DefaultOAuth2User principal = new DefaultOAuth2User(
+                    List.of(new SimpleGrantedAuthority("OAUTH2_USER")), attributes, "id"
+            );
+            OAuth2AuthenticationToken authentication =
+                    new OAuth2AuthenticationToken(principal, principal.getAuthorities(), "kakao");
+
+            handler.onAuthenticationSuccess(request, response, authentication);
+
+            then(socialAccountService).should().resolveUser(identity);
+            assertLoginResponse(user);
+        }
     }
 
     @Nested
@@ -246,10 +268,23 @@ class SocialLoginHandlerTest {
             then(jwtRegistry).shouldHaveNoInteractions();
         }
 
+        @ParameterizedTest
+        @NullSource
+        @ValueSource(strings = "pk_users")
+        @DisplayName("가입, 연동과 무관하거나 이름을 알 수 없는 제약 위반은 그대로 전파한다")
+        void onAuthenticationSuccess_unrecognizedConstraint_propagates(String constraintName) {
+            DataIntegrityViolationException exception = uniqueViolation(constraintName);
+            given(socialAccountService.resolveUser(any(SocialIdentity.class))).willThrow(exception);
+
+            assertThatThrownBy(() -> handler.onAuthenticationSuccess(request, response, googleAuthentication()))
+                    .isSameAs(exception);
+        }
+
         @Test
-        @DisplayName("소셜 가입·연동과 무관한 유니크 충돌은 로그인 실패로 바꾸지 않는다")
-        void onAuthenticationSuccess_unrelatedUniqueViolation_propagates() {
-            DataIntegrityViolationException exception = uniqueViolation("pk_users");
+        @DisplayName("원인 체인에 제약 위반 예외가 없으면 DB 예외를 그대로 전파한다")
+        void onAuthenticationSuccess_withoutConstraintViolationCause_propagates() {
+            DataIntegrityViolationException exception =
+                    new DataIntegrityViolationException("계정 저장 실패", new IllegalStateException("저장 오류"));
             given(socialAccountService.resolveUser(any(SocialIdentity.class))).willThrow(exception);
 
             assertThatThrownBy(() -> handler.onAuthenticationSuccess(request, response, googleAuthentication()))
