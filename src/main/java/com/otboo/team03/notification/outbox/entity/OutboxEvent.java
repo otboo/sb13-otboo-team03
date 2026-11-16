@@ -14,6 +14,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -86,5 +87,39 @@ public class OutboxEvent {
         this.attemptCount = 0;
         this.availableAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
         this.createdAt = createdAt;
+    }
+
+    public void markPublished(Instant publishedAt) {
+        Instant validatedPublishedAt = Objects.requireNonNull(
+                publishedAt,
+                "publishedAt must not be null"
+        );
+        this.status = OutboxEventStatus.PUBLISHED;
+        this.publishedAt = validatedPublishedAt;
+        this.lastError = null;
+    }
+
+    public void recordFailure(
+            Instant failedAt,
+            String errorMessage,
+            int maxAttempts,
+            Duration retryDelay
+    ) {
+        Objects.requireNonNull(failedAt, "failedAt must not be null");
+        Objects.requireNonNull(retryDelay, "retryDelay must not be null");
+        if (maxAttempts <= 0 || retryDelay.isNegative()) {
+            throw new IllegalArgumentException("재시도 정책이 올바르지 않습니다.");
+        }
+
+        this.attemptCount++;
+        this.lastError = errorMessage;
+
+        if (this.attemptCount >= maxAttempts) {
+            this.status = OutboxEventStatus.FAILED;
+            return;
+        }
+
+        this.status = OutboxEventStatus.PENDING;
+        this.availableAt = failedAt.plus(retryDelay);
     }
 }
