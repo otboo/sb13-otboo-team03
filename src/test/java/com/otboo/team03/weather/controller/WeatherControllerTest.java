@@ -1,8 +1,11 @@
 package com.otboo.team03.weather.controller;
 
 import com.otboo.team03.profile.dto.WeatherAPILocation;
-import com.otboo.team03.weather.dto.HourlyForecastDto;
-import com.otboo.team03.weather.dto.WeatherResponse;
+import com.otboo.team03.weather.dto.HumidityDto;
+import com.otboo.team03.weather.dto.PrecipitationDto;
+import com.otboo.team03.weather.dto.TemperatureDto;
+import com.otboo.team03.weather.dto.WeatherDto;
+import com.otboo.team03.weather.dto.WindSpeedDto;
 import com.otboo.team03.weather.entity.PrecipitationType;
 import com.otboo.team03.weather.entity.SkyStatus;
 import com.otboo.team03.weather.service.LocationService;
@@ -16,13 +19,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
 
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -73,36 +75,33 @@ class WeatherControllerTest {
   }
 
   @Test
-  @DisplayName("좌표(위도, 경도)로 날씨 조회 시 200 OK와 날씨 정보를 반환한다")
+  @DisplayName("좌표 기반 날씨 조회 성공 시 Swagger 규격(배열)에 맞춰 응답한다")
   void getWeather_success() throws Exception {
-    // given: 직관적이면서도 재사용 가능한 헬퍼 호출
-    Double lat = 37.4979;
-    Double lon = 127.0276;
-
-    HourlyForecastDto current = createHourlyForecast(20.0);
-    WeatherResponse response = WeatherResponse.of(current, List.of(current));
-    given(weatherService.getWeather(eq(lat), eq(lon))).willReturn(response);
-
-    // when & then: 요청 및 검증
-    mockMvc.perform(get("/api/weathers")
-            .param("latitude", String.valueOf(lat))
-            .param("longitude", String.valueOf(lon))
-            .contentType(MediaType.APPLICATION_JSON))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.currentWeather.temperature").value(20.0));
-  }
-  private HourlyForecastDto createHourlyForecast(Double temperature) {
-    return new HourlyForecastDto(
+    // given
+    WeatherDto mockWeather = new WeatherDto(
         UUID.randomUUID(),
         Instant.now(),
-        temperature,
+        Instant.now(),
+        new WeatherAPILocation(37.4979, 127.0276, 61, 125, List.of("서울특별시", "강남구")),
         SkyStatus.CLEAR,
-        PrecipitationType.NONE,
-        0.0,
-        0.0,
-        50.0,
-        1.5
+        new PrecipitationDto(PrecipitationType.NONE, 0.0, 0.0),
+        new HumidityDto(60.0, 0.0),
+        new TemperatureDto(18.5, 0.0, 18.5, 18.5),
+        new WindSpeedDto(2.5, "WEAK")
     );
+    given(weatherService.getWeathers(anyDouble(), anyDouble()))
+        .willReturn(List.of(mockWeather));
+    // 2. When & Then: JSONPath 검증 수정
+    mockMvc.perform(get("/api/weathers")
+            .param("longitude", "127.0276")
+            .param("latitude", "37.4979"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$").isArray())                           // 1. 최상위가 배열([])인가
+        .andExpect(jsonPath("$[0].id").exists())                     // 2. weatherId가 아닌 id인가
+        .andExpect(jsonPath("$[0].temperature.current").value(18.5)) // 3. 중첩 객체(temperature.current)인가
+        .andExpect(jsonPath("$[0].skyStatus").value("CLEAR"))
+        .andExpect(jsonPath("$[0].humidity.current").value(60.0))
+        .andExpect(jsonPath("$[0].windSpeed.asWord").value("WEAK"));
   }
 
 
