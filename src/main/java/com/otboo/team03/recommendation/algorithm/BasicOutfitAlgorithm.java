@@ -49,7 +49,7 @@ public class BasicOutfitAlgorithm {
                 .toList();
 
         // 적합도가 같은 기본 의상은 직전 추천에 없는 후보를 우선하고, 나머지 동점은 입력 순서를 유지한다.
-        return recommendAtAdjustedTemperature(rankedClothes, clothes, adjustedTemperature);
+        return recommendAtAdjustedTemperature(rankedClothes, clothes, adjustedTemperature, previousOutfitIds);
     }
 
     public List<Clothes> recommend(List<Clothes> clothes,
@@ -59,7 +59,7 @@ public class BasicOutfitAlgorithm {
     }
 
     public List<Clothes> recommend(List<Clothes> clothes, double temperature, int sensitivity) {
-        return recommendAtAdjustedTemperature(clothes, clothes, adjustTemperature(temperature, sensitivity));
+        return recommendAtAdjustedTemperature(clothes, clothes, adjustTemperature(temperature, sensitivity), Set.of());
     }
 
     public List<Clothes> recommend(List<Clothes> clothes) {
@@ -96,8 +96,8 @@ public class BasicOutfitAlgorithm {
         return clothesId == null ? SleeveLength.UNKNOWN : sleeveByClothesId.getOrDefault(clothesId, SleeveLength.UNKNOWN);
     }
 
-    private List<Clothes> recommendAtAdjustedTemperature(
-            List<Clothes> rankedClothes, List<Clothes> originalClothes, double adjustedTemperature) {
+    private List<Clothes> recommendAtAdjustedTemperature(List<Clothes> rankedClothes, List<Clothes> originalClothes,
+                                                         double adjustedTemperature, Set<UUID> previousOutfitIds) {
         List<Clothes> basicOutfit = recommend(rankedClothes);
         if (basicOutfit.isEmpty()) {
             return basicOutfit;
@@ -109,7 +109,11 @@ public class BasicOutfitAlgorithm {
         }
 
         for (ClothesType type : ADDITIONAL_ITEM_TYPES) {
-            Optional<Clothes> item = firstOfType(originalClothes, type);
+            Optional<Clothes> item = originalClothes.stream()
+                    .filter(candidate -> candidate.getType() == type)
+                    .filter(candidate -> candidate.getId() == null || !previousOutfitIds.contains(candidate.getId()))
+                    .findFirst()
+                    .or(() -> firstOfType(originalClothes, type));
             item.ifPresent(outfit::add);
             if (type == ClothesType.SHOES && item.isPresent()) {
                 firstOfType(originalClothes, ClothesType.SOCKS).ifPresent(outfit::add);
