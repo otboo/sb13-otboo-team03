@@ -12,6 +12,7 @@ import com.otboo.team03.user.entity.User;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -25,16 +26,23 @@ import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.hibernate.exception.ConstraintViolationException;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.Set;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class SocialLoginHandler implements AuthenticationSuccessHandler, AuthenticationFailureHandler {
 
     private static final String SUCCESS_URL = "/#/recommendations";
     private static final String FAILURE_URL = "/#/auth/login?error=oauth_failed&error_message=";
+    private static final Set<String> SOCIAL_ACCOUNT_CONFLICT_CONSTRAINTS = Set.of(
+            "uq_users_email", "uq_social_accounts_provider_identity", "pk_social_accounts"
+    );
 
     private final SocialAccountService socialAccountService;
     private final JwtTokenProvider jwtTokenProvider;
@@ -55,6 +63,13 @@ public class SocialLoginHandler implements AuthenticationSuccessHandler, Authent
             user = socialAccountService.resolveUser(identity);
         } catch (AuthenticationException e) {
             onAuthenticationFailure(request, response, e);
+            return;
+        } catch (DataIntegrityViolationException e) {
+            if (!isSocialAccountConflict(e)) {
+                throw e;
+            }
+
+            redirectToLoginFailure(response, "login_failed", e);
             return;
         }
 
@@ -79,16 +94,13 @@ public class SocialLoginHandler implements AuthenticationSuccessHandler, Authent
                                         HttpServletResponse response,
                                         AuthenticationException exception) throws IOException {
 
-        SecurityContextHolder.clearContext();
-
-        // 외부 제공자의 오류 설명이나 내부 예외 메시지는 URL에 넣지 않는다.
         String errorMessage = "login_failed";
         if (exception instanceof OAuth2AuthenticationException oauthException
                 && "access_denied".equals(oauthException.getError().getErrorCode())) {
             errorMessage = "access_denied";
         }
 
-        response.sendRedirect(FAILURE_URL + errorMessage);
+        redirectToLoginFailure(response, errorMessage, exception);
     }
 
     // OAuth2 클라이언트 등록 ID로 제공자를 구분하고, 회원 정보를 공통 형식으로 변환한다.
@@ -136,6 +148,29 @@ public class SocialLoginHandler implements AuthenticationSuccessHandler, Authent
         }
 
         return new SocialIdentity(SocialProvider.KAKAO, id.toString(), null, nickname, false);
+    }
+
+    // DB 예외의 제약 이름으로 소셜 가입, 연동 중 예상한 중복 충돌인지 확인한다.
+    private boolean isSocialAccountConflict(DataIntegrityViolationException exception) {
+        for (Throwable cause = exception.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation) {
+                String name = violation.getConstraintName();
+                return name != null && SOCIAL_ACCOUNT_CONFLICT_CONSTRAINTS.contains(name);
+            }
+        }
+
+        return false;
+    }
+
+    // 인증 컨텍스트를 비우고, 취소가 아닌 실패는 예외 종류만 기록한 뒤 로그인 화면으로 이동한다.
+    private void redirectToLoginFailure(HttpServletResponse response, String errorMessage, Exception exception) throws IOException {
+        SecurityContextHolder.clearContext();
+
+        if (!"access_denied".equals(errorMessage)) {
+            log.warn("소셜 로그인 실패: exception={}", exception.getClass().getSimpleName());
+        }
+
+        response.sendRedirect(FAILURE_URL + errorMessage);
     }
 
     private String getString(Object value) {
