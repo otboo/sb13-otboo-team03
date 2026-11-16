@@ -31,16 +31,21 @@ import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.hibernate.exception.ConstraintViolationException;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.sql.SQLException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.ArgumentMatchers.any;
 
 @ExtendWith(MockitoExtension.class)
 class SocialLoginHandlerTest {
@@ -224,6 +229,38 @@ class SocialLoginHandlerTest {
 
             // then
             assertLoginRejected();
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"uq_users_email", "uq_social_accounts_provider_identity", "pk_social_accounts"})
+        @DisplayName("소셜 가입·연동 중 유니크 충돌이 발생하면 JWT를 발급하지 않고 로그인 화면으로 돌아간다")
+        void onAuthenticationSuccess_socialAccountConflict_redirectsToLogin(String constraintName) throws Exception {
+            given(socialAccountService.resolveUser(any(SocialIdentity.class))).willThrow(uniqueViolation(constraintName));
+
+            handler.onAuthenticationSuccess(request, response, googleAuthentication());
+
+            assertThat(response.getStatus()).isEqualTo(302);
+            assertThat(response.getRedirectedUrl()).isEqualTo(LOGIN_FAILURE_URL + "login_failed");
+            assertThat(response.getHeader(HttpHeaders.SET_COOKIE)).isNull();
+            then(jwtTokenProvider).shouldHaveNoInteractions();
+            then(jwtRegistry).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("소셜 가입·연동과 무관한 유니크 충돌은 로그인 실패로 바꾸지 않는다")
+        void onAuthenticationSuccess_unrelatedUniqueViolation_propagates() {
+            DataIntegrityViolationException exception = uniqueViolation("pk_users");
+            given(socialAccountService.resolveUser(any(SocialIdentity.class))).willThrow(exception);
+
+            assertThatThrownBy(() -> handler.onAuthenticationSuccess(request, response, googleAuthentication()))
+                    .isSameAs(exception);
+        }
+
+        private DataIntegrityViolationException uniqueViolation(String constraintName) {
+            SQLException cause = new SQLException("unique constraint violation", "23505");
+            return new DataIntegrityViolationException(
+                    "계정 저장 실패", new ConstraintViolationException("unique constraint violation", cause, constraintName)
+            );
         }
 
         private void assertLoginRejected() {
