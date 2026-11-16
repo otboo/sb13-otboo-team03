@@ -44,6 +44,8 @@ DB 저장과 S3 업로드는 수행하지 않는다. 타입과 필수 속성은 
 
 ## 검증 범위 (2026-11-16)
 
+- 재검증에서 프런트 회귀 테스트 7개 실패를 확인한 뒤, 번들의 이미지 처리에 await·기존 이미지 초기화·응답 검증·실패 안내·MIME 보존·10초 중단 처리를 반영했다. 수정 후 `node --test src/test/js/clothes-extraction.test.mjs` 7개 통과 및 `node --check src/main/resources/static/assets/index-CqeESGX6.js` 통과를 직접 확인했다. 아래 Java 테스트 결과는 이전 검증 기록이며 이번 프런트 수정에서는 재실행하지 않았다.
+
 - ClothesPageClientTest: URL 형식, 호스트 위장/내부 IP, 리다이렉트·HTTP 오류, 타임아웃, 콘텐츠 타입·크기 제한.
 - ClothesExtractionServiceTest: 세 쇼핑몰 도메인별 합성 HTML의 이름·상대 이미지 경로, 이미지 없음, 메타데이터 누락.
 - ClothesHtmlParserTest: 기존 파서의 OG 우선순위 및 이미지 URL 검증.
