@@ -691,4 +691,47 @@ class FollowHttpIntegrationTest extends PostgresTestSupport {
         .andExpect(jsonPath("$.nextIdAfter").isEmpty())
         .andExpect(jsonPath("$.totalCount").value(3));
   }
+
+  @Test
+  void 팔로우_요약을_HTTP와_DB로_조회하면_집계와_양방향_관계를_반환한다()
+      throws Exception {
+    // given
+    User requester = createUser("요청 사용자");
+    User target = createUser("조회 대상");
+    User otherFollower = createUser("다른 팔로워");
+
+    Follow myFollow = followRepository.saveAndFlush(
+        new Follow(requester.getId(), target.getId())
+    );
+
+    followRepository.saveAndFlush(
+        new Follow(otherFollower.getId(), target.getId())
+    );
+
+    followRepository.saveAndFlush(
+        new Follow(target.getId(), requester.getId())
+    );
+
+    entityManager.clear();
+
+    String accessToken = accessTokenFor(requester.getId());
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/summary")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("userId", target.getId().toString())
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.followeeId")
+            .value(target.getId().toString()))
+        .andExpect(jsonPath("$.followerCount").value(2))
+        .andExpect(jsonPath("$.followingCount").value(1))
+        .andExpect(jsonPath("$.followedByMe").value(true))
+        .andExpect(jsonPath("$.followedByMeId")
+            .value(myFollow.getId().toString()))
+        .andExpect(jsonPath("$.followingMe").value(true));
+  }
 }
