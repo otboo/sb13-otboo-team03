@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -37,6 +38,7 @@ import java.nio.charset.StandardCharsets;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
 
+@ActiveProfiles("test")
 @SpringBootTest(classes = SpaSecurityHttpTest.Application.class,
         // DB 자동 설정을 제외한 웹 보안 테스트이므로 readiness에서도 DB 검사를 제외한다.
         properties = "management.endpoint.health.group.readiness.include=readinessState",
