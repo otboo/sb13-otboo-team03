@@ -2,6 +2,7 @@ package com.otboo.team03.follow.controller;
 
 import com.otboo.team03.follow.dto.request.FollowCreateRequest;
 import com.otboo.team03.follow.dto.response.FollowDto;
+import com.otboo.team03.follow.dto.response.FollowSummaryDto;
 import com.otboo.team03.follow.dto.response.UserSummary;
 import com.otboo.team03.follow.service.FollowService;
 import com.otboo.team03.global.dto.CursorResponse;
@@ -945,6 +946,124 @@ class FollowControllerTest {
     result.andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.exceptionName")
             .value("AUTHENTICATION_REQUIRED"));
+
+    verifyNoInteractions(followService);
+  }
+
+  @Test
+  void 팔로우_요약_조회에_성공하면_200과_FollowSummaryDto를_반환한다()
+      throws Exception {
+    // given
+    FollowSummaryDto response = new FollowSummaryDto(
+        followeeId,
+        5L,
+        3L,
+        true,
+        followId,
+        false
+    );
+
+    when(followService.getSummary(followeeId, followerId))
+        .thenReturn(response);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/summary")
+            .principal(authentication(followerId))
+            .param("userId", followeeId.toString())
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.followeeId")
+            .value(followeeId.toString()))
+        .andExpect(jsonPath("$.followerCount").value(5))
+        .andExpect(jsonPath("$.followingCount").value(3))
+        .andExpect(jsonPath("$.followedByMe").value(true))
+        .andExpect(jsonPath("$.followedByMeId")
+            .value(followId.toString()))
+        .andExpect(jsonPath("$.followingMe").value(false));
+
+    verify(followService).getSummary(followeeId, followerId);
+  }
+
+  @Test
+  void 미인증_또는_잘못된_인증_정보로는_팔로우_요약을_조회할_수_없다()
+      throws Exception {
+    // given
+    Authentication unauthenticated =
+        new UsernamePasswordAuthenticationToken(
+            authentication(followerId).getPrincipal(),
+            null
+        );
+
+    Authentication invalidPrincipal =
+        new UsernamePasswordAuthenticationToken(
+            "invalid-principal",
+            null,
+            authentication(followerId).getAuthorities()
+        );
+
+    // when
+    var missingAuthentication = mockMvc.perform(
+        get("/api/follows/summary")
+            .param("userId", followeeId.toString())
+    );
+
+    var notAuthenticated = mockMvc.perform(
+        get("/api/follows/summary")
+            .principal(unauthenticated)
+            .param("userId", followeeId.toString())
+    );
+
+    var wrongPrincipal = mockMvc.perform(
+        get("/api/follows/summary")
+            .principal(invalidPrincipal)
+            .param("userId", followeeId.toString())
+    );
+
+    // then
+    missingAuthentication.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    notAuthenticated.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    wrongPrincipal.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    verifyNoInteractions(followService);
+  }
+
+  @Test
+  void 팔로우_요약_조회에서_userId가_누락되거나_형식이_잘못되면_400을_반환한다()
+      throws Exception {
+    // given
+    Authentication authenticated = authentication(followerId);
+
+    // when
+    var missingUserId = mockMvc.perform(
+        get("/api/follows/summary")
+            .principal(authenticated)
+    );
+
+    var invalidUserId = mockMvc.perform(
+        get("/api/follows/summary")
+            .principal(authenticated)
+            .param("userId", "invalid-uuid")
+    );
+
+    // then
+    missingUserId.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    invalidUserId.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
 
     verifyNoInteractions(followService);
   }

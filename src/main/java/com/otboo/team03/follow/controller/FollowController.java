@@ -2,6 +2,7 @@ package com.otboo.team03.follow.controller;
 
 import com.otboo.team03.follow.dto.request.FollowCreateRequest;
 import com.otboo.team03.follow.dto.response.FollowDto;
+import com.otboo.team03.follow.dto.response.FollowSummaryDto;
 import com.otboo.team03.follow.service.FollowService;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
@@ -114,6 +115,28 @@ public class FollowController {
         cursor,
         idAfter,
         nameLike
+    );
+
+    return ResponseEntity.ok(response);
+  }
+
+  @GetMapping("/summary")
+  public ResponseEntity<FollowSummaryDto> getSummary(
+      @RequestParam("userId") UUID userId,
+      Authentication authentication
+  ) {
+    if (authentication == null
+        || !authentication.isAuthenticated()
+        || !(authentication.getPrincipal()
+        instanceof OtbooUserDetails userDetails)) {
+      throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
+    }
+
+    UUID requesterId = userDetails.getUserDto().id();
+
+    FollowSummaryDto response = followService.getSummary(
+        userId,
+        requesterId
     );
 
     return ResponseEntity.ok(response);

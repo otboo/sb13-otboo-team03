@@ -691,4 +691,234 @@ class FollowHttpIntegrationTest extends PostgresTestSupport {
         .andExpect(jsonPath("$.nextIdAfter").isEmpty())
         .andExpect(jsonPath("$.totalCount").value(3));
   }
+
+  @Test
+  void 팔로우_요약을_HTTP와_DB로_조회하면_집계와_양방향_관계를_반환한다()
+      throws Exception {
+    // given
+    User requester = createUser("요청 사용자");
+    User target = createUser("조회 대상");
+    User otherFollower = createUser("다른 팔로워");
+
+    Follow myFollow = followRepository.saveAndFlush(
+        new Follow(requester.getId(), target.getId())
+    );
+
+    followRepository.saveAndFlush(
+        new Follow(otherFollower.getId(), target.getId())
+    );
+
+    followRepository.saveAndFlush(
+        new Follow(target.getId(), requester.getId())
+    );
+
+    entityManager.clear();
+
+    String accessToken = accessTokenFor(requester.getId());
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/summary")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("userId", target.getId().toString())
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.followeeId")
+            .value(target.getId().toString()))
+        .andExpect(jsonPath("$.followerCount").value(2))
+        .andExpect(jsonPath("$.followingCount").value(1))
+        .andExpect(jsonPath("$.followedByMe").value(true))
+        .andExpect(jsonPath("$.followedByMeId")
+            .value(myFollow.getId().toString()))
+        .andExpect(jsonPath("$.followingMe").value(true));
+  }
+
+  @Test
+  void 팔로우_관계가_없으면_요약_정보에_기본값을_반환한다()
+      throws Exception {
+    // given
+    User requester = createUser("요청 사용자");
+    User target = createUser("조회 대상");
+
+    String accessToken = accessTokenFor(requester.getId());
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/summary")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("userId", target.getId().toString())
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.followeeId")
+            .value(target.getId().toString()))
+        .andExpect(jsonPath("$.followerCount").value(0))
+        .andExpect(jsonPath("$.followingCount").value(0))
+        .andExpect(jsonPath("$.followedByMe").value(false))
+        .andExpect(jsonPath("$.followedByMeId").isEmpty())
+        .andExpect(jsonPath("$.followingMe").value(false));
+  }
+
+  @Test
+  void 존재하지_않는_사용자의_팔로우_요약_조회는_404를_반환한다()
+      throws Exception {
+    // given
+    User requester = createUser("요청 사용자");
+    UUID nonexistentUserId = UUID.randomUUID();
+
+    String accessToken = accessTokenFor(requester.getId());
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/summary")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("userId", nonexistentUserId.toString())
+    );
+
+    // then
+    result.andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("NOT_FOUND_USER"));
+  }
+
+  @Test
+  void 미인증_사용자는_팔로우_요약을_조회할_수_없다()
+      throws Exception {
+    // given
+    User target = createUser("조회 대상");
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/summary")
+            .param("userId", target.getId().toString())
+    );
+
+    // then
+    result.andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void 팔로우_요약_조회에서_잘못된_요청은_400을_반환한다()
+      throws Exception {
+    // given
+    User requester = createUser("요청 사용자");
+    String accessToken = accessTokenFor(requester.getId());
+
+    // when
+    var missingUserId = mockMvc.perform(
+        get("/api/follows/summary")
+            .header("Authorization", "Bearer " + accessToken)
+    );
+
+    var invalidUserId = mockMvc.perform(
+        get("/api/follows/summary")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("userId", "invalid-uuid")
+    );
+
+    // then
+    missingUserId.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+
+    invalidUserId.andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("INVALID_INPUT_VALUE"));
+  }
+
+  @Test
+  void 자기_자신의_팔로우_요약을_HTTP로_조회하면_집계만_반환한다()
+      throws Exception {
+    // given
+    User requester = createUser("요청 사용자");
+    User followerA = createUser("팔로워 A");
+    User followerB = createUser("팔로워 B");
+    User followee = createUser("팔로잉 대상");
+
+    followRepository.saveAndFlush(
+        new Follow(followerA.getId(), requester.getId())
+    );
+
+    followRepository.saveAndFlush(
+        new Follow(followerB.getId(), requester.getId())
+    );
+
+    followRepository.saveAndFlush(
+        new Follow(requester.getId(), followee.getId())
+    );
+
+    entityManager.clear();
+
+    String accessToken = accessTokenFor(requester.getId());
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/follows/summary")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("userId", requester.getId().toString())
+    );
+
+    // then
+    result.andExpect(status().isOk())
+        .andExpect(jsonPath("$.followeeId")
+            .value(requester.getId().toString()))
+        .andExpect(jsonPath("$.followerCount").value(2))
+        .andExpect(jsonPath("$.followingCount").value(1))
+        .andExpect(jsonPath("$.followedByMe").value(false))
+        .andExpect(jsonPath("$.followedByMeId").isEmpty())
+        .andExpect(jsonPath("$.followingMe").value(false));
+  }
+
+  @Test
+  void 단방향_팔로우_관계를_HTTP와_DB로_정확하게_조회한다()
+      throws Exception {
+    // given
+    User requester = createUser("요청 사용자");
+    User followedUser = createUser("내가 팔로우하는 사용자");
+    User followingUser = createUser("나를 팔로우하는 사용자");
+
+    Follow myFollow = followRepository.saveAndFlush(
+        new Follow(requester.getId(), followedUser.getId())
+    );
+
+    followRepository.saveAndFlush(
+        new Follow(followingUser.getId(), requester.getId())
+    );
+
+    entityManager.clear();
+
+    String accessToken = accessTokenFor(requester.getId());
+
+    // when
+    var followedResult = mockMvc.perform(
+        get("/api/follows/summary")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("userId", followedUser.getId().toString())
+    );
+
+    var followingResult = mockMvc.perform(
+        get("/api/follows/summary")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("userId", followingUser.getId().toString())
+    );
+
+    // then
+    followedResult.andExpect(status().isOk())
+        .andExpect(jsonPath("$.followerCount").value(1))
+        .andExpect(jsonPath("$.followingCount").value(0))
+        .andExpect(jsonPath("$.followedByMe").value(true))
+        .andExpect(jsonPath("$.followedByMeId")
+            .value(myFollow.getId().toString()))
+        .andExpect(jsonPath("$.followingMe").value(false));
+
+    followingResult.andExpect(status().isOk())
+        .andExpect(jsonPath("$.followerCount").value(0))
+        .andExpect(jsonPath("$.followingCount").value(1))
+        .andExpect(jsonPath("$.followedByMe").value(false))
+        .andExpect(jsonPath("$.followedByMeId").isEmpty())
+        .andExpect(jsonPath("$.followingMe").value(true));
+  }
 }

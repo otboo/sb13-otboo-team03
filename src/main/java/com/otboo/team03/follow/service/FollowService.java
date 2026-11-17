@@ -2,6 +2,7 @@ package com.otboo.team03.follow.service;
 
 import com.otboo.team03.follow.dto.request.FollowCreateRequest;
 import com.otboo.team03.follow.dto.response.FollowDto;
+import com.otboo.team03.follow.dto.response.FollowSummaryDto;
 import com.otboo.team03.follow.entity.Follow;
 import com.otboo.team03.follow.mapper.FollowDtoAssembler;
 import com.otboo.team03.follow.repository.FollowRepository;
@@ -12,6 +13,7 @@ import com.otboo.team03.user.repository.UserRepository;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -328,6 +330,47 @@ public class FollowService {
         totalCount,
         "createdAt",
         "DESCENDING"
+    );
+  }
+
+  @Transactional(readOnly = true)
+  public FollowSummaryDto getSummary(
+      UUID followeeId,
+      UUID requesterId
+  ) {
+    if (followeeId == null || requesterId == null) {
+      throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    if (!userRepository.existsById(followeeId)) {
+      throw new OtbooException(ErrorCode.NOT_FOUND_USER);
+    }
+
+    long followerCount =
+        followRepository.countByFolloweeId(followeeId);
+
+    long followingCount =
+        followRepository.countByFollowerId(followeeId);
+
+    Optional<Follow> followedByMe =
+        followRepository.findByFollowerIdAndFolloweeId(
+            requesterId,
+            followeeId
+        );
+
+    boolean followingMe =
+        followRepository.existsByFollowerIdAndFolloweeId(
+            followeeId,
+            requesterId
+        );
+
+    return new FollowSummaryDto(
+        followeeId,
+        followerCount,
+        followingCount,
+        followedByMe.isPresent(),
+        followedByMe.map(Follow::getId).orElse(null),
+        followingMe
     );
   }
 }
