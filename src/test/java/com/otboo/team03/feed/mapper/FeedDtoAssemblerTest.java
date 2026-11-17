@@ -325,4 +325,54 @@ class FeedDtoAssemblerTest extends com.otboo.team03.support.PostgresTestSupport 
         () -> assertEquals("좋은 코디네요!", result.content())
     );
   }
+
+  @Test
+  void 댓글_작성자_S3_객체키를_접근_URL로_변환한다() {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "댓글 작성자"
+        )
+    );
+
+    Timestamp now = Timestamp.from(Instant.now());
+
+    jdbcTemplate.update("""
+      INSERT INTO profiles (
+          user_id, profile_image_url,
+          created_at, updated_at
+      ) VALUES (?, ?, ?, ?)
+      """,
+        author.getId(),
+        "profiles/commenter.png",
+        now,
+        now
+    );
+
+    org.mockito.Mockito.when(
+        imageStorage.getAccessUrl("profiles/commenter.png")
+    ).thenReturn("https://example.com/signed-commenter.png");
+
+    FeedComment comment = new FeedComment(
+        UUID.randomUUID(),
+        author.getId(),
+        "테스트 댓글"
+    );
+
+    // when
+    CommentDto result = assembler.toCommentDto(comment);
+
+    // then
+    assertEquals(author.getId(), result.author().userId());
+    assertEquals("댓글 작성자", result.author().name());
+    assertEquals(
+        "https://example.com/signed-commenter.png",
+        result.author().profileImageUrl()
+    );
+
+    org.mockito.Mockito.verify(imageStorage)
+        .getAccessUrl("profiles/commenter.png");
+  }
 }
