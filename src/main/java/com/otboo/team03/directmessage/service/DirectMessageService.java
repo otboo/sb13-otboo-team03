@@ -6,6 +6,10 @@ import com.otboo.team03.directmessage.repository.DirectMessageRepository;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.notification.entity.NotificationLevel;
+import com.otboo.team03.notification.event.NotificationEvent;
+import com.otboo.team03.notification.event.NotificationEventType;
+import com.otboo.team03.notification.outbox.service.OutboxEventPublisher;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.UserRepository;
@@ -27,6 +31,7 @@ public class DirectMessageService {
 
     private final DirectMessageRepository directMessageRepository;
     private final UserRepository userRepository;
+    private final OutboxEventPublisher outboxEventPublisher;
 
     @Transactional
     public DirectMessageDto send(UUID senderId, UUID receiverId, String content) {
@@ -39,6 +44,24 @@ public class DirectMessageService {
 
         DirectMessage saved = directMessageRepository.save(
                 new DirectMessage(sender, receiver, content)
+        );
+
+        outboxEventPublisher.publish(
+                new NotificationEvent(
+                        UUID.randomUUID(),
+                        NotificationEventType.DIRECT_MESSAGE_RECEIVED,
+                        NotificationEvent.CURRENT_SCHEMA_VERSION,
+                        Instant.now(),
+                        saved.getId(),
+                        saved.getReceiver().getId(),
+                        saved.getSender().getId(),
+                        saved.getId(),
+                        "새 메시지",
+                        "새로운 메시지가 도착했습니다.",
+                        NotificationLevel.INFO
+                ),
+                "DIRECT_MESSAGE",
+                saved.getDmKey()
         );
         return DirectMessageDto.from(saved);
     }

@@ -1,10 +1,12 @@
-
 package com.otboo.team03.auth.integration;
 
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.RedisTemporaryPasswordRepository;
 import com.otboo.team03.user.repository.UserRepository;
 import com.otboo.team03.user.service.MailService;
+import com.otboo.team03.auth.entity.SocialAccount;
+import com.otboo.team03.auth.entity.SocialProvider;
+import com.otboo.team03.auth.repository.SocialAccountRepository;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -26,6 +28,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import org.mockito.ArgumentCaptor;
 
 import java.util.UUID;
 
@@ -35,6 +38,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -64,6 +68,9 @@ class AuthIntegrationTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private SocialAccountRepository socialAccountRepository;
 
     @Autowired
     private RedisTemporaryPasswordRepository temporaryPasswordRepository;
@@ -468,6 +475,118 @@ class AuthIntegrationTest {
                                 }
                                 """))
                     .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("카카오 소셜 계정은 비밀번호 초기화를 요청해도 임시 비밀번호를 발급하거나 발송하지 않는다")
+        void resetPassword_kakaoAccount_returns204WithoutIssuingTemporaryPassword() throws Exception {
+            // given
+            String providerUserId = UUID.randomUUID().toString();
+            String email = "kakao_" + providerUserId + "@kakao.com";
+            User user = userRepository.saveAndFlush(new User(email, null, "카카오 사용자"));
+
+            try {
+                socialAccountRepository.saveAndFlush(new SocialAccount(user, SocialProvider.KAKAO, providerUserId));
+                Cookie csrfCookie = getCsrfCookie();
+
+                // when & then
+                mvc.perform(post("/api/auth/reset-password")
+                                .cookie(csrfCookie)
+                                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                            {
+                                "email": "%s"
+                            }
+                            """.formatted(email)))
+                        .andExpect(status().isNoContent());
+
+                assertThat(temporaryPasswordRepository.findByEmail(email)).isEmpty();
+                verify(mailService, never()).sendTemporaryPassword(eq(email), anyString());
+            } finally {
+                temporaryPasswordRepository.delete(email);
+                socialAccountRepository.deleteById(user.getId());
+                userRepository.deleteById(user.getId());
+            }
+        }
+
+        @Test
+        @DisplayName("Google 소셜 계정은 빈 비밀번호로 로그인할 수 없고, 초기화 후 설정한 비밀번호로 로그인할 수 있다")
+        void resetPassword_googleAccount_allowsPasswordSetupAndLogin() throws Exception {
+            // given
+            String providerUserId = UUID.randomUUID().toString();
+            String email = providerUserId + "@example.com";
+            String newPassword = "newPassword123!";
+            User user = userRepository.saveAndFlush(new User(email, null, "구글 사용자"));
+
+            try {
+                socialAccountRepository.saveAndFlush(new SocialAccount(user, SocialProvider.GOOGLE, providerUserId));
+
+                // 비밀번호를 설정하기 전에는 빈 비밀번호로 로그인할 수 없다.
+                Cookie csrfCookie = getCsrfCookie();
+                mvc.perform(post("/api/auth/sign-in")
+                                .cookie(csrfCookie)
+                                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                                .param("username", email)
+                                .param("password", ""))
+                        .andExpect(status().isUnauthorized());
+
+                // 초기화를 요청하고 메일에 전달된 임시 비밀번호를 확인한다.
+                csrfCookie = getCsrfCookie();
+                mvc.perform(post("/api/auth/reset-password")
+                                .cookie(csrfCookie)
+                                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                {"email": "%s"}
+                                """.formatted(email)))
+                        .andExpect(status().isNoContent());
+
+                ArgumentCaptor<String> passwordCaptor = ArgumentCaptor.forClass(String.class);
+                verify(mailService).sendTemporaryPassword(eq(email), passwordCaptor.capture());
+                String temporaryPassword = passwordCaptor.getValue();
+
+                // 임시 비밀번호로 로그인하고, 사용한 비밀번호는 Redis에서 제거된다.
+                csrfCookie = getCsrfCookie();
+                MvcResult loginResult = mvc.perform(post("/api/auth/sign-in")
+                                .cookie(csrfCookie)
+                                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                                .param("username", email)
+                                .param("password", temporaryPassword))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                        .andReturn();
+
+                assertThat(temporaryPasswordRepository.findByEmail(email)).isEmpty();
+                String accessToken = objectMapper.readTree(loginResult.getResponse().getContentAsString())
+                        .get("accessToken").asText();
+
+                // 새 비밀번호를 설정한다.
+                csrfCookie = getCsrfCookie();
+                mvc.perform(patch("/api/users/{userId}/password", user.getId())
+                                .cookie(csrfCookie)
+                                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                                .header("Authorization", "Bearer " + accessToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                {"password": "%s"}
+                                """.formatted(newPassword)))
+                        .andExpect(status().isNoContent());
+
+                // 새 비밀번호로 일반 로그인을 할 수 있다.
+                csrfCookie = getCsrfCookie();
+                mvc.perform(post("/api/auth/sign-in")
+                                .cookie(csrfCookie)
+                                .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                                .param("username", email)
+                                .param("password", newPassword))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.accessToken").isNotEmpty());
+            } finally {
+                temporaryPasswordRepository.delete(email);
+                socialAccountRepository.deleteById(user.getId());
+                userRepository.deleteById(user.getId());
+            }
         }
     }
 

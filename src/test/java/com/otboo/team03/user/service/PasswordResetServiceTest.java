@@ -1,6 +1,7 @@
 
 package com.otboo.team03.user.service;
 
+import com.otboo.team03.auth.repository.SocialAccountRepository;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.exception.UserNotFoundException;
@@ -42,6 +43,9 @@ class PasswordResetServiceTest {
 
     @Mock
     private RedisPasswordResetRateLimitRepository rateLimitRepository;
+
+    @Mock
+    private SocialAccountRepository socialAccountRepository;
 
     @InjectMocks
     private PasswordResetService passwordResetService;

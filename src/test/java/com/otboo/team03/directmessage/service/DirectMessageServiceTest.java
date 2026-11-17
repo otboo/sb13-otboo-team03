@@ -4,11 +4,16 @@ import com.otboo.team03.directmessage.dto.response.DirectMessageDto;
 import com.otboo.team03.directmessage.entity.DirectMessage;
 import com.otboo.team03.directmessage.repository.DirectMessageRepository;
 import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.notification.entity.NotificationLevel;
+import com.otboo.team03.notification.event.NotificationEvent;
+import com.otboo.team03.notification.event.NotificationEventType;
+import com.otboo.team03.notification.outbox.service.OutboxEventPublisher;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
@@ -36,6 +41,9 @@ class DirectMessageServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private OutboxEventPublisher outboxEventPublisher;
+
     @InjectMocks
     private DirectMessageService directMessageService;
 
@@ -43,9 +51,19 @@ class DirectMessageServiceTest {
     void DM을_전송한다() {
         UUID senderId = UUID.randomUUID();
         UUID receiverId = UUID.randomUUID();
+        UUID messageId = UUID.randomUUID();
+        Instant createdAt = Instant.now();
         User sender = userWithId(senderId);
         User receiver = userWithId(receiverId);
-        DirectMessage directMessage = new DirectMessage(sender, receiver, "안녕하세요.");
+        DirectMessage directMessage = mock(DirectMessage.class);
+        String dmKey = DirectMessage.createDmKey(senderId, receiverId);
+
+        when(directMessage.getId()).thenReturn(messageId);
+        when(directMessage.getCreatedAt()).thenReturn(createdAt);
+        when(directMessage.getSender()).thenReturn(sender);
+        when(directMessage.getReceiver()).thenReturn(receiver);
+        when(directMessage.getDmKey()).thenReturn(dmKey);
+        when(directMessage.getContent()).thenReturn("안녕하세요.");
 
         when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
         when(userRepository.findById(receiverId)).thenReturn(Optional.of(receiver));
@@ -57,6 +75,28 @@ class DirectMessageServiceTest {
         assertThat(result.senderId()).isEqualTo(senderId);
         assertThat(result.receiverId()).isEqualTo(receiverId);
         assertThat(result.content()).isEqualTo("안녕하세요.");
+
+        ArgumentCaptor<NotificationEvent> eventCaptor =
+                ArgumentCaptor.forClass(NotificationEvent.class);
+        verify(outboxEventPublisher).publish(
+                eventCaptor.capture(),
+                eq("DIRECT_MESSAGE"),
+                eq(dmKey)
+        );
+
+        NotificationEvent event = eventCaptor.getValue();
+        assertThat(event.eventType()).isEqualTo(NotificationEventType.DIRECT_MESSAGE_RECEIVED);
+        assertThat(event.schemaVersion())
+                .isEqualTo(NotificationEvent.CURRENT_SCHEMA_VERSION);
+        assertThat(event.aggregateId()).isEqualTo(messageId);
+        assertThat(event.receiverId()).isEqualTo(receiverId);
+        assertThat(event.actorId()).isEqualTo(senderId);
+        assertThat(event.relatedId()).isEqualTo(messageId);
+        assertThat(event.title()).isEqualTo("새 메시지");
+        assertThat(event.content()).isEqualTo("새로운 메시지가 도착했습니다.");
+        assertThat(event.level()).isEqualTo(NotificationLevel.INFO);
+        assertThat(event.occurredAt()).isNotNull();
+        assertThat(event.eventId()).isNotNull();
     }
 
     @Test
@@ -76,7 +116,7 @@ class DirectMessageServiceTest {
         assertThatThrownBy(() -> directMessageService.send(senderId, receiverId, "메시지"))
                 .isInstanceOf(RuntimeException.class);
 
-        verifyNoInteractions(directMessageRepository);
+        verifyNoInteractions(directMessageRepository, outboxEventPublisher);
     }
 
     @Test
@@ -90,7 +130,25 @@ class DirectMessageServiceTest {
         assertThatThrownBy(() -> directMessageService.send(senderId, receiverId, "메시지"))
                 .isInstanceOf(RuntimeException.class);
 
-        verifyNoInteractions(directMessageRepository);
+        verifyNoInteractions(directMessageRepository, outboxEventPublisher);
+    }
+
+    @Test
+    void DM_저장에_실패하면_알림_이벤트를_발행하지_않는다() {
+        UUID senderId = UUID.randomUUID();
+        UUID receiverId = UUID.randomUUID();
+        User sender = userWithId(senderId);
+        User receiver = userWithId(receiverId);
+
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(receiverId)).thenReturn(Optional.of(receiver));
+        when(directMessageRepository.save(any(DirectMessage.class)))
+                .thenThrow(new IllegalStateException("DM 저장 실패"));
+
+        assertThatThrownBy(() -> directMessageService.send(senderId, receiverId, "메시지"))
+                .isInstanceOf(IllegalStateException.class);
+
+        verifyNoInteractions(outboxEventPublisher);
     }
 
     @Test
