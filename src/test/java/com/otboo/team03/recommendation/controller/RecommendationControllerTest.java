@@ -53,6 +53,7 @@ class RecommendationControllerTest {
         mvc.perform(get("/api/recommendations").param("weatherId", weatherId.toString())
                         .param("userId", UUID.randomUUID().toString()).principal(authentication()))
                 .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.weatherId").value(weatherId.toString()))
                 .andExpect(jsonPath("$.userId").value(userId.toString()))
                 .andExpect(jsonPath("$.clothes[0].clothesId").value(clothesId.toString()))

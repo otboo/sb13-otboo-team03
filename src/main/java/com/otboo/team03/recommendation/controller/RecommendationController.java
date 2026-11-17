@@ -7,6 +7,7 @@ import com.otboo.team03.recommendation.dto.RecommendationDto;
 import com.otboo.team03.recommendation.service.RecommendationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.CacheControl;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -31,6 +32,6 @@ public class RecommendationController {
         }
 
         UUID userId = userDetails.getUserDto().id();
-        return ResponseEntity.ok(service.recommend(weatherId, userId));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(service.recommend(weatherId, userId));
     }
 }

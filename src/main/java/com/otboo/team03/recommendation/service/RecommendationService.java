@@ -14,6 +14,7 @@ import com.otboo.team03.recommendation.algorithm.SleeveLengthAnalyzer;
 import com.otboo.team03.recommendation.entity.SleeveLength;
 import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import com.otboo.team03.recommendation.dto.RecommendationDto;
+import com.otboo.team03.recommendation.repository.RedisRecommendationHistoryRepository;
 import com.otboo.team03.weather.exception.WeatherNotFoundException;
 import com.otboo.team03.weather.repository.WeatherRepository;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +43,7 @@ public class RecommendationService {
     private final AttributeSemanticAnalyzer attributeAnalyzer;
     private final ClothesAttributeEstimator attributeEstimator;
     private final SleeveLengthAnalyzer sleeveAnalyzer;
+    private final RedisRecommendationHistoryRepository historyRepository;
 
     public RecommendationDto recommend(UUID weatherId, UUID userId) {
         Double temperature = weatherRepository.findById(weatherId)
@@ -69,13 +71,21 @@ public class RecommendationService {
             thicknessByClothesId.put(clothesId, attributeEstimator.estimateThickness(thicknessLevels));
             sleeveByClothesId.put(clothesId, attributeEstimator.estimateSleeveLength(sleeveLengths));
         }
+        Set<UUID> previousOutfitIds = historyRepository.find(userId, weatherId);
         List<Clothes> recommended = algorithm.recommend(
-                clothes, thicknessByClothesId, sleeveByClothesId, temperature, effectiveSensitivity, Set.of());
+                clothes, thicknessByClothesId, sleeveByClothesId, temperature, effectiveSensitivity, previousOutfitIds);
 
         List<OotdDto> ootds = recommended.stream()
                 .map(c -> clothesService.toClothesDto(c, attributesByClothesId.getOrDefault(c.getId(), List.of())))
                 .map(OotdDto::fromClothesDto)
                 .toList();
+
+        if (recommended.isEmpty()) {
+            historyRepository.delete(userId, weatherId);
+        } else {
+            Set<UUID> recommendedIds = recommended.stream().map(Clothes::getId).collect(Collectors.toUnmodifiableSet());
+            historyRepository.save(userId, weatherId, recommendedIds);
+        }
 
         return new RecommendationDto(weatherId, userId, ootds);
     }
