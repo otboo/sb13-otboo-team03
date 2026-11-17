@@ -40,7 +40,8 @@ public class BasicOutfitAlgorithm {
                 suitabilityScorer.scoreSleeve(item.getType(), sleeveOf(item, sleeveByClothesId),
                         adjustedTemperature, sensitivity)).reversed();
         Comparator<Clothes> byPreviousRecommendation = Comparator.comparing((Clothes item) ->
-                (item.getType() == ClothesType.TOP || item.getType() == ClothesType.BOTTOM || item.getType() == ClothesType.DRESS)
+                (item.getType() == ClothesType.TOP || item.getType() == ClothesType.BOTTOM
+                        || item.getType() == ClothesType.DRESS || item.getType() == ClothesType.OUTER)
                         && item.getId() != null && previousOutfitIds.contains(item.getId()));
 
         List<Clothes> rankedClothes = clothes.stream()
@@ -48,7 +49,7 @@ public class BasicOutfitAlgorithm {
                         .thenComparing(byPreviousRecommendation))
                 .toList();
 
-        // 적합도가 같은 기본 의상은 직전 추천에 없는 후보를 우선하고, 나머지 동점은 입력 순서를 유지한다.
+        // 적합도가 같은 기본 의상·아우터는 직전 추천에 없는 후보를 우선하고, 나머지 동점은 입력 순서를 유지한다.
         return recommendAtAdjustedTemperature(rankedClothes, clothes, adjustedTemperature, previousOutfitIds);
     }
 
