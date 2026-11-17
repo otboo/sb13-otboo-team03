@@ -95,6 +95,7 @@ public class FeedDtoAssembler {
         likedByMe
     );
   }
+
   public List<FeedDto> toDtos(List<Feed> feeds, UUID viewerId) {
     if (feeds.isEmpty()) {
       return List.of();
@@ -103,54 +104,73 @@ public class FeedDtoAssembler {
     Set<UUID> feedIds = new HashSet<>();
     Set<UUID> authorIds = new HashSet<>();
     Set<UUID> weatherIds = new HashSet<>();
+
     for (Feed feed : feeds) {
       feedIds.add(feed.getId());
       authorIds.add(feed.getAuthorId());
       weatherIds.add(feed.getWeatherId());
     }
 
-    Map<UUID, AuthorDto> authors = batchQueryRepository.findAuthors(authorIds);
-    Map<UUID, WeatherSummaryDto> weathers = batchQueryRepository.findWeathers(weatherIds);
+    Map<UUID, AuthorDto> authors = resolveAuthors(
+        batchQueryRepository.findAuthors(authorIds)
+    );
+
+    Map<UUID, WeatherSummaryDto> weathers =
+        batchQueryRepository.findWeathers(weatherIds);
+
     Map<UUID, FeedBatchQueryRepository.FeedCounts> counts =
         batchQueryRepository.findCounts(feedIds);
-    Set<UUID> likedFeedIds = batchQueryRepository.findLikedFeedIds(feedIds, viewerId);
+
+    Set<UUID> likedFeedIds =
+        batchQueryRepository.findLikedFeedIds(feedIds, viewerId);
 
     List<FeedBatchQueryRepository.ClothesRow> clothesRows =
         batchQueryRepository.findClothes(feedIds);
+
     Set<UUID> clothesIds = new HashSet<>();
+
     for (FeedBatchQueryRepository.ClothesRow row : clothesRows) {
       clothesIds.add(row.clothesId());
     }
+
     Map<UUID, List<ClothesAttributeWithDefDto>> attributes =
         batchQueryRepository.findClothesAttributes(clothesIds);
 
     Map<UUID, List<OotdDto>> ootdsByFeedId = new HashMap<>();
+
     for (FeedBatchQueryRepository.ClothesRow row : clothesRows) {
       String imageUrl = row.imageKey() == null
           ? row.imageUrl()
           : imageStorageProvider.getObject().getAccessUrl(row.imageKey());
 
-      ootdsByFeedId.computeIfAbsent(row.feedId(), ignored -> new ArrayList<>())
-          .add(new OotdDto(
-              row.clothesId(),
-              row.name(),
-              imageUrl,
-              row.type(),
-              attributes.getOrDefault(row.clothesId(), List.of())
-          ));
+      ootdsByFeedId.computeIfAbsent(
+          row.feedId(), ignored -> new ArrayList<>()
+      ).add(new OotdDto(
+          row.clothesId(),
+          row.name(),
+          imageUrl,
+          row.type(),
+          attributes.getOrDefault(row.clothesId(), List.of())
+      ));
     }
 
     return feeds.stream().map(feed -> {
       AuthorDto author = authors.get(feed.getAuthorId());
+
       if (author == null) {
         throw new UserNotFoundException();
       }
+
       WeatherSummaryDto weather = Objects.requireNonNull(
-          weathers.get(feed.getWeatherId()), "Weather not found"
+          weathers.get(feed.getWeatherId()),
+          "Weather not found"
       );
+
       FeedBatchQueryRepository.FeedCounts aggregate =
-          counts.getOrDefault(feed.getId(),
-              new FeedBatchQueryRepository.FeedCounts(0L, 0));
+          counts.getOrDefault(
+              feed.getId(),
+              new FeedBatchQueryRepository.FeedCounts(0L, 0)
+          );
 
       return new FeedDto(
           feed.getId(),
@@ -237,8 +257,9 @@ public class FeedDtoAssembler {
       authorIds.add(comment.getAuthorId());
     }
 
-    Map<UUID, AuthorDto> authors =
-        batchQueryRepository.findAuthors(authorIds);
+    Map<UUID, AuthorDto> authors = resolveAuthors(
+        batchQueryRepository.findAuthors(authorIds)
+    );
 
     return comments.stream()
         .map(comment -> {
@@ -269,14 +290,48 @@ public class FeedDtoAssembler {
     );
   }
 
+
   private AuthorDto toAuthorDto(UUID authorId) {
     User author = userRepository.findById(authorId)
         .orElseThrow(UserNotFoundException::new);
 
-    return new AuthorDto(
+    return resolveAuthor(new AuthorDto(
         author.getId(),
         author.getName(),
         findProfileImageUrl(author.getId())
+    ));
+  }
+
+  private AuthorDto resolveAuthor(AuthorDto author) {
+    String raw = author.profileImageUrl();
+
+    if (raw == null
+        || raw.isBlank()
+        || raw.startsWith("http://")
+        || raw.startsWith("https://")
+        || raw.startsWith("/")) {
+      return author;
+    }
+
+    String accessUrl = imageStorageProvider.getObject()
+        .getAccessUrl(raw);
+
+    return new AuthorDto(
+        author.userId(),
+        author.name(),
+        accessUrl
     );
+  }
+
+  private Map<UUID, AuthorDto> resolveAuthors(
+      Map<UUID, AuthorDto> rawAuthors
+  ) {
+    Map<UUID, AuthorDto> resolved = new HashMap<>();
+
+    rawAuthors.forEach((userId, author) ->
+        resolved.put(userId, resolveAuthor(author))
+    );
+
+    return resolved;
   }
 }
