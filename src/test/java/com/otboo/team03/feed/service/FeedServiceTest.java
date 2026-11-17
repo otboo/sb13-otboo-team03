@@ -597,10 +597,15 @@ class FeedServiceTest {
     // then
     verify(feedRepository).existsById(feedId);
 
-    verify(feedLikeRepository).save(argThat(
-        like -> feedId.equals(like.getFeedId())
-            && userId.equals(like.getUserId())
-    ));
+    verify(feedLikeRepository).insertIfAbsent(
+        any(UUID.class),
+        eq(feedId),
+        eq(userId),
+        any(Instant.class)
+    );
+
+    verify(feedLikeRepository, never())
+        .save(any(FeedLike.class));
   }
 
   @Test
@@ -678,15 +683,24 @@ class FeedServiceTest {
     when(feedRepository.existsById(feedId))
         .thenReturn(true);
 
-    when(feedLikeRepository.existsByFeedIdAndUserId(feedId, userId))
-        .thenReturn(true);
+    when(feedLikeRepository.insertIfAbsent(
+        any(UUID.class),
+        eq(feedId),
+        eq(userId),
+        any(Instant.class)
+    )).thenReturn(1, 0);
 
     // when
     feedService.like(feedId, userId);
+    feedService.like(feedId, userId);
 
     // then
-    verify(feedLikeRepository)
-        .existsByFeedIdAndUserId(feedId, userId);
+    verify(feedLikeRepository, times(2)).insertIfAbsent(
+        any(UUID.class),
+        eq(feedId),
+        eq(userId),
+        any(Instant.class)
+    );
 
     verify(feedLikeRepository, never())
         .save(any(FeedLike.class));
