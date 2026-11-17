@@ -52,5 +52,19 @@ class TemperatureCalculatorTest {
     assertThat(diff).isNull();
   }
 
+  @Test
+  @DisplayName("4. 기온 목록이 null이거나 비어있으면 null을 반환한다")
+  void calculateMinMax_whenEmptyOrNull_returnsNull() {
+    assertThat(calculator.calculateMin(null)).isNull();
+    assertThat(calculator.calculateMin(List.of())).isNull();
+    assertThat(calculator.calculateMax(null)).isNull();
+    assertThat(calculator.calculateMax(List.of())).isNull();
+  }
+  @Test
+  @DisplayName("5. 현재 기온이 null인 경우에도 null을 안전하게 반환한다")
+  void calculateDifference_whenCurrentNull_returnsNull() {
+    assertThat(calculator.calculateDifference(null, 20.0)).isNull();
+  }
+
 
 }
