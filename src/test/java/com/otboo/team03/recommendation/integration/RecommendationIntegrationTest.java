@@ -1,5 +1,6 @@
 package com.otboo.team03.recommendation.integration;
 
+import com.jayway.jsonpath.JsonPath;
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesAttribute;
 import com.otboo.team03.clothes.entity.ClothesAttributeDefinition;
@@ -17,6 +18,7 @@ import com.otboo.team03.global.security.jwt.JwtTokenProvider;
 import com.otboo.team03.global.storage.ImageStorage;
 import com.otboo.team03.profile.entity.Profile;
 import com.otboo.team03.profile.repository.ProfileRepository;
+import com.otboo.team03.recommendation.repository.RedisRecommendationHistoryRepository;
 import com.otboo.team03.support.PostgresTestSupport;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
@@ -35,13 +37,19 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.contains;
@@ -54,11 +62,21 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-/** 실제 PostgreSQL·서비스·알고리즘·JWT 필터를 검증하며 Redis 토큰 등록과 이미지 저장소를 대체한다. */
+/** 실제 PostgreSQL·Redis 추천 기록·서비스·알고리즘·JWT 필터를 사용하며 토큰 등록과 이미지 저장소를 대체한다. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
+@Testcontainers
 class RecommendationIntegrationTest extends PostgresTestSupport {
+
+    @Container
+    static final GenericContainer<?> REDIS = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
+
+    @DynamicPropertySource
+    static void redis(DynamicPropertyRegistry registry) {
+        registry.add("spring.data.redis.host", REDIS::getHost);
+        registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
+    }
 
     @Autowired private MockMvc mvc;
     @Autowired private UserRepository users;
@@ -71,8 +89,54 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
     @Autowired private JwtTokenProvider tokenProvider;
     @Autowired private ClothesService clothesService;
     @Autowired private ClothesAttributeDefinitionService definitionService;
+    @Autowired private RedisRecommendationHistoryRepository historyRepository;
     @MockitoBean private JwtRegistry jwtRegistry;
     @MockitoBean private ImageStorage imageStorage;
+
+    @Test
+    void 같은_요청은_직전_추천을_교체하고_빈_결과가_나오면_기록을_삭제한다() throws Exception {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "반복 추천 사용자"));
+        profiles.save(new Profile(owner, null, null, null, null, null, 3, List.of()));
+        Clothes first = clothes.save(new Clothes("첫 원피스", ClothesType.DRESS, null, owner));
+        Clothes second = clothes.save(new Clothes("다른 원피스", ClothesType.DRESS, null, owner));
+        Weather weather = saveWeather(28.0);
+        UUID ownerId = owner.getId();
+        UUID weatherId = weather.getId();
+        UUID firstId = first.getId();
+        UUID secondId = second.getId();
+        String token = flushAndAuthenticate(ownerId);
+
+        String response = mvc.perform(get("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("weatherId", weatherId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.clothes.length()").value(1))
+                .andReturn().getResponse().getContentAsString();
+        UUID selectedId = UUID.fromString(JsonPath.read(response, "$.clothes[0].clothesId"));
+        assertThat(selectedId).isIn(firstId, secondId);
+        assertThat(historyRepository.find(ownerId, weatherId)).containsExactly(selectedId);
+        UUID alternativeId = selectedId.equals(firstId) ? secondId : firstId;
+
+        mvc.perform(get("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("weatherId", weatherId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clothes.length()").value(1))
+                .andExpect(jsonPath("$.clothes[0].clothesId").value(alternativeId.toString()));
+        assertThat(historyRepository.find(ownerId, weatherId)).containsExactly(alternativeId);
+
+        clothes.deleteAllById(List.of(firstId, secondId));
+        entityManager.flush();
+        entityManager.clear();
+
+        mvc.perform(get("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("weatherId", weatherId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clothes.length()").value(0));
+        assertThat(historyRepository.find(ownerId, weatherId)).isEmpty();
+    }
 
     @ParameterizedTest
     @CsvSource({"28.0, 두꺼움, 얇음", "10.0, 얇음, 두꺼움"})

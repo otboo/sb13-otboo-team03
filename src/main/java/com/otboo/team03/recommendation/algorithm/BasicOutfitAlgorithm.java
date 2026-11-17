@@ -12,6 +12,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Component
@@ -29,7 +30,8 @@ public class BasicOutfitAlgorithm {
     public List<Clothes> recommend(List<Clothes> clothes,
                                   Map<UUID, ThicknessLevel> thicknessByClothesId,
                                   Map<UUID, SleeveLength> sleeveByClothesId,
-                                  double temperature, int sensitivity) {
+                                  double temperature, int sensitivity,
+                                  Set<UUID> previousOutfitIds) {
         double adjustedTemperature = adjustTemperature(temperature, sensitivity);
         Comparator<Clothes> byThicknessDescending = Comparator.comparingInt((Clothes item) ->
                 suitabilityScorer.scoreThickness(thicknessOf(item, thicknessByClothesId),
@@ -37,23 +39,28 @@ public class BasicOutfitAlgorithm {
         Comparator<Clothes> bySleeveDescending = Comparator.comparingInt((Clothes item) ->
                 suitabilityScorer.scoreSleeve(item.getType(), sleeveOf(item, sleeveByClothesId),
                         adjustedTemperature, sensitivity)).reversed();
+        Comparator<Clothes> byPreviousRecommendation = Comparator.comparing((Clothes item) ->
+                (item.getType() == ClothesType.TOP || item.getType() == ClothesType.BOTTOM
+                        || item.getType() == ClothesType.DRESS || item.getType() == ClothesType.OUTER)
+                        && item.getId() != null && previousOutfitIds.contains(item.getId()));
 
         List<Clothes> rankedClothes = clothes.stream()
-                .sorted(byThicknessDescending.thenComparing(bySleeveDescending))
+                .sorted(byThicknessDescending.thenComparing(bySleeveDescending)
+                        .thenComparing(byPreviousRecommendation))
                 .toList();
 
-        // 두께와 소매 점수가 모두 같으면 입력 순서를 유지한다.
-        return recommendAtAdjustedTemperature(rankedClothes, clothes, adjustedTemperature);
+        // 적합도가 같은 기본 의상·아우터는 직전 추천에 없는 후보를 우선하고, 나머지 동점은 입력 순서를 유지한다.
+        return recommendAtAdjustedTemperature(rankedClothes, clothes, adjustedTemperature, previousOutfitIds);
     }
 
     public List<Clothes> recommend(List<Clothes> clothes,
                                   Map<UUID, ThicknessLevel> thicknessByClothesId,
                                   double temperature, int sensitivity) {
-        return recommend(clothes, thicknessByClothesId, Map.of(), temperature, sensitivity);
+        return recommend(clothes, thicknessByClothesId, Map.of(), temperature, sensitivity, Set.of());
     }
 
     public List<Clothes> recommend(List<Clothes> clothes, double temperature, int sensitivity) {
-        return recommendAtAdjustedTemperature(clothes, clothes, adjustTemperature(temperature, sensitivity));
+        return recommendAtAdjustedTemperature(clothes, clothes, adjustTemperature(temperature, sensitivity), Set.of());
     }
 
     public List<Clothes> recommend(List<Clothes> clothes) {
@@ -80,6 +87,14 @@ public class BasicOutfitAlgorithm {
         return clothes.stream().filter(item -> item.getType() == type).findFirst();
     }
 
+    private Optional<Clothes> selectAdditionalItem(List<Clothes> clothes, ClothesType type, Set<UUID> previousOutfitIds) {
+        return clothes.stream()
+                .filter(candidate -> candidate.getType() == type)
+                .filter(candidate -> candidate.getId() == null || !previousOutfitIds.contains(candidate.getId()))
+                .findFirst()
+                .or(() -> firstOfType(clothes, type));
+    }
+
     private ThicknessLevel thicknessOf(Clothes clothes, Map<UUID, ThicknessLevel> thicknessByClothesId) {
         UUID clothesId = clothes.getId();
         return clothesId == null ? ThicknessLevel.UNKNOWN : thicknessByClothesId.getOrDefault(clothesId, ThicknessLevel.UNKNOWN);
@@ -90,8 +105,8 @@ public class BasicOutfitAlgorithm {
         return clothesId == null ? SleeveLength.UNKNOWN : sleeveByClothesId.getOrDefault(clothesId, SleeveLength.UNKNOWN);
     }
 
-    private List<Clothes> recommendAtAdjustedTemperature(
-            List<Clothes> rankedClothes, List<Clothes> originalClothes, double adjustedTemperature) {
+    private List<Clothes> recommendAtAdjustedTemperature(List<Clothes> rankedClothes, List<Clothes> originalClothes,
+                                                         double adjustedTemperature, Set<UUID> previousOutfitIds) {
         List<Clothes> basicOutfit = recommend(rankedClothes);
         if (basicOutfit.isEmpty()) {
             return basicOutfit;
@@ -103,14 +118,14 @@ public class BasicOutfitAlgorithm {
         }
 
         for (ClothesType type : ADDITIONAL_ITEM_TYPES) {
-            Optional<Clothes> item = firstOfType(originalClothes, type);
+            Optional<Clothes> item = selectAdditionalItem(originalClothes, type, previousOutfitIds);
             item.ifPresent(outfit::add);
             if (type == ClothesType.SHOES && item.isPresent()) {
-                firstOfType(originalClothes, ClothesType.SOCKS).ifPresent(outfit::add);
+                selectAdditionalItem(originalClothes, ClothesType.SOCKS, previousOutfitIds).ifPresent(outfit::add);
             }
         }
         if (adjustedTemperature < SCARF_TEMPERATURE_THRESHOLD) {
-            firstOfType(originalClothes, ClothesType.SCARF).ifPresent(outfit::add);
+            selectAdditionalItem(originalClothes, ClothesType.SCARF, previousOutfitIds).ifPresent(outfit::add);
         }
         return List.copyOf(outfit);
     }

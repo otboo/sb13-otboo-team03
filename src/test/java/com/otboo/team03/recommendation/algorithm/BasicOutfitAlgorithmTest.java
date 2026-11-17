@@ -17,6 +17,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static com.otboo.team03.recommendation.entity.ThicknessLevel.*;
@@ -416,8 +417,8 @@ class BasicOutfitAlgorithmTest {
                     firstId, SleeveLength.LONG, secondId, SleeveLength.SHORT);
 
             var thicknessOnlyResult = algorithm.recommend(candidates, thickness, 28.0, 3);
-            var result = algorithm.recommend(candidates, thickness, sleeves, 28.0, 3);
-            var reversedResult = algorithm.recommend(reversed, thickness, sleeves, 28.0, 3);
+            var result = algorithm.recommend(candidates, thickness, sleeves, 28.0, 3, Set.of());
+            var reversedResult = algorithm.recommend(reversed, thickness, sleeves, 28.0, 3, Set.of());
 
             List<Clothes> expected = new ArrayList<>(base);
             expected.add(first);
@@ -509,8 +510,8 @@ class BasicOutfitAlgorithmTest {
             Map<UUID, SleeveLength> sleeves = Map.of(
                     firstId, SleeveLength.SHORT, secondId, SleeveLength.LONG);
 
-            var result = algorithm.recommend(candidates, thickness, sleeves, 10.0, 3);
-            var reversedResult = algorithm.recommend(reversed, thickness, sleeves, 10.0, 3);
+            var result = algorithm.recommend(candidates, thickness, sleeves, 10.0, 3, Set.of());
+            var reversedResult = algorithm.recommend(reversed, thickness, sleeves, 10.0, 3, Set.of());
 
             assertThat(result).containsExactlyElementsOf(expected);
             assertThat(reversedResult).containsExactlyElementsOf(reversedExpected);
@@ -531,7 +532,7 @@ class BasicOutfitAlgorithmTest {
             candidates.addAll(base);
 
             // 실제 17℃에서 민감도 1이면 보정 13℃로 아우터와 스카프를 함께 추가한다.
-            var result = algorithm.recommend(candidates, Map.of(), Map.of(), 17.0, 1);
+            var result = algorithm.recommend(candidates, Map.of(), Map.of(), 17.0, 1, Set.of());
 
             List<Clothes> expected = new ArrayList<>(base);
             expected.addAll(List.of(outer, shoes, socks, bag, hat, accessory, scarf));
@@ -580,6 +581,237 @@ class BasicOutfitAlgorithmTest {
     @DisplayName("속성 기반 의상 추천")
     class AttributeBasedRecommendation {
 
+        @Test
+        void 직전_코디와_다른_최상위_동점_상의가_있으면_적합도를_유지하며_교체한다() {
+            Clothes previousTop = clothes(ClothesType.TOP);
+            Clothes lowerThicknessTop = clothes(ClothesType.TOP);
+            Clothes lowerSleeveTop = clothes(ClothesType.TOP);
+            Clothes alternativeTop = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+            List<Clothes> candidates = List.of(
+                    previousTop, lowerThicknessTop, lowerSleeveTop, alternativeTop, bottom);
+            Map<UUID, ThicknessLevel> thickness = Map.of(
+                    previousTop.getId(), LIGHT,
+                    lowerThicknessTop.getId(), MEDIUM,
+                    lowerSleeveTop.getId(), LIGHT,
+                    alternativeTop.getId(), LIGHT,
+                    bottom.getId(), LIGHT);
+            Map<UUID, SleeveLength> sleeves = Map.of(
+                    previousTop.getId(), SleeveLength.SHORT,
+                    lowerThicknessTop.getId(), SleeveLength.SHORT,
+                    lowerSleeveTop.getId(), SleeveLength.LONG,
+                    alternativeTop.getId(), SleeveLength.SHORT);
+            Set<UUID> previousOutfitIds = Set.of(previousTop.getId(), bottom.getId());
+
+            var result = algorithm.recommend(candidates, thickness, sleeves, 28.0, 3, previousOutfitIds);
+            assertThat(result).containsExactly(alternativeTop, bottom);
+        }
+
+        @Test
+        void 상의_대안이_없어도_최상위_동점_하의가_있으면_직전_코디를_바꾼다() {
+            Clothes top = clothes(ClothesType.TOP);
+            Clothes previousBottom = clothes(ClothesType.BOTTOM);
+            Clothes lowerThicknessBottom = clothes(ClothesType.BOTTOM);
+            Clothes alternativeBottom = clothes(ClothesType.BOTTOM);
+            List<Clothes> candidates = List.of(
+                    top, previousBottom, lowerThicknessBottom, alternativeBottom);
+            Map<UUID, ThicknessLevel> thickness = Map.of(
+                    top.getId(), LIGHT,
+                    previousBottom.getId(), LIGHT,
+                    lowerThicknessBottom.getId(), MEDIUM,
+                    alternativeBottom.getId(), LIGHT);
+            Set<UUID> previousOutfitIds = Set.of(top.getId(), previousBottom.getId());
+
+            var result = algorithm.recommend(candidates, thickness, Map.of(), 28.0, 3, previousOutfitIds);
+
+            assertThat(result).containsExactly(top, alternativeBottom);
+        }
+
+        @Test
+        void 상의_하의_조합이_불가능하면_최상위_동점_원피스로_직전_코디를_바꾼다() {
+            Clothes previousDress = clothes(ClothesType.DRESS);
+            Clothes lowerThicknessDress = clothes(ClothesType.DRESS);
+            Clothes lowerSleeveDress = clothes(ClothesType.DRESS);
+            Clothes alternativeDress = clothes(ClothesType.DRESS);
+            List<Clothes> candidates = List.of(
+                    previousDress, lowerThicknessDress, lowerSleeveDress, alternativeDress);
+            Map<UUID, ThicknessLevel> thickness = Map.of(
+                    previousDress.getId(), LIGHT,
+                    lowerThicknessDress.getId(), MEDIUM,
+                    lowerSleeveDress.getId(), LIGHT,
+                    alternativeDress.getId(), LIGHT);
+            Map<UUID, SleeveLength> sleeves = Map.of(
+                    previousDress.getId(), SleeveLength.SHORT,
+                    lowerThicknessDress.getId(), SleeveLength.SHORT,
+                    lowerSleeveDress.getId(), SleeveLength.LONG,
+                    alternativeDress.getId(), SleeveLength.SHORT);
+            Set<UUID> previousOutfitIds = Set.of(previousDress.getId());
+
+            var result = algorithm.recommend(candidates, thickness, sleeves, 28.0, 3, previousOutfitIds);
+
+            assertThat(result).containsExactly(alternativeDress);
+        }
+
+        @ParameterizedTest
+        @CsvSource({"10.0, 3", "17.0, 1"})
+        void 기본_코디를_바꿀_수_없어도_최상위_두께_동점_아우터로_교체한다(
+                double temperature, int sensitivity) {
+            Clothes top = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+            Clothes previousOuter = clothes(ClothesType.OUTER);
+            Clothes lowerThicknessOuter = clothes(ClothesType.OUTER);
+            Clothes alternativeOuter = clothes(ClothesType.OUTER);
+            List<Clothes> candidates = List.of(
+                    top, bottom, previousOuter, lowerThicknessOuter, alternativeOuter);
+            Map<UUID, ThicknessLevel> thickness = Map.of(
+                    previousOuter.getId(), HEAVY,
+                    lowerThicknessOuter.getId(), MEDIUM,
+                    alternativeOuter.getId(), HEAVY);
+            Map<UUID, SleeveLength> sleeves = Map.of(
+                    previousOuter.getId(), SleeveLength.LONG,
+                    alternativeOuter.getId(), SleeveLength.SHORT);
+            Set<UUID> previousOutfitIds = Set.of(top.getId(), bottom.getId(), previousOuter.getId());
+
+            var result = algorithm.recommend(candidates, thickness, sleeves,
+                    temperature, sensitivity, previousOutfitIds);
+
+            assertThat(result).containsExactly(top, bottom, alternativeOuter);
+        }
+
+        @ParameterizedTest
+        @EnumSource(value = ThicknessLevel.class, names = {"MEDIUM", "UNKNOWN", "LIGHT"})
+        void 아우터를_바꾸기_위해_최상위보다_두께_적합도가_낮은_후보를_선택하지_않는다(
+                ThicknessLevel lowerThickness) {
+            Clothes dress = clothes(ClothesType.DRESS);
+            Clothes previousOuter = clothes(ClothesType.OUTER);
+            Clothes lowerThicknessOuter = clothes(ClothesType.OUTER);
+            List<Clothes> candidates = List.of(dress, lowerThicknessOuter, previousOuter);
+            Map<UUID, ThicknessLevel> thickness = Map.of(
+                    previousOuter.getId(), HEAVY,
+                    lowerThicknessOuter.getId(), lowerThickness);
+            Set<UUID> previousOutfitIds = Set.of(dress.getId(), previousOuter.getId());
+
+            var result = algorithm.recommend(candidates, thickness, Map.of(), 10.0, 3, previousOutfitIds);
+
+            assertThat(result).containsExactly(dress, previousOuter);
+        }
+
+        @Test
+        void 아우터가_하나뿐이면_직전_아우터를_유지한다() {
+            Clothes dress = clothes(ClothesType.DRESS);
+            Clothes previousOuter = clothes(ClothesType.OUTER);
+            List<Clothes> candidates = List.of(dress, previousOuter);
+            Set<UUID> previousOutfitIds = Set.of(dress.getId(), previousOuter.getId());
+
+            var result = algorithm.recommend(candidates,
+                    Map.of(previousOuter.getId(), HEAVY), Map.of(), 10.0, 3, previousOutfitIds);
+
+            assertThat(result).containsExactly(dress, previousOuter);
+        }
+
+        @ParameterizedTest
+        @CsvSource({"15.0, 3", "19.0, 1"})
+        void 교체할_아우터가_있어도_보정_온도가_15도면_추가하지_않는다(
+                double temperature, int sensitivity) {
+            Clothes dress = clothes(ClothesType.DRESS);
+            Clothes previousOuter = clothes(ClothesType.OUTER);
+            Clothes alternativeOuter = clothes(ClothesType.OUTER);
+            List<Clothes> candidates = List.of(dress, previousOuter, alternativeOuter);
+            Set<UUID> previousOutfitIds = Set.of(dress.getId(), previousOuter.getId());
+
+            var result = algorithm.recommend(candidates, Map.of(), Map.of(),
+                    temperature, sensitivity, previousOutfitIds);
+
+            assertThat(result).containsExactly(dress);
+        }
+
+        @ParameterizedTest
+        @EnumSource(value = ClothesType.class, names = {"SHOES", "BAG", "HAT", "ACCESSORY"})
+        void 기본_코디를_바꿀_수_없어도_같은_종류의_다른_추가_아이템으로_교체한다(ClothesType type) {
+            Clothes top = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+            Clothes previousItem = clothes(type);
+            Clothes alternativeItem = clothes(type);
+            List<Clothes> candidates = List.of(top, bottom, previousItem, alternativeItem);
+            Set<UUID> previousOutfitIds = Set.of(top.getId(), bottom.getId(), previousItem.getId());
+
+            var result = algorithm.recommend(candidates, Map.of(), Map.of(), 28.0, 3, previousOutfitIds);
+
+            assertThat(result).containsExactly(top, bottom, alternativeItem);
+        }
+
+        @ParameterizedTest
+        @EnumSource(value = ClothesType.class, names = {"SHOES", "BAG", "HAT", "ACCESSORY"})
+        void 추가_아이템에_대안이_없으면_직전_아이템을_유지한다(ClothesType type) {
+            Clothes top = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+            Clothes previousItem = clothes(type);
+            List<Clothes> candidates = List.of(top, bottom, previousItem);
+            Set<UUID> previousOutfitIds = Set.of(top.getId(), bottom.getId(), previousItem.getId());
+
+            var result = algorithm.recommend(candidates, Map.of(), Map.of(), 28.0, 3, previousOutfitIds);
+
+            assertThat(result).containsExactlyElementsOf(candidates);
+        }
+
+        @Test
+        void 신발이_선택되면_직전과_다른_양말로_교체한다() {
+            Clothes top = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+            Clothes shoes = clothes(ClothesType.SHOES);
+            Clothes previousSocks = clothes(ClothesType.SOCKS);
+            Clothes alternativeSocks = clothes(ClothesType.SOCKS);
+            List<Clothes> candidates = List.of(top, bottom, shoes, previousSocks, alternativeSocks);
+            Set<UUID> previousOutfitIds = Set.of(
+                    top.getId(), bottom.getId(), shoes.getId(), previousSocks.getId());
+
+            var result = algorithm.recommend(candidates, Map.of(), Map.of(), 28.0, 3, previousOutfitIds);
+
+            assertThat(result).containsExactly(top, bottom, shoes, alternativeSocks);
+        }
+
+        @Test
+        void 추운_날에는_아우터_없이도_직전과_다른_스카프로_교체한다() {
+            Clothes dress = clothes(ClothesType.DRESS);
+            Clothes previousScarf = clothes(ClothesType.SCARF);
+            Clothes alternativeScarf = clothes(ClothesType.SCARF);
+            List<Clothes> candidates = List.of(dress, previousScarf, alternativeScarf);
+            Set<UUID> previousOutfitIds = Set.of(dress.getId(), previousScarf.getId());
+
+            var result = algorithm.recommend(candidates, Map.of(), Map.of(), 17.0, 1, previousOutfitIds);
+
+            assertThat(result).containsExactly(dress, alternativeScarf);
+        }
+
+        @Test
+        void 양말과_스카프도_대안이_없으면_직전_아이템을_유지한다() {
+            Clothes dress = clothes(ClothesType.DRESS);
+            Clothes shoes = clothes(ClothesType.SHOES);
+            Clothes socks = clothes(ClothesType.SOCKS);
+            Clothes scarf = clothes(ClothesType.SCARF);
+            List<Clothes> candidates = List.of(dress, shoes, socks, scarf);
+            Set<UUID> previousOutfitIds = Set.of(dress.getId(), shoes.getId(), socks.getId(), scarf.getId());
+
+            var result = algorithm.recommend(candidates, Map.of(), Map.of(), 17.0, 1, previousOutfitIds);
+
+            assertThat(result).containsExactlyElementsOf(candidates);
+        }
+
+        @Test
+        void 직전_양말과_스카프가_있어도_신발이_없고_보정_온도가_15도면_둘_다_추가하지_않는다() {
+            Clothes dress = clothes(ClothesType.DRESS);
+            Clothes socks = clothes(ClothesType.SOCKS);
+            Clothes alternativeSocks = clothes(ClothesType.SOCKS);
+            Clothes scarf = clothes(ClothesType.SCARF);
+            Clothes alternativeScarf = clothes(ClothesType.SCARF);
+            List<Clothes> candidates = List.of(dress, socks, alternativeSocks, scarf, alternativeScarf);
+            Set<UUID> previousOutfitIds = Set.of(dress.getId(), socks.getId(), scarf.getId());
+
+            var result = algorithm.recommend(candidates, Map.of(), Map.of(), 15.0, 3, previousOutfitIds);
+
+            assertThat(result).containsExactly(dress);
+        }
+
         @Nested
         @DisplayName("두께 동점 시 소매 길이로 선택")
         class SleeveBasedRecommendation {
@@ -608,7 +840,7 @@ class BasicOutfitAlgorithmTest {
                 var result = algorithm.recommend(candidates,
                         Map.of(opposite.getId(), MEDIUM, suitable.getId(), MEDIUM),
                         Map.of(opposite.getId(), oppositeLength, suitable.getId(), preferred),
-                        temperature, sensitivity);
+                        temperature, sensitivity, Set.of());
 
                 assertOutfit(result, suitable, base);
             }
@@ -626,7 +858,7 @@ class BasicOutfitAlgorithmTest {
                 var result = algorithm.recommend(candidates,
                         Map.of(mediumShort.getId(), MEDIUM, lightLong.getId(), LIGHT),
                         Map.of(mediumShort.getId(), SleeveLength.SHORT, lightLong.getId(), SleeveLength.LONG),
-                        28.0, 3);
+                        28.0, 3, Set.of());
 
                 assertOutfit(result, lightLong, base);
             }
@@ -643,7 +875,7 @@ class BasicOutfitAlgorithmTest {
                         ? Map.of(opposite.getId(), SleeveLength.LONG, unknown.getId(), SleeveLength.UNKNOWN)
                         : Map.of(opposite.getId(), SleeveLength.LONG);
 
-                var result = algorithm.recommend(candidates, Map.of(), sleeves, 28.0, 3);
+                var result = algorithm.recommend(candidates, Map.of(), sleeves, 28.0, 3, Set.of());
 
                 assertOutfit(result, unknown, base);
             }
@@ -661,8 +893,8 @@ class BasicOutfitAlgorithmTest {
                 Map<UUID, SleeveLength> sleeves = Map.of(
                         first.getId(), SleeveLength.SHORT, second.getId(), SleeveLength.SHORT);
 
-                var result = algorithm.recommend(candidates, Map.of(), sleeves, 28.0, 3);
-                var reversedResult = algorithm.recommend(reversed, Map.of(), sleeves, 28.0, 3);
+                var result = algorithm.recommend(candidates, Map.of(), sleeves, 28.0, 3, Set.of());
+                var reversedResult = algorithm.recommend(reversed, Map.of(), sleeves, 28.0, 3, Set.of());
 
                 assertOutfit(result, first, base);
                 assertOutfit(reversedResult, second, base);
@@ -676,7 +908,7 @@ class BasicOutfitAlgorithmTest {
                 assertThat(withoutId.getId()).isNull();
 
                 var result = algorithm.recommend(List.of(longSleeve, withoutId, bottom), Map.of(),
-                        Map.of(longSleeve.getId(), SleeveLength.LONG), 28.0, 3);
+                        Map.of(longSleeve.getId(), SleeveLength.LONG), 28.0, 3, Set.of());
 
                 assertThat(result).containsExactlyInAnyOrder(withoutId, bottom);
             }
@@ -692,7 +924,7 @@ class BasicOutfitAlgorithmTest {
                 candidates.addAll(base);
 
                 var result = algorithm.recommend(candidates, Map.of(),
-                        Map.of(first.getId(), firstLength, second.getId(), secondLength), temperature, 3);
+                        Map.of(first.getId(), firstLength, second.getId(), secondLength), temperature, 3, Set.of());
 
                 assertOutfit(result, first, base);
             }
