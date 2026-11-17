@@ -653,6 +653,79 @@ class BasicOutfitAlgorithmTest {
         }
 
         @ParameterizedTest
+        @CsvSource({"10.0, 3", "17.0, 1"})
+        void 기본_코디를_바꿀_수_없어도_최상위_두께_동점_아우터로_교체한다(
+                double temperature, int sensitivity) {
+            Clothes top = clothes(ClothesType.TOP);
+            Clothes bottom = clothes(ClothesType.BOTTOM);
+            Clothes previousOuter = clothes(ClothesType.OUTER);
+            Clothes lowerThicknessOuter = clothes(ClothesType.OUTER);
+            Clothes alternativeOuter = clothes(ClothesType.OUTER);
+            List<Clothes> candidates = List.of(
+                    top, bottom, previousOuter, lowerThicknessOuter, alternativeOuter);
+            Map<UUID, ThicknessLevel> thickness = Map.of(
+                    previousOuter.getId(), HEAVY,
+                    lowerThicknessOuter.getId(), MEDIUM,
+                    alternativeOuter.getId(), HEAVY);
+            Map<UUID, SleeveLength> sleeves = Map.of(
+                    previousOuter.getId(), SleeveLength.LONG,
+                    alternativeOuter.getId(), SleeveLength.SHORT);
+            Set<UUID> previousOutfitIds = Set.of(top.getId(), bottom.getId(), previousOuter.getId());
+
+            var result = algorithm.recommend(candidates, thickness, sleeves,
+                    temperature, sensitivity, previousOutfitIds);
+
+            assertThat(result).containsExactly(top, bottom, alternativeOuter);
+        }
+
+        @ParameterizedTest
+        @EnumSource(value = ThicknessLevel.class, names = {"MEDIUM", "UNKNOWN", "LIGHT"})
+        void 아우터를_바꾸기_위해_최상위보다_두께_적합도가_낮은_후보를_선택하지_않는다(
+                ThicknessLevel lowerThickness) {
+            Clothes dress = clothes(ClothesType.DRESS);
+            Clothes previousOuter = clothes(ClothesType.OUTER);
+            Clothes lowerThicknessOuter = clothes(ClothesType.OUTER);
+            List<Clothes> candidates = List.of(dress, lowerThicknessOuter, previousOuter);
+            Map<UUID, ThicknessLevel> thickness = Map.of(
+                    previousOuter.getId(), HEAVY,
+                    lowerThicknessOuter.getId(), lowerThickness);
+            Set<UUID> previousOutfitIds = Set.of(dress.getId(), previousOuter.getId());
+
+            var result = algorithm.recommend(candidates, thickness, Map.of(), 10.0, 3, previousOutfitIds);
+
+            assertThat(result).containsExactly(dress, previousOuter);
+        }
+
+        @Test
+        void 아우터가_하나뿐이면_직전_아우터를_유지한다() {
+            Clothes dress = clothes(ClothesType.DRESS);
+            Clothes previousOuter = clothes(ClothesType.OUTER);
+            List<Clothes> candidates = List.of(dress, previousOuter);
+            Set<UUID> previousOutfitIds = Set.of(dress.getId(), previousOuter.getId());
+
+            var result = algorithm.recommend(candidates,
+                    Map.of(previousOuter.getId(), HEAVY), Map.of(), 10.0, 3, previousOutfitIds);
+
+            assertThat(result).containsExactly(dress, previousOuter);
+        }
+
+        @ParameterizedTest
+        @CsvSource({"15.0, 3", "19.0, 1"})
+        void 교체할_아우터가_있어도_보정_온도가_15도면_추가하지_않는다(
+                double temperature, int sensitivity) {
+            Clothes dress = clothes(ClothesType.DRESS);
+            Clothes previousOuter = clothes(ClothesType.OUTER);
+            Clothes alternativeOuter = clothes(ClothesType.OUTER);
+            List<Clothes> candidates = List.of(dress, previousOuter, alternativeOuter);
+            Set<UUID> previousOutfitIds = Set.of(dress.getId(), previousOuter.getId());
+
+            var result = algorithm.recommend(candidates, Map.of(), Map.of(),
+                    temperature, sensitivity, previousOutfitIds);
+
+            assertThat(result).containsExactly(dress);
+        }
+
+        @ParameterizedTest
         @EnumSource(value = ClothesType.class, names = {"SHOES", "BAG", "HAT", "ACCESSORY"})
         void 기본_코디를_바꿀_수_없어도_같은_종류의_다른_추가_아이템으로_교체한다(ClothesType type) {
             Clothes top = clothes(ClothesType.TOP);
