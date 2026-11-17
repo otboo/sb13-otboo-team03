@@ -19,6 +19,17 @@ public record WeatherDto(
 ) {
   // Weather 엔티티로부터 DTO를 조립하는 정적 팩토리 메서드
   public static WeatherDto from(Weather weather, WeatherAPILocation location) {
+    return from(weather, location, weather.getTemperature(), weather.getTemperature(), 0.0);
+  }
+
+  // 계산된 최저/최고/어제대비 기온을 반영하는 오버로딩 메서드
+  public static WeatherDto from(
+      Weather weather,
+      WeatherAPILocation location,
+      Double minTemp,
+      Double maxTemp,
+      Double tempDiff
+  ) {
     return new WeatherDto(
         weather.getId(),
         weather.getForecastedAt(),
@@ -32,13 +43,13 @@ public record WeatherDto(
         ),
         new HumidityDto(
             weather.getHumidity(),
-            0.0 // T-033 전날 대비 집계 로직 전 기본값
+            0.0
         ),
         new TemperatureDto(
-            weather.getTemperature(),
-            0.0, // 전날 대비 기온 변동
-            weather.getTemperature(), // 일 최저 기온
-            weather.getTemperature()  // 일 최고 기온
+            weather.getTemperature(), // 현재 예보 시점 기온
+            tempDiff,                 // 계산된 전날 대비 기온 변동
+            minTemp,                  // 계산된 일 최저 기온
+            maxTemp                   // 계산된 일 최고 기온
         ),
         new WindSpeedDto(
             weather.getWindSpeed(),

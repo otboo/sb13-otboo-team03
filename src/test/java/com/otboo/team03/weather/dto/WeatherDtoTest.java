@@ -86,4 +86,23 @@ class WeatherDtoTest {
     assertThat(dto.windSpeed().asWord()).isEqualTo(expectedWord);
   }
 
+  @Test
+  @DisplayName("계산된 최저/최고/어제대비 기온을 넘기면 TemperatureDto에 정상 반영된다")
+  void from_withCalculatedTemperatures_success() {
+    // given
+    Weather weather = WeatherFixture.createDefault(); // 기온 22.0
+    WeatherAPILocation location = new WeatherAPILocation(37.5665, 126.9780, 60, 127, List.of("서울"));
+    Double minTemp = 16.0;
+    Double maxTemp = 25.0;
+    Double tempDiff = 2.5;
+    // when
+    WeatherDto dto = WeatherDto.from(weather, location, minTemp, maxTemp, tempDiff);
+    // then
+    assertThat(dto.temperature().current()).isEqualTo(22.0);
+    assertThat(dto.temperature().min()).isEqualTo(16.0);
+    assertThat(dto.temperature().max()).isEqualTo(25.0);
+    assertThat(dto.temperature().comparedToDayBefore()).isEqualTo(2.5);
+  }
+
+
 }

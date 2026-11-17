@@ -118,19 +118,22 @@ class WeatherRepositoryTest {
     Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
 
     // 1. 과거 날씨 (1시간 전, 20도)
-    Weather past = Weather.builder().latitude(WeatherFixture.DEFAULT_LAT).longitude(WeatherFixture.DEFAULT_LON)
+    Weather past = Weather.builder().latitude(WeatherFixture.DEFAULT_LAT).longitude(
+            WeatherFixture.DEFAULT_LON)
         .forecastedAt(now.minus(2, ChronoUnit.HOURS)).forecastAt(now.minus(1, ChronoUnit.HOURS))
         .skyStatus(SkyStatus.CLEAR).precipitationType(PrecipitationType.NONE)
         .precipitationAmount(0.0).precipitationProbability(0.0).temperature(20.0).humidity(50.0).windSpeed(1.5).build();
 
     // 2. 현재 시점 날씨 (지금, 18도)
-    Weather current = Weather.builder().latitude(WeatherFixture.DEFAULT_LAT).longitude(WeatherFixture.DEFAULT_LON)
+    Weather current = Weather.builder().latitude(WeatherFixture.DEFAULT_LAT).longitude(
+            WeatherFixture.DEFAULT_LON)
         .forecastedAt(now.minus(1, ChronoUnit.HOURS)).forecastAt(now)
         .skyStatus(SkyStatus.CLOUDY).precipitationType(PrecipitationType.RAIN)
         .precipitationAmount(10.0).precipitationProbability(70.0).temperature(18.0).humidity(80.0).windSpeed(3.0).build();
 
     // 3. 미래 날씨 (내일, 25도)
-    Weather future = Weather.builder().latitude(WeatherFixture.DEFAULT_LAT).longitude(WeatherFixture.DEFAULT_LON)
+    Weather future = Weather.builder().latitude(WeatherFixture.DEFAULT_LAT).longitude(
+            WeatherFixture.DEFAULT_LON)
         .forecastedAt(now).forecastAt(now.plus(1, ChronoUnit.DAYS))
         .skyStatus(SkyStatus.CLEAR).precipitationType(PrecipitationType.NONE)
         .precipitationAmount(0.0).precipitationProbability(0.0).temperature(25.0).humidity(40.0).windSpeed(1.0).build();
