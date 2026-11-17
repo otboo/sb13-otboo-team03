@@ -4,6 +4,7 @@ import com.otboo.team03.clothes.dto.request.ClothesCreateRequest;
 import com.otboo.team03.clothes.dto.request.ClothesUpdateRequest;
 import com.otboo.team03.clothes.dto.response.ClothesDto;
 import com.otboo.team03.clothes.service.ClothesService;
+import com.otboo.team03.clothes.service.ClothesExtractionService;
 import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
@@ -30,6 +31,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/api/clothes")
 public class ClothesController {
     private final ClothesService clothesService;
+    private final ClothesExtractionService extractionService;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ClothesDto > create(@RequestPart("request") @Valid ClothesCreateRequest request,
@@ -110,7 +112,7 @@ public class ClothesController {
 
     //구매링크로 불러오기
     @GetMapping("/extractions")
-    public ResponseEntity<ClothesDto> extractByurl(
+    public ResponseEntity<ClothesDto> extractByUrl(
             @RequestParam("url") String url,
             Authentication authentication){
         if(authentication == null || !authentication.isAuthenticated()
@@ -118,21 +120,7 @@ public class ClothesController {
             throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
 
-        if(url.isBlank()){
-            throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
-        }
-
-        //임시 응답 : 다음 단계에서 실제 추출 서비스 호출로 교체
-        ClothesDto response = new ClothesDto(
-                null,
-                userDetails.getUserDto().id(),
-                "추출 API 연결 확인",
-                null,
-                null,
-                java.util.List.of()
-        );
-
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(extractionService.extract(url, userDetails.getUserDto().id()));
     }
 
 }
