@@ -149,11 +149,12 @@ public class FeedService {
       throw new OtbooException(ErrorCode.NOT_FOUND_RESOURCE);
     }
 
-    if (feedLikeRepository.existsByFeedIdAndUserId(feedId, userId)) {
-      return;
-    }
-
-    feedLikeRepository.save(new FeedLike(feedId, userId));
+    feedLikeRepository.insertIfAbsent(
+        UUID.randomUUID(),
+        feedId,
+        userId,
+        Instant.now()
+    );
   }
 
   @Transactional

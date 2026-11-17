@@ -23,6 +23,9 @@ import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -97,12 +100,14 @@ class FeedDtoAssemblerBatchTest {
     );
 
     AuthorDto firstAuthor = new AuthorDto(
-        firstAuthorId, "첫 번째 작성자", "/images/author1.png"
+        firstAuthorId, "첫 번째 작성자", "profiles/author1.png"
     );
     AuthorDto secondAuthor = new AuthorDto(
         secondAuthorId, "두 번째 작성자", null
     );
+
     WeatherSummaryDto weather = weather(weatherId);
+
     ClothesAttributeWithDefDto color = new ClothesAttributeWithDefDto(
         definitionId, "색상", List.of("흰색", "검정"), "흰색"
     );
@@ -113,16 +118,20 @@ class FeedDtoAssemblerBatchTest {
         firstAuthorId, firstAuthor,
         secondAuthorId, secondAuthor
     ));
+
     when(batchQueryRepository.findWeathers(Set.of(weatherId)))
         .thenReturn(Map.of(weatherId, weather));
+
     when(batchQueryRepository.findCounts(
         Set.of(firstFeedId, secondFeedId)
     )).thenReturn(Map.of(
         firstFeedId, new FeedBatchQueryRepository.FeedCounts(2L, 3)
     ));
+
     when(batchQueryRepository.findLikedFeedIds(
         Set.of(firstFeedId, secondFeedId), viewerId
     )).thenReturn(Set.of(firstFeedId));
+
     when(batchQueryRepository.findClothes(
         Set.of(firstFeedId, secondFeedId)
     )).thenReturn(List.of(
@@ -135,12 +144,18 @@ class FeedDtoAssemblerBatchTest {
             "/images/pants.png", "clothes/pants.png"
         )
     ));
+
     when(batchQueryRepository.findClothesAttributes(
         Set.of(shirtId, pantsId)
     )).thenReturn(Map.of(shirtId, List.of(color)));
+
     when(imageStorageProvider.getObject()).thenReturn(imageStorage);
+
     when(imageStorage.getAccessUrl("clothes/pants.png"))
         .thenReturn("https://example.com/signed-pants.png");
+
+    when(imageStorage.getAccessUrl("profiles/author1.png"))
+        .thenReturn("https://example.com/signed-author.png");
 
     // when
     List<FeedDto> result = assembler.toDtos(
@@ -149,24 +164,36 @@ class FeedDtoAssemblerBatchTest {
 
     // then
     assertEquals(2, result.size());
+
     FeedDto first = result.get(0);
     FeedDto second = result.get(1);
 
     assertEquals(firstFeedId, first.id());
     assertEquals("첫 번째 피드", first.content());
     assertEquals(createdAt, first.createdAt());
-    assertEquals(firstAuthor, first.author());
+    assertEquals(
+        new AuthorDto(
+            firstAuthorId,
+            "첫 번째 작성자",
+            "https://example.com/signed-author.png"
+        ),
+        first.author()
+    );
     assertEquals(weather, first.weather());
     assertEquals(2L, first.likeCount());
     assertEquals(3, first.commentCount());
     assertTrue(first.likedByMe());
+
     assertEquals(2, first.ootds().size());
     assertEquals(shirtId, first.ootds().get(0).clothesId());
     assertEquals("/images/shirt.png", first.ootds().get(0).imageUrl());
     assertEquals(List.of(color), first.ootds().get(0).attributes());
+
     assertEquals(pantsId, first.ootds().get(1).clothesId());
-    assertEquals("https://example.com/signed-pants.png",
-        first.ootds().get(1).imageUrl());
+    assertEquals(
+        "https://example.com/signed-pants.png",
+        first.ootds().get(1).imageUrl()
+    );
     assertTrue(first.ootds().get(1).attributes().isEmpty());
 
     assertEquals(secondFeedId, second.id());
@@ -187,7 +214,9 @@ class FeedDtoAssemblerBatchTest {
     );
     verify(batchQueryRepository).findClothes(Set.of(firstFeedId, secondFeedId));
     verify(batchQueryRepository).findClothesAttributes(Set.of(shirtId, pantsId));
+
     verify(imageStorage).getAccessUrl("clothes/pants.png");
+    verify(imageStorage).getAccessUrl("profiles/author1.png");
   }
 
   @Test
@@ -290,11 +319,20 @@ class FeedDtoAssemblerBatchTest {
     FeedComment third = mockComment(
         thirdId, feedId, authorBId, "셋째 댓글", createdAt.plusSeconds(2)
     );
-    AuthorDto authorA = new AuthorDto(authorAId, "작성자 A", "/a.png");
-    AuthorDto authorB = new AuthorDto(authorBId, "작성자 B", "/b.png");
+
+    AuthorDto authorA = new AuthorDto(
+        authorAId, "작성자 A", "profiles/a.png"
+    );
+    AuthorDto authorB = new AuthorDto(
+        authorBId, "작성자 B", "/b.png"
+    );
 
     when(batchQueryRepository.findAuthors(Set.of(authorAId, authorBId)))
         .thenReturn(Map.of(authorAId, authorA, authorBId, authorB));
+
+    when(imageStorageProvider.getObject()).thenReturn(imageStorage);
+    when(imageStorage.getAccessUrl("profiles/a.png"))
+        .thenReturn("https://example.com/signed-a.png");
 
     // when
     List<CommentDto> result = assembler.toCommentDtos(
@@ -303,16 +341,31 @@ class FeedDtoAssemblerBatchTest {
 
     // then
     assertEquals(3, result.size());
+
     assertEquals(firstId, result.get(0).id());
     assertEquals("첫 댓글", result.get(0).content());
-    assertEquals(authorA, result.get(0).author());
+    assertEquals(
+        new AuthorDto(
+            authorAId,
+            "작성자 A",
+            "https://example.com/signed-a.png"
+        ),
+        result.get(0).author()
+    );
     assertEquals(createdAt, result.get(0).createdAt());
+
     assertEquals(secondId, result.get(1).id());
-    assertEquals(authorA, result.get(1).author());
+    assertEquals(result.get(0).author(), result.get(1).author());
+
     assertEquals(thirdId, result.get(2).id());
     assertEquals(authorB, result.get(2).author());
     assertEquals(feedId, result.get(2).feedId());
-    verify(batchQueryRepository, times(1)).findAuthors(Set.of(authorAId, authorBId));
+
+    verify(batchQueryRepository, times(1))
+        .findAuthors(Set.of(authorAId, authorBId));
+
+    verify(imageStorage, times(1))
+        .getAccessUrl("profiles/a.png");
   }
 
   @Test
@@ -367,5 +420,55 @@ class FeedDtoAssemblerBatchTest {
         new PrecipitationDto("NONE", 0.0, 0.0),
         new TemperatureDto(20.0, null, null, null)
     );
+  }
+
+  @ParameterizedTest
+  @NullAndEmptySource
+  @ValueSource(strings = {
+      "   ",
+      "http://example.com/profile.png",
+      "https://example.com/profile.png",
+      "/images/profile.png"
+  })
+  void 작성자_프로필_이미지가_S3_객체키가_아니면_원본을_유지한다(
+      String rawImageUrl
+  ) {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID commentId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+    Instant createdAt = Instant.parse("2026-11-10T01:00:00Z");
+
+    FeedComment comment = mockComment(
+        commentId,
+        feedId,
+        authorId,
+        "테스트 댓글",
+        createdAt
+    );
+
+    AuthorDto author = new AuthorDto(
+        authorId,
+        "작성자",
+        rawImageUrl
+    );
+
+    when(batchQueryRepository.findAuthors(Set.of(authorId)))
+        .thenReturn(Map.of(authorId, author));
+
+    // when
+    List<CommentDto> result = assembler.toCommentDtos(
+        List.of(comment)
+    );
+
+    // then
+    assertEquals(1, result.size());
+    assertEquals(author, result.get(0).author());
+    assertEquals(rawImageUrl, result.get(0).author().profileImageUrl());
+
+    verify(batchQueryRepository)
+        .findAuthors(Set.of(authorId));
+
+    verifyNoInteractions(imageStorageProvider, imageStorage);
   }
 }
