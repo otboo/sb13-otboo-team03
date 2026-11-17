@@ -23,6 +23,9 @@ import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -417,5 +420,55 @@ class FeedDtoAssemblerBatchTest {
         new PrecipitationDto("NONE", 0.0, 0.0),
         new TemperatureDto(20.0, null, null, null)
     );
+  }
+
+  @ParameterizedTest
+  @NullAndEmptySource
+  @ValueSource(strings = {
+      "   ",
+      "http://example.com/profile.png",
+      "https://example.com/profile.png",
+      "/images/profile.png"
+  })
+  void 작성자_프로필_이미지가_S3_객체키가_아니면_원본을_유지한다(
+      String rawImageUrl
+  ) {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID commentId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+    Instant createdAt = Instant.parse("2026-11-10T01:00:00Z");
+
+    FeedComment comment = mockComment(
+        commentId,
+        feedId,
+        authorId,
+        "테스트 댓글",
+        createdAt
+    );
+
+    AuthorDto author = new AuthorDto(
+        authorId,
+        "작성자",
+        rawImageUrl
+    );
+
+    when(batchQueryRepository.findAuthors(Set.of(authorId)))
+        .thenReturn(Map.of(authorId, author));
+
+    // when
+    List<CommentDto> result = assembler.toCommentDtos(
+        List.of(comment)
+    );
+
+    // then
+    assertEquals(1, result.size());
+    assertEquals(author, result.get(0).author());
+    assertEquals(rawImageUrl, result.get(0).author().profileImageUrl());
+
+    verify(batchQueryRepository)
+        .findAuthors(Set.of(authorId));
+
+    verifyNoInteractions(imageStorageProvider, imageStorage);
   }
 }
