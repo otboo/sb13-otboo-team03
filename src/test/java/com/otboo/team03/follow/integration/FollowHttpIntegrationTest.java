@@ -5,6 +5,7 @@ import com.otboo.team03.follow.entity.Follow;
 import com.otboo.team03.follow.repository.FollowRepository;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.security.jwt.JwtTokenProvider;
+import com.otboo.team03.global.storage.ImageStorage;
 import com.otboo.team03.support.PostgresTestSupport;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
@@ -54,6 +55,9 @@ class FollowHttpIntegrationTest extends PostgresTestSupport {
 
   @MockitoBean
   private JwtRegistry jwtRegistry;
+
+  @MockitoBean
+  private ImageStorage imageStorage;
 
   @Test
   void 팔로우_생성과_취소가_HTTP와_DB에_정상_반영된다()
@@ -920,5 +924,105 @@ class FollowHttpIntegrationTest extends PostgresTestSupport {
         .andExpect(jsonPath("$.followedByMe").value(false))
         .andExpect(jsonPath("$.followedByMeId").isEmpty())
         .andExpect(jsonPath("$.followingMe").value(true));
+  }
+
+  @Test
+  void 팔로우_생성과_목록_조회에서_S3_프로필_이미지를_URL로_변환한다()
+      throws Exception {
+    // given
+    User follower = createUser("팔로워");
+    User followee = createUser("팔로우 대상");
+
+    Timestamp now = Timestamp.from(Instant.now());
+
+    jdbcTemplate.update("""
+      INSERT INTO profiles (
+          user_id, profile_image_url,
+          created_at, updated_at
+      ) VALUES (?, ?, ?, ?)
+      """,
+        follower.getId(),
+        "profiles/follower.png",
+        now,
+        now
+    );
+
+    jdbcTemplate.update("""
+      INSERT INTO profiles (
+          user_id, profile_image_url,
+          created_at, updated_at
+      ) VALUES (?, ?, ?, ?)
+      """,
+        followee.getId(),
+        "profiles/followee.png",
+        now,
+        now
+    );
+
+    entityManager.clear();
+
+    when(imageStorage.getAccessUrl("profiles/follower.png"))
+        .thenReturn("https://example.com/signed-follower.png");
+
+    when(imageStorage.getAccessUrl("profiles/followee.png"))
+        .thenReturn("https://example.com/signed-followee.png");
+
+    String accessToken = accessTokenFor(follower.getId());
+
+    // when
+    var createResult = mockMvc.perform(
+        post("/api/follows")
+            .with(csrf())
+            .header("Authorization", "Bearer " + accessToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(requestJson(follower.getId(), followee.getId()))
+    );
+
+    // then
+    createResult.andExpect(status().isCreated())
+        .andExpect(jsonPath("$.follower.userId")
+            .value(follower.getId().toString()))
+        .andExpect(jsonPath("$.follower.name")
+            .value("팔로워"))
+        .andExpect(jsonPath("$.follower.profileImageUrl")
+            .value("https://example.com/signed-follower.png"))
+        .andExpect(jsonPath("$.followee.userId")
+            .value(followee.getId().toString()))
+        .andExpect(jsonPath("$.followee.name")
+            .value("팔로우 대상"))
+        .andExpect(jsonPath("$.followee.profileImageUrl")
+            .value("https://example.com/signed-followee.png"));
+
+    followRepository.flush();
+    entityManager.clear();
+
+    // when
+    var followingResult = mockMvc.perform(
+        get("/api/follows/followings")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("followerId", follower.getId().toString())
+            .param("limit", "10")
+    );
+
+    // then
+    followingResult.andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(1))
+        .andExpect(jsonPath("$.data[0].follower.userId")
+            .value(follower.getId().toString()))
+        .andExpect(jsonPath("$.data[0].follower.profileImageUrl")
+            .value("https://example.com/signed-follower.png"))
+        .andExpect(jsonPath("$.data[0].followee.userId")
+            .value(followee.getId().toString()))
+        .andExpect(jsonPath("$.data[0].followee.profileImageUrl")
+            .value("https://example.com/signed-followee.png"))
+        .andExpect(jsonPath("$.totalCount").value(1));
+
+    org.mockito.Mockito.verify(imageStorage,
+            org.mockito.Mockito.times(2))
+        .getAccessUrl("profiles/follower.png");
+
+    org.mockito.Mockito.verify(imageStorage,
+            org.mockito.Mockito.times(2))
+        .getAccessUrl("profiles/followee.png");
   }
 }
