@@ -14,8 +14,10 @@ import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.exception.WeatherNotFoundException;
 import com.otboo.team03.weather.fixture.WeatherFixture;
 import com.otboo.team03.weather.repository.WeatherRepository;
+import com.otboo.team03.weather.util.TemperatureCalculator;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,6 +35,9 @@ class WeatherServiceTest {
 
   @Mock
   private WeatherRepository weatherRepository;
+
+  @Mock
+  private TemperatureCalculator temperatureCalculator;
 
   @InjectMocks
   private WeatherServiceImpl weatherService;
@@ -85,4 +90,38 @@ class WeatherServiceTest {
         .isInstanceOf(WeatherNotFoundException.class)
         .hasMessage("날씨 정보가 존재하지 않습니다.");
   }
+
+  @Test
+  @DisplayName("날씨 목록 조회 시 최저/최고 기온 및 전날 대비 기온 차이가 계산되어 포함된다")
+  void getWeathers_withTemperatureCalculation_success() {
+    // given
+    Double latitude = 37.4979;
+    Double longitude = 127.0276;
+    WeatherAPILocation mockLocation = new WeatherAPILocation(
+        latitude, longitude, 61, 125, List.of("서울특별시", "강남구")
+    );
+    Weather mockWeather = WeatherFixture.createCustom(22.0, SkyStatus.CLEAR, PrecipitationType.NONE);
+    ReflectionTestUtils.setField(mockWeather, "id", UUID.randomUUID());
+    given(locationService.getLocation(latitude, longitude)).willReturn(mockLocation);
+    given(weatherRepository.findAllByLatitudeAndLongitudeAndForecastAtBetweenOrderByForecastAtAsc(
+        eq(latitude), eq(longitude), any(), any()
+    )).willReturn(List.of(mockWeather));
+    given(weatherRepository.findTopByLatitudeAndLongitudeAndForecastAtLessThanEqualOrderByForecastAtDesc(
+        eq(latitude), eq(longitude), any()
+    )).willReturn(Optional.empty()); // 어제 데이터 없음 가정
+    given(temperatureCalculator.calculateMin(any())).willReturn(18.0);
+    given(temperatureCalculator.calculateMax(any())).willReturn(24.5);
+    given(temperatureCalculator.calculateDifference(any(), any())).willReturn(2.5);
+    // when
+    List<WeatherDto> result = weatherService.getWeathers(longitude, latitude);
+    // then
+    assertThat(result).hasSize(1);
+    assertThat(result.get(0).temperature().current()).isEqualTo(22.0);
+    assertThat(result.get(0).temperature().min()).isEqualTo(18.0);
+    assertThat(result.get(0).temperature().max()).isEqualTo(24.5);
+    assertThat(result.get(0).temperature().comparedToDayBefore()).isEqualTo(2.5);
+  }
+
+
+
 }
