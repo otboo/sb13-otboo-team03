@@ -31,36 +31,28 @@ DB 저장과 S3 업로드는 수행하지 않는다. 타입과 필수 속성은 
 
 ## 프런트 연동 주의점
 
-현재 배포된 프런트 번들은 imageUrl을 fetch한 뒤 File로 변환하여 기존 multipart 등록에 사용한다.
-쇼핑몰 이미지 서버가 CORS를 허용하지 않으면 상품명 추출에 성공해도 이미지 다운로드가 실패할 수 있다.
-이미지 다운로드를 await하고 HTTP 성공·image MIME·빈 파일·5MiB 한도를 검사한다. 다운로드에는 10초 제한이 있다.
-다운로드 실패/이미지 URL 없음 시 상품명 초기값은 유지하고 수동 이미지 선택을 안내한다. 이미지 적용까지 성공했을 때만 이미지 포함 성공 메시지를 표시한다.
-기존 선택 이미지는 추출 성공 직후 초기화하여 다른 상품에 이전 이미지가 섞이지 않도록 한다. File 생성 시 MIME 타입을 보존한다.
-
-이 저장소에는 프런트 원본이 없어 `static/assets/index-CqeESGX6.js`의 추출 핸들러를 직접 수정했다.
-**프런트 원본에도 같은 수정(await, 응답 검증, 실패 안내, 이전 이미지 초기화, MIME 보존)을 반영해야 한다.** 그렇지 않으면 새 프런트 빌드를 복사할 때 수정이 사라진다.
-`src/test/js/clothes-extraction.test.mjs`는 이 번들의 실제 핸들러를 분리해 실행하는 회귀 테스트다. 번들 파일명이 바뀌면 테스트 참조도 갱신한다.
-외부 이미지 URL을 DB에 자동 저장하거나 S3에 임시 업로드하지 않는다.
+이번 변경 범위는 구매 링크를 검증하고 상품명·대표 이미지 URL을 반환하는 백엔드 API다.
+프런트 번들 수정과 JavaScript 테스트는 포함하지 않는다.
+응답의 imageUrl은 외부 쇼핑몰 이미지 URL이며, 브라우저에서 다운로드할 때 이미지 서버의 CORS 정책에 따라 실패할 수 있다.
+이미지 다운로드·실패 안내·수동 이미지 선택은 프런트에서 별도로 처리해야 한다.
+추출 API는 외부 이미지 URL을 DB에 자동 저장하거나 S3에 임시 업로드하지 않는다.
 
 ## 검증 범위 (2026-11-16)
 
-- 재검증에서 프런트 회귀 테스트 7개 실패를 확인한 뒤, 번들의 이미지 처리에 await·기존 이미지 초기화·응답 검증·실패 안내·MIME 보존·10초 중단 처리를 반영했다. 수정 후 `node --test src/test/js/clothes-extraction.test.mjs` 7개 통과 및 `node --check src/main/resources/static/assets/index-CqeESGX6.js` 통과를 직접 확인했다. 아래 Java 테스트 결과는 이전 검증 기록이며 이번 프런트 수정에서는 재실행하지 않았다.
 
 - ClothesPageClientTest: URL 형식, 호스트 위장/내부 IP, 리다이렉트·HTTP 오류, 타임아웃, 콘텐츠 타입·크기 제한.
 - ClothesExtractionServiceTest: 세 쇼핑몰 도메인별 합성 HTML의 이름·상대 이미지 경로, 이미지 없음, 메타데이터 누락.
 - ClothesHtmlParserTest: 기존 파서의 OG 우선순위 및 이미지 URL 검증.
 - ClothesControllerTest: 인증과 초기값 응답 계약.
 - 위 사이트별 테스트는 합성 HTML 테스트다. 실제 상품 페이지의 HTML 호환성, 접근 성공 및 화면 이미지 반영은 아직 확인하지 않았다.
-- Gradle은 환경의 소켓 생성 제한으로 시작 실패했다.
-- 대체 검증: 로컬 캐시 의존성과 기존 빌드 클래스를 사용해 변경 코드 및 관련 테스트를 javac(-parameters)로 컴파일하고 JUnit Launcher로 직접 실행했다. 위 네 테스트 클래스에서 리뷰 수정 후 92개 성공, 실패 0개다. Gradle이 해석한 전체 의존성/전체 애플리케이션 빌드를 검증한 결과는 아니다.
-- 프런트: 번들 구문 검사 통과, `node --test src/test/js/clothes-extraction.test.mjs` 7개 성공. 다운로드 대기/성공, 네트워크·HTTP 오류, 비이미지·빈 파일·초과 용량, 이미지 URL 없음을 검증했다. 실제 브라우저의 CORS 동작을 검증한 결과는 아니다.
+- 최근 Gradle 테스트·커버리지 실행은 캐시 잠금 파일 접근 권한 제한으로 시작하지 못했다. 현재 커버리지 수치는 확인하지 못했다.
+- 이전 문서에 기록된 대체 검증(이번 범위 정리에서는 재실행하지 않음): 로컬 캐시 의존성과 기존 빌드 클래스를 사용해 변경 코드 및 관련 테스트를 javac(-parameters)로 컴파일하고 JUnit Launcher로 직접 실행했다. 위 네 테스트 클래스에서 리뷰 수정 후 92개 성공, 실패 0개다. Gradle이 해석한 전체 의존성/전체 애플리케이션 빌드를 검증한 결과는 아니다.
 - 실제 HTTP 보안 테스트(SpaSecurityHttpTest), 전체 테스트 및 커버리지는 재실행이 필요하다.
 
 실제 상품 링크로 추출 → 이름 확인 → 이미지 표시 → 타입/속성 입력 → 등록까지 검증한다.
 차단·동적 렌더링으로 메타데이터가 없는 사이트는 추출 실패가 예상되며 수동 등록을 안내한다.
 
 ```bash
-node --test src/test/js/clothes-extraction.test.mjs
 ./gradlew test --tests '*ClothesPageClientTest' --tests '*ClothesExtractionServiceTest' --tests '*ClothesHtmlParserTest' --tests '*ClothesControllerTest' --tests '*SpaSecurityHttpTest'
 ./gradlew test jacocoTestCoverageVerification
 ```

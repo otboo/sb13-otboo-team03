@@ -17,7 +17,7 @@ class ClothesPageClientTest {
     @ParameterizedTest
     @ValueSource(strings = {"https://product.29cm.co.kr/catalog/2238612?source=brand",
             "https://www.musinsa.com/products/123", "https://store.musinsa.com/app/goods/123",
-            "https://www.wconcept.co.kr/Product/123"})
+            "https://www.wconcept.co.kr/Product/123", "https://www.musinsa.com:443/products/123"})
     void acceptsActualProductUrlFormats(String input) {
         assertThat(client.validate(input).toString()).isEqualTo(input);
     }
@@ -33,7 +33,8 @@ class ClothesPageClientTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"", " ", "broken", "file:///etc/passwd", "http://www.musinsa.com/products/1",
+    @org.junit.jupiter.params.provider.NullSource
+    @ValueSource(strings = {"https://[invalid", "https:/products/1", "", " ", "broken", "file:///etc/passwd", "http://www.musinsa.com/products/1",
             "https://user:pass@www.musinsa.com/a", "https://www.musinsa.com:8443/a", "https://www.musinsa.com/a#b"})
     void rejectsInvalidUrls(String input) {
         assertThatThrownBy(() -> client.fetch(input)).isInstanceOfSatisfying(OtbooException.class,
@@ -63,6 +64,7 @@ class ClothesPageClientTest {
     }
 
     @ParameterizedTest
+    @org.junit.jupiter.params.provider.NullSource
     @ValueSource(strings = {"text/html; charset=UTF-8", "application/json", "oversize"})
     void checksContentTypeAndBodyLimit(String contentType) throws Exception {
         try (var jsoup = mockStatic(Jsoup.class)) {
@@ -71,10 +73,10 @@ class ClothesPageClientTest {
             jsoup.when(() -> Jsoup.connect(url)).thenReturn(connection);
             when(connection.execute()).thenReturn(response);
             when(response.statusCode()).thenReturn(200);
-            when(response.contentType()).thenReturn(contentType.equals("oversize") ? "text/html" : contentType);
-            when(response.bodyAsBytes()).thenReturn(new byte[contentType.equals("oversize") ? 2 * 1024 * 1024 + 1 : 10]);
+            when(response.contentType()).thenReturn("oversize".equals(contentType) ? "text/html" : contentType);
+            when(response.bodyAsBytes()).thenReturn(new byte["oversize".equals(contentType) ? 2 * 1024 * 1024 + 1 : 10]);
             when(response.body()).thenReturn("<html></html>");
-            if (contentType.startsWith("text/html")) {
+            if (contentType != null && contentType.startsWith("text/html")) {
                 assertThat(client.fetch(url)).isEqualTo("<html></html>");
             } else {
                 assertThatThrownBy(() -> client.fetch(url)).isInstanceOf(OtbooException.class);
@@ -92,4 +94,11 @@ class ClothesPageClientTest {
                     e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.CLOTHES_EXTRACTION_FAILED));
         }
     }
+    @Test
+    void rejectsUrlExceedingLengthLimitBeforeNetwork() {
+        String input = url + "?q=" + "a".repeat(2048);
+        assertThatThrownBy(() -> client.fetch(input)).isInstanceOfSatisfying(OtbooException.class,
+                e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_PURCHASE_URL));
+    }
+
 }

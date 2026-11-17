@@ -68,4 +68,49 @@ class ClothesExtractionServiceTest {
                         assertThat(e.getErrorCode()).isEqualTo(ErrorCode.CLOTHES_EXTRACTION_FAILED));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"product", " og:product ", "PRODUCT"})
+    void acceptsProductOpenGraphTypes(String type) {
+        when(client.fetch(anyString())).thenReturn("<meta property='og:title' content='셔츠'>"
+                + "<meta property='og:type' content='" + type + "'>");
+        assertThat(service.extract("https://www.musinsa.com/products/1", UUID.randomUUID()).name())
+                .isEqualTo("셔츠");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {255, 256})
+    void enforcesNameLengthLimit(int length) {
+        String name = "가".repeat(length);
+        when(client.fetch(anyString())).thenReturn("<meta property='og:type' content='product'>"
+                + "<meta property='og:title' content='" + name + "'>");
+        if (length == 255) {
+            assertThat(service.extract("https://www.musinsa.com/products/1", UUID.randomUUID()).name())
+                    .isEqualTo(name);
+        } else {
+            assertThatThrownBy(() -> service.extract("https://www.musinsa.com/products/1", UUID.randomUUID()))
+                    .isInstanceOfSatisfying(OtbooException.class, e ->
+                            assertThat(e.getErrorCode()).isEqualTo(ErrorCode.CLOTHES_EXTRACTION_FAILED));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"[]", "[null, 1, {}]", "{\"@type\":[1, \"Thing\"]}",
+            "{\"@type\":42}", "{}"})
+    void rejectsStructuredDataWithoutProduct(String json) {
+        when(client.fetch(anyString())).thenReturn("<meta property='og:title' content='메인 페이지'>"
+                + "<script type='application/ld+json'>" + json + "</script>");
+        assertThatThrownBy(() -> service.extract("https://www.musinsa.com/products/1", UUID.randomUUID()))
+                .isInstanceOfSatisfying(OtbooException.class, e ->
+                        assertThat(e.getErrorCode()).isEqualTo(ErrorCode.CLOTHES_EXTRACTION_FAILED));
+    }
+
+    @Test
+    void continuesAfterInvalidJsonBlockToFindProduct() {
+        when(client.fetch(anyString())).thenReturn("<meta property='og:title' content='셔츠'>"
+                + "<script type='application/ld+json'>{broken</script>"
+                + "<script type='application/ld+json'>[{}, {\"@type\":\"http://schema.org/Product\"}]</script>");
+        assertThat(service.extract("https://www.musinsa.com/products/1", UUID.randomUUID()).name())
+                .isEqualTo("셔츠");
+    }
+
 }
