@@ -26,6 +26,10 @@ import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.notification.entity.NotificationLevel;
+import com.otboo.team03.notification.event.NotificationEvent;
+import com.otboo.team03.notification.event.NotificationEventType;
+import com.otboo.team03.notification.outbox.service.OutboxEventPublisher;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
 import java.util.Optional;
@@ -77,6 +81,9 @@ class FeedServiceTest {
 
   @Mock
   private FeedSearchQueryRepository feedSearchQueryRepository;
+
+  @Mock
+  private OutboxEventPublisher outboxEventPublisher;
 
   @Test
   void 피드_생성시_의상을_연결하고_FeedDto를_반환한다() {
@@ -678,7 +685,14 @@ class FeedServiceTest {
   void 이미_좋아요한_피드에는_좋아요를_중복_저장하지_않는다() {
     // given
     UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
     UUID userId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        UUID.randomUUID(),
+        "오늘의 코디"
+    );
 
     when(feedRepository.existsById(feedId))
         .thenReturn(true);
@@ -689,6 +703,9 @@ class FeedServiceTest {
         eq(userId),
         any(Instant.class)
     )).thenReturn(1, 0);
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
 
     // when
     feedService.like(feedId, userId);
@@ -704,6 +721,12 @@ class FeedServiceTest {
 
     verify(feedLikeRepository, never())
         .save(any(FeedLike.class));
+
+    verify(outboxEventPublisher, times(1)).publish(
+        any(NotificationEvent.class),
+        eq("FEED"),
+        eq(authorId.toString())
+    );
   }
 
   @Test
@@ -1402,5 +1425,69 @@ class FeedServiceTest {
 
     verify(feedDtoAssembler, never())
         .toCommentDto(any(FeedComment.class));
+  }
+
+  @Test
+  void 피드_좋아요_등록시_작성자에게_알림_이벤트를_발행한다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+    UUID userId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        UUID.randomUUID(),
+        "오늘의 코디"
+    );
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    when(feedLikeRepository.insertIfAbsent(
+        any(UUID.class),
+        eq(feedId),
+        eq(userId),
+        any(Instant.class)
+    )).thenReturn(1);
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
+    // when
+    feedService.like(feedId, userId);
+
+    // then
+    ArgumentCaptor<NotificationEvent> eventCaptor =
+        ArgumentCaptor.forClass(NotificationEvent.class);
+
+    verify(outboxEventPublisher).publish(
+        eventCaptor.capture(),
+        eq("FEED"),
+        eq(authorId.toString())
+    );
+
+    NotificationEvent event = eventCaptor.getValue();
+
+    assertAll(
+        () -> assertNotNull(event.eventId()),
+        () -> assertEquals(
+            NotificationEventType.FEED_LIKED,
+            event.eventType()
+        ),
+        () -> assertEquals(
+            NotificationEvent.CURRENT_SCHEMA_VERSION,
+            event.schemaVersion()
+        ),
+        () -> assertNotNull(event.occurredAt()),
+        () -> assertEquals(feedId, event.aggregateId()),
+        () -> assertEquals(authorId, event.receiverId()),
+        () -> assertEquals(userId, event.actorId()),
+        () -> assertEquals(feedId, event.relatedId()),
+        () -> assertNotNull(event.title()),
+        () -> assertFalse(event.title().isBlank()),
+        () -> assertNotNull(event.content()),
+        () -> assertFalse(event.content().isBlank()),
+        () -> assertEquals(NotificationLevel.INFO, event.level())
+    );
   }
 }
