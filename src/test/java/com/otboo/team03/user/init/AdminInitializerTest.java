@@ -122,7 +122,7 @@ class AdminInitializerTest {
 
         // then
         InOrder order = inOrder(userRepository);
-        order.verify(userRepository).acquireAdminLock(anyLong());
+        order.verify(userRepository).acquireAdminLock(UserRepository.ADMIN_ADVISORY_LOCK_ID);
         order.verify(userRepository).existsByRole(UserRole.ADMIN);
     }
 }
