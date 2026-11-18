@@ -3,8 +3,8 @@ package com.otboo.team03.notification.kafka;
 import com.otboo.team03.notification.dto.response.NotificationDto;
 import com.otboo.team03.notification.event.NotificationEvent;
 import com.otboo.team03.notification.processed.service.ProcessedEventService;
+import com.otboo.team03.notification.redis.NotificationRedisPublisher;
 import com.otboo.team03.notification.service.NotificationEventService;
-import com.otboo.team03.notification.sse.SseConnectionManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -33,14 +33,14 @@ class NotificationKafkaConsumerServiceTest {
     private NotificationEventService notificationEventService;
 
     @Mock
-    private SseConnectionManager sseConnectionManager;
+    private NotificationRedisPublisher notificationRedisPublisher;
 
     @Test
-    void 최초_이벤트는_알림을_저장하고_SSE로_전달한다() {
+    void 최초_이벤트는_알림을_저장하고_Redis로_발행한다() {
         NotificationKafkaConsumerService service = new NotificationKafkaConsumerService(
                 processedEventService,
                 notificationEventService,
-                sseConnectionManager
+                notificationRedisPublisher
         );
         NotificationEvent event = event();
         NotificationDto notification = new NotificationDto(
@@ -60,15 +60,15 @@ class NotificationKafkaConsumerServiceTest {
         service.process(event);
 
         verify(notificationEventService).handle(event);
-        verify(sseConnectionManager).send(event.receiverId(), notification);
+        verify(notificationRedisPublisher).publish(notification);
     }
 
     @Test
-    void 이미_처리한_이벤트는_알림을_저장하지_않고_SSE로_전달하지_않는다() {
+    void 이미_처리한_이벤트는_알림을_저장하지_않고_Redis로_발행하지_않는다() {
         NotificationKafkaConsumerService service = new NotificationKafkaConsumerService(
                 processedEventService,
                 notificationEventService,
-                sseConnectionManager
+                notificationRedisPublisher
         );
         NotificationEvent event = event();
         when(processedEventService.tryMarkProcessed(
@@ -79,11 +79,11 @@ class NotificationKafkaConsumerServiceTest {
         service.process(event);
 
         verify(notificationEventService, never()).handle(event);
-        verifyNoInteractions(sseConnectionManager);
+        verifyNoInteractions(notificationRedisPublisher);
     }
 
     @Test
-    void 알림이_생성되지_않으면_SSE로_전달하지_않는다() {
+    void 알림이_생성되지_않으면_Redis로_발행하지_않는다() {
         NotificationKafkaConsumerService service = newService();
         NotificationEvent event = event();
         when(processedEventService.tryMarkProcessed(
@@ -95,11 +95,11 @@ class NotificationKafkaConsumerServiceTest {
         service.process(event);
 
         verify(notificationEventService).handle(event);
-        verifyNoInteractions(sseConnectionManager);
+        verifyNoInteractions(notificationRedisPublisher);
     }
 
     @Test
-    void 트랜잭션이_커밋된_후_SSE로_전달한다() {
+    void 트랜잭션이_커밋된_후_Redis로_발행한다() {
         NotificationKafkaConsumerService service = newService();
         NotificationEvent event = event();
         NotificationDto notification = notification(event);
@@ -113,22 +113,40 @@ class NotificationKafkaConsumerServiceTest {
         try {
             service.process(event);
 
-            verifyNoInteractions(sseConnectionManager);
+            verifyNoInteractions(notificationRedisPublisher);
             List<TransactionSynchronization> synchronizations =
                     TransactionSynchronizationManager.getSynchronizations();
             synchronizations.forEach(TransactionSynchronization::afterCommit);
 
-            verify(sseConnectionManager).send(event.receiverId(), notification);
+            verify(notificationRedisPublisher).publish(notification);
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
+    }
+
+    @Test
+    void Redis_발행에_실패해도_알림_처리는_중단하지_않는다() {
+        NotificationKafkaConsumerService service = newService();
+        NotificationEvent event = event();
+        NotificationDto notification = notification(event);
+        when(processedEventService.tryMarkProcessed(
+                NotificationKafkaConsumerService.CONSUMER_NAME,
+                event.eventId()
+        )).thenReturn(true);
+        when(notificationEventService.handle(event)).thenReturn(Optional.of(notification));
+        org.mockito.Mockito.doThrow(new IllegalStateException("Redis unavailable"))
+                .when(notificationRedisPublisher).publish(notification);
+
+        service.process(event);
+
+        verify(notificationRedisPublisher).publish(notification);
     }
 
     private NotificationKafkaConsumerService newService() {
         return new NotificationKafkaConsumerService(
                 processedEventService,
                 notificationEventService,
-                sseConnectionManager
+                notificationRedisPublisher
         );
     }
 
