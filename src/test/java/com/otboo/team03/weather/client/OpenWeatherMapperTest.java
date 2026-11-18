@@ -97,5 +97,50 @@ class OpenWeatherMapperTest {
     assertThat(mapper.toWeatherEntities(new OpenWeatherForecastResponse("200", 0, 0, List.of(), null), 37.5665, 126.9780)).isEmpty();
   }
 
+  @Test
+  @DisplayName("적설량(Snow) 데이터가 있는 경우 precipitationAmount에 적설량이 매핑된다")
+  void toWeatherEntities_snowMapping() {
+    // given
+    ForecastItem item = new ForecastItem(
+        1731900000L,
+        new Main(0.0, 80.0),
+        List.of(new WeatherCondition(600, "Snow", "light snow")),
+        new Wind(2.0),
+        0.8,
+        null,
+        new OpenWeatherForecastResponse.Snow(4.5) // 3시간 적설량 4.5mm
+    );
+    OpenWeatherForecastResponse response = new OpenWeatherForecastResponse("200", 0, 1, List.of(item), null);
+
+    // when
+    List<Weather> weathers = mapper.toWeatherEntities(response, 37.5665, 126.9780);
+
+    // then
+    assertThat(weathers).hasSize(1);
+    assertThat(weathers.get(0).getPrecipitationAmount()).isEqualTo(4.5);
+    assertThat(weathers.get(0).getPrecipitationType()).isEqualTo(PrecipitationType.SNOW);
+  }
+
+  @Test
+  @DisplayName("weather 목록이 비어있거나 null인 경우 기본 맑음(800) 및 기본값(0.0)으로 안전하게 매핑된다")
+  void toWeatherEntities_emptyWeatherAndNullValues() {
+    // given (모든 세부 수치가 null인 경우)
+    ForecastItem item = new ForecastItem(1731900000L, null, List.of(), null, null, null, null);
+    OpenWeatherForecastResponse response = new OpenWeatherForecastResponse("200", 0, 1, List.of(item), null);
+
+    // when
+    List<Weather> weathers = mapper.toWeatherEntities(response, 37.5665, 126.9780);
+
+    // then
+    assertThat(weathers).hasSize(1);
+    Weather weather = weathers.get(0);
+    assertThat(weather.getSkyStatus()).isEqualTo(SkyStatus.CLEAR);
+    assertThat(weather.getPrecipitationType()).isEqualTo(PrecipitationType.NONE);
+    assertThat(weather.getTemperature()).isEqualTo(0.0);
+    assertThat(weather.getHumidity()).isEqualTo(0.0);
+    assertThat(weather.getWindSpeed()).isEqualTo(0.0);
+    assertThat(weather.getPrecipitationProbability()).isEqualTo(0.0);
+  }
+
 
 }
