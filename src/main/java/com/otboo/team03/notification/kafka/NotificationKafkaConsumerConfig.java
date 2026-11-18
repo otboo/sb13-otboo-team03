@@ -20,15 +20,26 @@ public class NotificationKafkaConsumerConfig {
             @Value("${otboo.kafka.consumer.retry-backoff-ms:1000}") long retryBackoffMs,
             @Value("${otboo.kafka.consumer.retry-max-attempts:2}") long retryMaxAttempts
     ) {
-        DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(
-                kafkaTemplate,
-                (record, ignored) -> resolveDltPartition(record, dltTopic)
-        );
+        DeadLetterPublishingRecoverer recoverer = createRecoverer(kafkaTemplate, dltTopic);
 
         return new DefaultErrorHandler(
                 recoverer,
-                new FixedBackOff(retryBackoffMs, retryMaxAttempts)
+                createRetryBackOff(retryBackoffMs, retryMaxAttempts)
         );
+    }
+
+    DeadLetterPublishingRecoverer createRecoverer(
+            KafkaTemplate<String, String> kafkaTemplate,
+            String dltTopic
+    ) {
+        return new DeadLetterPublishingRecoverer(
+                kafkaTemplate,
+                (record, ignored) -> resolveDltPartition(record, dltTopic)
+        );
+    }
+
+    FixedBackOff createRetryBackOff(long retryBackoffMs, long retryMaxAttempts) {
+        return new FixedBackOff(retryBackoffMs, retryMaxAttempts);
     }
 
     static TopicPartition resolveDltPartition(

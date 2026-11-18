@@ -103,6 +103,138 @@ class NotificationKafkaConsumerTest {
         verifyNoInteractions(consumerService);
     }
 
+    @Test
+    void 잘못된_JSON이면_처리하지_않는다() throws Exception {
+        when(objectMapper.readValue(MESSAGE, OutboxKafkaMessage.class))
+                .thenThrow(new IllegalArgumentException("invalid json"));
+
+        assertThatThrownBy(() -> consumer.consume(MESSAGE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Kafka 알림 이벤트 처리에 실패했습니다.");
+
+        verifyNoInteractions(consumerService);
+    }
+
+    @Test
+    void envelope_필수값이_누락되면_처리하지_않는다() throws Exception {
+        when(objectMapper.readValue(MESSAGE, OutboxKafkaMessage.class))
+                .thenReturn(new OutboxKafkaMessage(
+                        null,
+                        "DIRECT_MESSAGE_RECEIVED",
+                        (short) 1,
+                        Instant.now(),
+                        UUID.randomUUID(),
+                        mock(JsonNode.class)
+                ));
+
+        assertThatThrownBy(() -> consumer.consume(MESSAGE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Kafka 알림 이벤트 처리에 실패했습니다.");
+
+        verifyNoInteractions(consumerService);
+    }
+
+    @Test
+    void payload가_없으면_처리하지_않는다() throws Exception {
+        when(objectMapper.readValue(MESSAGE, OutboxKafkaMessage.class))
+                .thenReturn(new OutboxKafkaMessage(
+                        UUID.randomUUID(),
+                        "DIRECT_MESSAGE_RECEIVED",
+                        (short) 1,
+                        Instant.now(),
+                        UUID.randomUUID(),
+                        null
+                ));
+
+        assertThatThrownBy(() -> consumer.consume(MESSAGE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Kafka 알림 이벤트 처리에 실패했습니다.");
+
+        verifyNoInteractions(consumerService);
+    }
+
+    @Test
+    void 알림_이벤트_필수값이_누락되면_처리하지_않는다() throws Exception {
+        NotificationEvent invalidEvent = new NotificationEvent(
+                UUID.randomUUID(),
+                NotificationEventType.DIRECT_MESSAGE_RECEIVED,
+                NotificationEvent.CURRENT_SCHEMA_VERSION,
+                Instant.now(),
+                UUID.randomUUID(),
+                null,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "새 메시지",
+                "내용",
+                NotificationLevel.INFO
+        );
+        JsonNode payload = mock(JsonNode.class);
+        when(objectMapper.readValue(MESSAGE, OutboxKafkaMessage.class))
+                .thenReturn(envelopeFor(invalidEvent, payload));
+        when(objectMapper.treeToValue(payload, NotificationEvent.class)).thenReturn(invalidEvent);
+
+        assertThatThrownBy(() -> consumer.consume(MESSAGE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Kafka 알림 이벤트 처리에 실패했습니다.");
+
+        verifyNoInteractions(consumerService);
+    }
+
+    @Test
+    void envelope과_payload의_eventType이_다르면_처리하지_않는다() throws Exception {
+        NotificationEvent event = event();
+        JsonNode payload = mock(JsonNode.class);
+        OutboxKafkaMessage envelope = new OutboxKafkaMessage(
+                event.eventId(),
+                NotificationEventType.USER_ROLE_CHANGED.name(),
+                (short) event.schemaVersion(),
+                event.occurredAt(),
+                event.aggregateId(),
+                payload
+        );
+        when(objectMapper.readValue(MESSAGE, OutboxKafkaMessage.class)).thenReturn(envelope);
+        when(objectMapper.treeToValue(payload, NotificationEvent.class)).thenReturn(event);
+
+        assertThatThrownBy(() -> consumer.consume(MESSAGE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Kafka 알림 이벤트 처리에 실패했습니다.");
+
+        verifyNoInteractions(consumerService);
+    }
+
+    @Test
+    void envelope과_payload의_occurredAt이_다르면_처리하지_않는다() throws Exception {
+        NotificationEvent event = event();
+        JsonNode payload = mock(JsonNode.class);
+        OutboxKafkaMessage envelope = new OutboxKafkaMessage(
+                event.eventId(),
+                event.eventType().name(),
+                (short) event.schemaVersion(),
+                event.occurredAt().plusSeconds(1),
+                event.aggregateId(),
+                payload
+        );
+        when(objectMapper.readValue(MESSAGE, OutboxKafkaMessage.class)).thenReturn(envelope);
+        when(objectMapper.treeToValue(payload, NotificationEvent.class)).thenReturn(event);
+
+        assertThatThrownBy(() -> consumer.consume(MESSAGE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Kafka 알림 이벤트 처리에 실패했습니다.");
+
+        verifyNoInteractions(consumerService);
+    }
+
+    private OutboxKafkaMessage envelopeFor(NotificationEvent event, JsonNode payload) {
+        return new OutboxKafkaMessage(
+                event.eventId(),
+                event.eventType().name(),
+                (short) event.schemaVersion(),
+                event.occurredAt(),
+                event.aggregateId(),
+                payload
+        );
+    }
+
     private NotificationEvent event() {
         return event(NotificationEvent.CURRENT_SCHEMA_VERSION);
     }
