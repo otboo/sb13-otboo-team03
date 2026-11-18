@@ -72,6 +72,10 @@ otboo:
     default-ttl: 5m
     ttls: { }
 
+  outbox:
+    relay:
+      fixed-delay: ${OUTBOX_RELAY_FIXED_DELAY:PT5S}
+      batch-size: ${OUTBOX_RELAY_BATCH_SIZE:100}
   kafka:
     notification-topic: ${KAFKA_NOTIFICATION_TOPIC:otboo.notification.events}
     notification-dlt-topic: ${KAFKA_NOTIFICATION_DLT_TOPIC:otboo.notification.events.DLT}
