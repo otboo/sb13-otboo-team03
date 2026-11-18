@@ -1513,4 +1513,73 @@ class FeedServiceTest {
         () -> assertEquals(NotificationLevel.INFO, event.level())
     );
   }
+
+  @Test
+  void 피드_댓글_등록시_작성자에게_알림_이벤트를_발행한다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID feedAuthorId = UUID.randomUUID();
+    UUID commenterId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        feedAuthorId,
+        UUID.randomUUID(),
+        "오늘의 코디"
+    );
+
+    CommentCreateRequest request = new CommentCreateRequest(
+        feedId,
+        commenterId,
+        "코디가 정말 예쁘네요!"
+    );
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
+    when(feedCommentRepository.save(any(FeedComment.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    // when
+    feedService.createComment(feedId, commenterId, request);
+
+    // then
+    ArgumentCaptor<NotificationEvent> eventCaptor =
+        ArgumentCaptor.forClass(NotificationEvent.class);
+
+    verify(feedCommentRepository).save(any(FeedComment.class));
+
+    verify(outboxEventPublisher).publish(
+        eventCaptor.capture(),
+        eq("FEED"),
+        eq(feedAuthorId.toString())
+    );
+
+    NotificationEvent event = eventCaptor.getValue();
+
+    assertAll(
+        () -> assertNotNull(event.eventId()),
+        () -> assertEquals(
+            NotificationEventType.FEED_COMMENTED,
+            event.eventType()
+        ),
+        () -> assertEquals(
+            NotificationEvent.CURRENT_SCHEMA_VERSION,
+            event.schemaVersion()
+        ),
+        () -> assertNotNull(event.occurredAt()),
+        () -> assertEquals(feedId, event.aggregateId()),
+        () -> assertEquals(feedAuthorId, event.receiverId()),
+        () -> assertEquals(commenterId, event.actorId()),
+        () -> assertEquals(feedId, event.relatedId()),
+        () -> assertEquals("새로운 댓글", event.title()),
+        () -> assertEquals(
+            "누군가 회원님의 피드에 댓글을 남겼습니다.",
+            event.content()
+        ),
+        () -> assertEquals(NotificationLevel.INFO, event.level())
+    );
+  }
 }
