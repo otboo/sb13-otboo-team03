@@ -199,7 +199,7 @@ class FollowServiceTest {
     );
 
     verify(followRepository, never()).save(any(Follow.class));
-    verifyNoInteractions(followDtoAssembler);
+    verifyNoInteractions(followDtoAssembler, outboxEventPublisher);
   }
 
   @Test
@@ -256,7 +256,7 @@ class FollowServiceTest {
 
     verify(userRepository).existsById(followeeId);
     verify(followRepository, never()).save(any(Follow.class));
-    verifyNoInteractions(followDtoAssembler);
+    verifyNoInteractions(followDtoAssembler, outboxEventPublisher);
   }
 
   @Test
@@ -460,7 +460,7 @@ class FollowServiceTest {
 
     verify(followRepository).save(any(Follow.class));
     verify(followRepository).flush();
-    verifyNoInteractions(followDtoAssembler);
+    verifyNoInteractions(followDtoAssembler, outboxEventPublisher);
   }
 
   @Test
@@ -502,7 +502,7 @@ class FollowServiceTest {
 
     verify(followRepository).save(any(Follow.class));
     verify(followRepository).flush();
-    verifyNoInteractions(followDtoAssembler);
+    verifyNoInteractions(followDtoAssembler, outboxEventPublisher);
   }
 
   @Test
