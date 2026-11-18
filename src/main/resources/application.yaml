@@ -56,6 +56,11 @@ otboo:
     default-ttl: 5m
     ttls: { }
 
+  outbox:
+    relay:
+      fixed-delay: ${OUTBOX_RELAY_FIXED_DELAY:PT5S}
+      batch-size: ${OUTBOX_RELAY_BATCH_SIZE:100}
+
 management:
   endpoints:
     web:
