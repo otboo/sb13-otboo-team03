@@ -9,6 +9,10 @@ import com.otboo.team03.follow.repository.FollowRepository;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.notification.entity.NotificationLevel;
+import com.otboo.team03.notification.event.NotificationEvent;
+import com.otboo.team03.notification.event.NotificationEventType;
+import com.otboo.team03.notification.outbox.service.OutboxEventPublisher;
 import com.otboo.team03.user.repository.UserRepository;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -33,6 +37,7 @@ public class FollowService {
   private final FollowRepository followRepository;
   private final FollowDtoAssembler followDtoAssembler;
   private final UserRepository userRepository;
+  private final OutboxEventPublisher outboxEventPublisher;
 
   @Transactional
   public FollowDto create(
@@ -84,6 +89,24 @@ public class FollowService {
 
       throw ex;
     }
+
+    outboxEventPublisher.publish(
+        new NotificationEvent(
+            UUID.randomUUID(),
+            NotificationEventType.USER_FOLLOWED,
+            NotificationEvent.CURRENT_SCHEMA_VERSION,
+            Instant.now(),
+            savedFollow.getId(),
+            request.followeeId(),
+            requesterId,
+            savedFollow.getId(),
+            "새 팔로워",
+            "새로운 사용자가 나를 팔로우했습니다.",
+            NotificationLevel.INFO
+        ),
+        "FOLLOW",
+        request.followeeId().toString()
+    );
 
     return followDtoAssembler.toDto(savedFollow);
   }

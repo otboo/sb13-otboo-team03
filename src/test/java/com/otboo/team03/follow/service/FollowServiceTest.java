@@ -89,6 +89,9 @@ class FollowServiceTest {
     when(userRepository.existsById(followeeId))
         .thenReturn(true);
 
+    when(followRepository.save(any(Follow.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
     // when
     followService.create(followerId, request);
 
@@ -139,6 +142,9 @@ class FollowServiceTest {
 
     when(followRepository.save(any(Follow.class)))
         .thenReturn(savedFollow);
+
+    when(savedFollow.getId())
+        .thenReturn(followId);
 
     when(followDtoAssembler.toDto(savedFollow))
         .thenReturn(expectedResponse);
