@@ -47,6 +47,9 @@ public class OutboxEvent {
     @Column(name = "payload", nullable = false, columnDefinition = "jsonb")
     private JsonNode payload;
 
+    @Column(name = "occurred_at", nullable = false, updatable = false)
+    private Instant occurredAt;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private OutboxEventStatus status;
@@ -74,6 +77,7 @@ public class OutboxEvent {
             UUID aggregateId,
             String partitionKey,
             JsonNode payload,
+            Instant occurredAt,
             Instant createdAt
     ) {
         this.eventId = Objects.requireNonNull(eventId, "eventId must not be null");
@@ -83,6 +87,7 @@ public class OutboxEvent {
         this.aggregateId = Objects.requireNonNull(aggregateId, "aggregateId must not be null");
         this.partitionKey = Objects.requireNonNull(partitionKey, "partitionKey must not be null");
         this.payload = Objects.requireNonNull(payload, "payload must not be null");
+        this.occurredAt = Objects.requireNonNull(occurredAt, "occurredAt must not be null");
         this.status = OutboxEventStatus.PENDING;
         this.attemptCount = 0;
         this.availableAt = Objects.requireNonNull(createdAt, "createdAt must not be null");

@@ -70,6 +70,7 @@ class OutboxEventServiceTest {
         assertThat(saved.getAggregateType()).isEqualTo("USER");
         assertThat(saved.getAggregateId()).isEqualTo(aggregateId);
         assertThat(saved.getPartitionKey()).isEqualTo(receiverId.toString());
+        assertThat(saved.getOccurredAt()).isEqualTo(event.occurredAt());
         assertThat(saved.getPayload().get("receiverId").asText()).isEqualTo(receiverId.toString());
         assertThat(saved.getStatus()).hasToString("PENDING");
         assertThat(saved.getCreatedAt()).isNotNull();
