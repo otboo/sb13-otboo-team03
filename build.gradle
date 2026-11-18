@@ -98,6 +98,9 @@ dependencies {
 
         // Cache
         implementation 'org.springframework.boot:spring-boot-starter-cache'
+
+        // Kafka
+        implementation 'org.springframework.boot:spring-boot-starter-kafka'
 }
 
 tasks.named('test') {
