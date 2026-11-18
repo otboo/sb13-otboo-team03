@@ -3,6 +3,8 @@ package com.otboo.team03.notification.kafka;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.Node;
+import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -14,14 +16,19 @@ import org.springframework.util.backoff.BackOffExecution;
 import org.springframework.util.backoff.FixedBackOff;
 
 import java.util.concurrent.CompletableFuture;
+import java.time.Duration;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class NotificationKafkaConsumerConfigTest {
+
+    private static final String DLT_TOPIC = "otboo.notification.events.DLT";
 
     @Test
     void Kafka_오류_핸들러를_생성한다() {
@@ -78,7 +85,7 @@ class NotificationKafkaConsumerConfigTest {
                 .thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
         DeadLetterPublishingRecoverer recoverer = config.createRecoverer(
                 kafkaTemplate,
-                "otboo.notification.events.DLT"
+                DLT_TOPIC
         );
         ConsumerRecord<String, String> record = new ConsumerRecord<>(
                 "otboo.notification.events",
@@ -88,13 +95,24 @@ class NotificationKafkaConsumerConfigTest {
                 "message"
         );
 
-        recoverer.accept(record, mock(Consumer.class), new IllegalStateException("failed"));
+        Consumer<String, String> consumer = mock(Consumer.class);
+        PartitionInfo dltPartitionInfo = new PartitionInfo(
+                DLT_TOPIC,
+                3,
+                Node.noNode(),
+                new Node[]{Node.noNode()},
+                new Node[]{Node.noNode()}
+        );
+        when(consumer.partitionsFor(eq(DLT_TOPIC), any(Duration.class)))
+                .thenReturn(List.of(dltPartitionInfo));
+
+        recoverer.accept(record, consumer, new IllegalStateException("failed"));
 
         ArgumentCaptor<ProducerRecord<String, String>> captor = ArgumentCaptor.forClass(ProducerRecord.class);
         verify(kafkaTemplate).send(captor.capture());
 
         ProducerRecord<String, String> dltRecord = captor.getValue();
-        assertThat(dltRecord.topic()).isEqualTo("otboo.notification.events.DLT");
+        assertThat(dltRecord.topic()).isEqualTo(DLT_TOPIC);
         assertThat(dltRecord.partition()).isEqualTo(3);
         assertThat(dltRecord.key()).isEqualTo("key");
     }
