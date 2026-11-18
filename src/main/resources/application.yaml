@@ -79,6 +79,9 @@ otboo:
   kafka:
     notification-topic: ${KAFKA_NOTIFICATION_TOPIC:otboo.notification.events}
     notification-dlt-topic: ${KAFKA_NOTIFICATION_DLT_TOPIC:otboo.notification.events.DLT}
+    consumer:
+      retry-backoff-ms: ${KAFKA_CONSUMER_RETRY_BACKOFF_MS:1000}
+      retry-max-attempts: ${KAFKA_CONSUMER_RETRY_MAX_ATTEMPTS:2}
 
 management:
   endpoints:
