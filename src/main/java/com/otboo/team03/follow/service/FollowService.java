@@ -100,8 +100,8 @@ public class FollowService {
             request.followeeId(),
             requesterId,
             savedFollow.getId(),
-            "새 팔로워",
-            "새로운 사용자가 나를 팔로우했습니다.",
+            "새로운 팔로워",
+            "누군가 회원님을 팔로우하기 시작했습니다.",
             NotificationLevel.INFO
         ),
         "FOLLOW",

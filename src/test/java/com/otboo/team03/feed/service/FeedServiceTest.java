@@ -593,10 +593,27 @@ class FeedServiceTest {
   void 사용자가_피드에_좋아요를_누르면_좋아요_관계가_저장된다() {
     // given
     UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
     UUID userId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        UUID.randomUUID(),
+        "오늘의 코디"
+    );
 
     when(feedRepository.existsById(feedId))
         .thenReturn(true);
+
+    when(feedLikeRepository.insertIfAbsent(
+        any(UUID.class),
+        eq(feedId),
+        eq(userId),
+        any(Instant.class)
+    )).thenReturn(1);
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
 
     // when
     feedService.like(feedId, userId);
@@ -613,6 +630,12 @@ class FeedServiceTest {
 
     verify(feedLikeRepository, never())
         .save(any(FeedLike.class));
+
+    verify(outboxEventPublisher).publish(
+        any(NotificationEvent.class),
+        eq("FEED"),
+        eq(authorId.toString())
+    );
   }
 
   @Test

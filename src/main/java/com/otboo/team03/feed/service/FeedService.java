@@ -21,6 +21,10 @@ import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.notification.entity.NotificationLevel;
+import com.otboo.team03.notification.event.NotificationEvent;
+import com.otboo.team03.notification.event.NotificationEventType;
+import com.otboo.team03.notification.outbox.service.OutboxEventPublisher;
 import com.otboo.team03.user.repository.UserRepository;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -48,6 +52,7 @@ public class FeedService {
   private final FeedSearchQueryRepository feedSearchQueryRepository;
   private final FeedLikeRepository feedLikeRepository;
   private final FeedCommentRepository feedCommentRepository;
+  private final OutboxEventPublisher outboxEventPublisher;
 
   @Transactional
   public FeedDto create(FeedCreateRequest request) {
@@ -149,11 +154,40 @@ public class FeedService {
       throw new OtbooException(ErrorCode.NOT_FOUND_RESOURCE);
     }
 
-    feedLikeRepository.insertIfAbsent(
+    int inserted = feedLikeRepository.insertIfAbsent(
         UUID.randomUUID(),
         feedId,
         userId,
         Instant.now()
+    );
+
+    if (inserted == 0) {
+      return;
+    }
+
+    Feed feed = feedRepository.findById(feedId)
+        .orElseThrow(
+            () -> new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
+        );
+
+    UUID authorId = feed.getAuthorId();
+
+    outboxEventPublisher.publish(
+        new NotificationEvent(
+            UUID.randomUUID(),
+            NotificationEventType.FEED_LIKED,
+            NotificationEvent.CURRENT_SCHEMA_VERSION,
+            Instant.now(),
+            feedId,
+            authorId,
+            userId,
+            feedId,
+            "새로운 좋아요",
+            "누군가 회원님의 피드에 좋아요를 눌렀습니다.",
+            NotificationLevel.INFO
+        ),
+        "FEED",
+        authorId.toString()
     );
   }
 
