@@ -757,6 +757,13 @@ class FeedServiceTest {
     // given
     UUID feedId = UUID.randomUUID();
     UUID authorId = UUID.randomUUID();
+    UUID feedAuthorId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        feedAuthorId,
+        UUID.randomUUID(),
+        "오늘의 코디"
+    );
 
     CommentCreateRequest request = new CommentCreateRequest(
         feedId,
@@ -766,6 +773,12 @@ class FeedServiceTest {
 
     when(feedRepository.existsById(feedId))
         .thenReturn(true);
+
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
+    when(feedCommentRepository.save(any(FeedComment.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
 
     // when
     feedService.createComment(feedId, authorId, request);
@@ -778,6 +791,12 @@ class FeedServiceTest {
             && authorId.equals(comment.getAuthorId())
             && "좋은 코디네요!".equals(comment.getContent())
     ));
+
+    verify(outboxEventPublisher).publish(
+        any(NotificationEvent.class),
+        eq("FEED"),
+        eq(feedAuthorId.toString())
+    );
   }
 
   @Test
@@ -877,6 +896,13 @@ class FeedServiceTest {
     // given
     UUID feedId = UUID.randomUUID();
     UUID authorId = UUID.randomUUID();
+    UUID feedAuthorId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        feedAuthorId,
+        UUID.randomUUID(),
+        "오늘의 코디"
+    );
 
     CommentCreateRequest request = new CommentCreateRequest(
         feedId,
@@ -899,6 +925,9 @@ class FeedServiceTest {
     when(feedRepository.existsById(feedId))
         .thenReturn(true);
 
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
+
     when(feedCommentRepository.save(any(FeedComment.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -917,6 +946,12 @@ class FeedServiceTest {
 
     verify(feedCommentRepository).save(any(FeedComment.class));
     verify(feedDtoAssembler).toCommentDto(any(FeedComment.class));
+
+    verify(outboxEventPublisher).publish(
+        any(NotificationEvent.class),
+        eq("FEED"),
+        eq(feedAuthorId.toString())
+    );
   }
 
   @Test

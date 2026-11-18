@@ -234,6 +234,31 @@ public class FeedService {
 
     FeedComment savedComment = feedCommentRepository.save(comment);
 
+    Feed feed = feedRepository.findById(feedId)
+        .orElseThrow(
+            () -> new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
+        );
+
+    UUID feedAuthorId = feed.getAuthorId();
+
+    outboxEventPublisher.publish(
+        new NotificationEvent(
+            UUID.randomUUID(),
+            NotificationEventType.FEED_COMMENTED,
+            NotificationEvent.CURRENT_SCHEMA_VERSION,
+            Instant.now(),
+            feedId,
+            feedAuthorId,
+            authorId,
+            feedId,
+            "새로운 댓글",
+            "누군가 회원님의 피드에 댓글을 남겼습니다.",
+            NotificationLevel.INFO
+        ),
+        "FEED",
+        feedAuthorId.toString()
+    );
+
     return feedDtoAssembler.toCommentDto(savedComment);
   }
 
