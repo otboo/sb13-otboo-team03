@@ -55,6 +55,8 @@ class NotificationEventServiceTest {
         )).thenReturn(false);
         when(userRepository.findById(receiverId)).thenReturn(java.util.Optional.of(receiver));
         when(userRepository.findById(actorId)).thenReturn(java.util.Optional.of(actor));
+        when(notificationRepository.save(any(Notification.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         notificationEventService.handle(event);
 
@@ -105,6 +107,8 @@ class NotificationEventServiceTest {
                 receiverId, NotificationEventType.USER_ROLE_CHANGED.name(), eventId
         )).thenReturn(false);
         when(userRepository.findById(receiverId)).thenReturn(java.util.Optional.of(receiver));
+        when(notificationRepository.save(any(Notification.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         notificationEventService.handle(event);
 

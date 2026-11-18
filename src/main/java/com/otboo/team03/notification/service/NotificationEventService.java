@@ -1,6 +1,7 @@
 package com.otboo.team03.notification.service;
 
 import com.otboo.team03.notification.entity.Notification;
+import com.otboo.team03.notification.dto.response.NotificationDto;
 import com.otboo.team03.notification.event.NotificationEvent;
 import com.otboo.team03.notification.repository.NotificationRepository;
 import com.otboo.team03.user.entity.User;
@@ -10,6 +11,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
+
 @Service
 @RequiredArgsConstructor
 public class NotificationEventService {
@@ -18,7 +21,7 @@ public class NotificationEventService {
     private final UserRepository userRepository;
 
     @Transactional
-    public void handle(NotificationEvent event) {
+    public Optional<NotificationDto> handle(NotificationEvent event) {
         String notificationType = event.eventType().name();
 
         if (notificationRepository.existsByReceiver_IdAndNotificationTypeAndSourceEventId(
@@ -26,7 +29,7 @@ public class NotificationEventService {
                 notificationType,
                 event.eventId()
         )) {
-            return;
+            return Optional.empty();
         }
 
         User receiver = userRepository.findById(event.receiverId())
@@ -36,7 +39,7 @@ public class NotificationEventService {
                 : userRepository.findById(event.actorId())
                         .orElseThrow(UserNotFoundException::new);
 
-        notificationRepository.save(new Notification(
+        Notification notification = notificationRepository.save(new Notification(
                 receiver,
                 actor,
                 notificationType,
@@ -46,5 +49,7 @@ public class NotificationEventService {
                 event.level(),
                 event.eventId()
         ));
+
+        return Optional.of(NotificationDto.from(notification));
     }
 }
