@@ -1,4 +1,4 @@
-16package com.otboo.team03.notification.outbox.relay;
+package com.otboo.team03.notification.outbox.relay;
 
 import tools.jackson.databind.JsonNode;
 
