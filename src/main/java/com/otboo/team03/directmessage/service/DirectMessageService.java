@@ -3,6 +3,7 @@ package com.otboo.team03.directmessage.service;
 import com.otboo.team03.directmessage.dto.response.DirectMessageDto;
 import com.otboo.team03.directmessage.entity.DirectMessage;
 import com.otboo.team03.directmessage.repository.DirectMessageRepository;
+import com.otboo.team03.directmessage.redis.DirectMessageRedisPublisher;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
@@ -14,9 +15,12 @@ import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.List;
@@ -24,6 +28,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class DirectMessageService {
 
     private static final String SORT_BY_CREATED_AT = "createdAt";
@@ -32,6 +37,7 @@ public class DirectMessageService {
     private final DirectMessageRepository directMessageRepository;
     private final UserRepository userRepository;
     private final OutboxEventPublisher outboxEventPublisher;
+    private final DirectMessageRedisPublisher directMessageRedisPublisher;
 
     @Transactional
     public DirectMessageDto send(UUID senderId, UUID receiverId, String content) {
@@ -63,7 +69,31 @@ public class DirectMessageService {
                 "DIRECT_MESSAGE",
                 saved.getDmKey()
         );
-        return DirectMessageDto.from(saved);
+        DirectMessageDto response = DirectMessageDto.from(saved);
+        publishAfterCommit(response);
+        return response;
+    }
+
+    private void publishAfterCommit(DirectMessageDto directMessage) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            publishToRedis(directMessage);
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                publishToRedis(directMessage);
+            }
+        });
+    }
+
+    private void publishToRedis(DirectMessageDto directMessage) {
+        try {
+            directMessageRedisPublisher.publish(directMessage);
+        } catch (RuntimeException exception) {
+            log.error("Redis DM 발행에 실패했습니다. directMessageId={}", directMessage.id(), exception);
+        }
     }
 
     @Transactional(readOnly = true)
