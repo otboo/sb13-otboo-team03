@@ -18,6 +18,7 @@ import com.otboo.team03.feed.repository.FeedLikeRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedSearchQueryRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
+import com.otboo.team03.follow.repository.FollowRepository;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
@@ -53,6 +54,7 @@ public class FeedService {
   private final FeedLikeRepository feedLikeRepository;
   private final FeedCommentRepository feedCommentRepository;
   private final OutboxEventPublisher outboxEventPublisher;
+  private final FollowRepository followRepository;
 
   @Transactional
   public FeedDto create(FeedCreateRequest request) {
@@ -95,6 +97,30 @@ public class FeedService {
     for (Clothes item : clothes) {
       feedClothesRepository.save(
           new FeedClothes(savedFeed, item)
+      );
+    }
+
+    List<UUID> followerIds = followRepository.findFollowerIdsByFolloweeId(
+        request.authorId()
+    );
+
+    for (UUID followerId : followerIds) {
+      outboxEventPublisher.publish(
+          new NotificationEvent(
+              UUID.randomUUID(),
+              NotificationEventType.FOLLOWING_USER_FEED_CREATED,
+              NotificationEvent.CURRENT_SCHEMA_VERSION,
+              Instant.now(),
+              savedFeed.getId(),
+              followerId,
+              request.authorId(),
+              savedFeed.getId(),
+              "새로운 피드",
+              "팔로우한 사용자가 새 피드를 올렸습니다.",
+              NotificationLevel.INFO
+          ),
+          "FEED",
+          followerId.toString()
       );
     }
 
