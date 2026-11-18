@@ -34,7 +34,10 @@ public class AdminInitializer implements ApplicationRunner {
         initialize();
     }
 
+    @Transactional
     public void initialize() {
+        userRepository.acquireAdminLock(UserRepository.ADMIN_ADVISORY_LOCK_ID);
+
         if (userRepository.existsByRole(UserRole.ADMIN)) {
             return;
         }

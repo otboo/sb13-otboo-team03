@@ -11,6 +11,8 @@ import java.util.UUID;
 
 public interface UserRepository extends JpaRepository<User, UUID>, UserRepositoryCustom {
 
+    long ADMIN_ADVISORY_LOCK_ID = 720072L;
+
     boolean existsByEmail(String email);
 
     boolean existsByRole(UserRole role);

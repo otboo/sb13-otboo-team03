@@ -42,8 +42,6 @@ import java.util.List;
 @RequiredArgsConstructor
 public class UserService {
 
-    private static final long ADMIN_ADVISORY_LOCK_ID = 720072L;
-
     private final UserRepository userRepository;
     private final ProfileRepository profileRepository;
     private final PasswordEncoder passwordEncoder;
@@ -74,7 +72,7 @@ public class UserService {
     @PreAuthorize("hasRole('ADMIN') and #userId != authentication.principal.userDto.id")
     public UserDto updateRole(UUID userId, UserRole role) {
         // 관리자 권한 및 잠금 변경을 직렬화
-        userRepository.acquireAdminLock(ADMIN_ADVISORY_LOCK_ID);
+        userRepository.acquireAdminLock(UserRepository.ADMIN_ADVISORY_LOCK_ID);
 
         User user = userRepository.findById(userId)
                 .orElseThrow(UserNotFoundException::new);
@@ -208,7 +206,7 @@ public class UserService {
     @PreAuthorize("hasRole('ADMIN') and #userId != authentication.principal.userDto.id")
     public UserDto updateLock(UUID userId, boolean locked) {
         // 관리자 권한 및 잠금 변경에 동일한 락 사용
-        userRepository.acquireAdminLock(ADMIN_ADVISORY_LOCK_ID);
+        userRepository.acquireAdminLock(UserRepository.ADMIN_ADVISORY_LOCK_ID);
 
         User user = userRepository.findById(userId)
                 .orElseThrow(UserNotFoundException::new);

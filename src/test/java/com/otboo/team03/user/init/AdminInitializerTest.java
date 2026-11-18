@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.DefaultApplicationArguments;
@@ -111,4 +112,17 @@ class AdminInitializerTest {
         assertThat(savedAdmin.getRole()).isEqualTo(UserRole.ADMIN);
     }
 
+    @Test
+    void run_acquiresAdminLockBeforeCheckingAdminExists() {
+        // given
+        when(userRepository.existsByRole(UserRole.ADMIN)).thenReturn(true);
+
+        // when
+        adminInitializer.run(new DefaultApplicationArguments());
+
+        // then
+        InOrder order = inOrder(userRepository);
+        order.verify(userRepository).acquireAdminLock(UserRepository.ADMIN_ADVISORY_LOCK_ID);
+        order.verify(userRepository).existsByRole(UserRole.ADMIN);
+    }
 }
