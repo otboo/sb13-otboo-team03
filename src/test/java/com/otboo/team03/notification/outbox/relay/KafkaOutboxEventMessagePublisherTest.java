@@ -16,8 +16,10 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -88,6 +90,24 @@ class KafkaOutboxEventMessagePublisherTest {
                 .hasMessage("Kafka 이벤트 발행이 중단되었습니다.");
         assertThat(Thread.currentThread().isInterrupted()).isTrue();
         Thread.interrupted();
+    }
+
+    @Test
+    void Kafka_메시지_변환에_실패하면_예외를_전파한다() throws Exception {
+        ObjectMapper failingObjectMapper = org.mockito.Mockito.mock(ObjectMapper.class);
+        when(failingObjectMapper.writeValueAsString(any(OutboxKafkaMessage.class)))
+                .thenThrow(new IllegalStateException("serialize failed"));
+        KafkaOutboxEventMessagePublisher failingPublisher = new KafkaOutboxEventMessagePublisher(
+                kafkaTemplate,
+                failingObjectMapper,
+                TOPIC
+        );
+
+        assertThatThrownBy(() -> failingPublisher.publish(newEvent()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Kafka 이벤트 payload 변환에 실패했습니다.");
+
+        verifyNoInteractions(kafkaTemplate);
     }
 
     private OutboxEvent newEvent() throws Exception {
