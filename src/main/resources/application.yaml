@@ -18,6 +18,22 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
 
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    properties:
+      security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
+      sasl.mechanism: ${KAFKA_SASL_MECHANISM:PLAIN}
+      sasl.jaas.config: ${KAFKA_SASL_JAAS_CONFIG:}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: ${KAFKA_PRODUCER_IDEMPOTENCE:true}
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP:otboo-notification}
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
   mail:
     host: smtp.gmail.com
     port: 587
@@ -55,6 +71,10 @@ otboo:
   cache:
     default-ttl: 5m
     ttls: { }
+
+  kafka:
+    notification-topic: ${KAFKA_NOTIFICATION_TOPIC:otboo.notification.events}
+    notification-dlt-topic: ${KAFKA_NOTIFICATION_DLT_TOPIC:otboo.notification.events.DLT}
 
 management:
   endpoints:

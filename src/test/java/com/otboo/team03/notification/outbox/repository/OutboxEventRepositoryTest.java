@@ -39,6 +39,7 @@ class OutboxEventRepositoryTest {
     void 아웃박스_이벤트를_JSON_payload와_함께_저장하고_조회한다() throws Exception {
         UUID eventId = UUID.randomUUID();
         UUID aggregateId = UUID.randomUUID();
+        Instant occurredAt = Instant.parse("2026-11-11T23:59:00Z");
         Instant createdAt = Instant.parse("2026-11-12T00:00:00Z");
         OutboxEvent event = new OutboxEvent(
                 eventId,
@@ -48,6 +49,7 @@ class OutboxEventRepositoryTest {
                 aggregateId,
                 "receiver-1",
                 objectMapper.readTree("{\"receiverId\":\"receiver-1\"}"),
+                occurredAt,
                 createdAt
         );
 
@@ -57,6 +59,7 @@ class OutboxEventRepositoryTest {
                 .satisfies(found -> {
                     assertThat(found.getEventId()).isEqualTo(eventId);
                     assertThat(found.getAggregateId()).isEqualTo(aggregateId);
+                    assertThat(found.getOccurredAt()).isEqualTo(occurredAt);
                     assertThat(found.getStatus()).isEqualTo(OutboxEventStatus.PENDING);
                     assertThat(found.getAttemptCount()).isZero();
                     assertThat(found.getAvailableAt()).isEqualTo(createdAt);
@@ -95,6 +98,7 @@ class OutboxEventRepositoryTest {
                 UUID.randomUUID(),
                 partitionKey,
                 objectMapper.readTree("{\"partitionKey\":\"" + partitionKey + "\"}"),
+                createdAt,
                 createdAt
         );
     }

@@ -34,6 +34,7 @@ public class OutboxEventService implements OutboxEventPublisher {
                 event.aggregateId(),
                 partitionKey,
                 toPayload(event),
+                event.occurredAt(),
                 Instant.now()
         ));
     }
