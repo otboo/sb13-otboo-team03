@@ -23,6 +23,7 @@ import com.otboo.team03.feed.repository.FeedLikeRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedSearchQueryRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
+import com.otboo.team03.follow.repository.FollowRepository;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
@@ -33,6 +34,7 @@ import com.otboo.team03.notification.outbox.service.OutboxEventPublisher;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -44,6 +46,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -84,6 +87,9 @@ class FeedServiceTest {
 
   @Mock
   private OutboxEventPublisher outboxEventPublisher;
+
+  @Mock
+  private FollowRepository followRepository;
 
   @Test
   void 피드_생성시_의상을_연결하고_FeedDto를_반환한다() {
@@ -1616,5 +1622,140 @@ class FeedServiceTest {
         ),
         () -> assertEquals(NotificationLevel.INFO, event.level())
     );
+  }
+
+  @Test
+  void 피드_등록시_팔로워들에게_알림_이벤트를_발행한다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+    UUID weatherId = UUID.randomUUID();
+    UUID firstFollowerId = UUID.randomUUID();
+    UUID secondFollowerId = UUID.randomUUID();
+
+    FeedCreateRequest request = new FeedCreateRequest(
+        authorId,
+        weatherId,
+        List.of(),
+        "오늘의 코디"
+    );
+
+    Feed savedFeed = new Feed(
+        authorId,
+        weatherId,
+        "오늘의 코디"
+    );
+
+    ReflectionTestUtils.setField(savedFeed, "id", feedId);
+
+    when(userRepository.existsById(authorId))
+        .thenReturn(true);
+
+    when(weatherRepository.existsById(weatherId))
+        .thenReturn(true);
+
+    when(feedRepository.save(any(Feed.class)))
+        .thenReturn(savedFeed);
+
+    when(followRepository.findFollowerIdsByFolloweeId(authorId))
+        .thenReturn(List.of(firstFollowerId, secondFollowerId));
+
+    // when
+    feedService.create(request);
+
+    // then
+    ArgumentCaptor<NotificationEvent> eventCaptor =
+        ArgumentCaptor.forClass(NotificationEvent.class);
+
+    ArgumentCaptor<String> partitionKeyCaptor =
+        ArgumentCaptor.forClass(String.class);
+
+    verify(outboxEventPublisher, times(2)).publish(
+        eventCaptor.capture(),
+        eq("FEED"),
+        partitionKeyCaptor.capture()
+    );
+
+    List<NotificationEvent> events = eventCaptor.getAllValues();
+    List<String> partitionKeys = partitionKeyCaptor.getAllValues();
+
+    assertEquals(
+        Set.of(firstFollowerId, secondFollowerId),
+        Set.of(
+            events.get(0).receiverId(),
+            events.get(1).receiverId()
+        )
+    );
+
+    assertNotEquals(
+        events.get(0).eventId(),
+        events.get(1).eventId()
+    );
+
+    for (int i = 0; i < events.size(); i++) {
+      NotificationEvent event = events.get(i);
+
+      assertAll(
+          () -> assertNotNull(event.eventId()),
+          () -> assertEquals(
+              NotificationEventType.FOLLOWING_USER_FEED_CREATED,
+              event.eventType()
+          ),
+          () -> assertEquals(
+              NotificationEvent.CURRENT_SCHEMA_VERSION,
+              event.schemaVersion()
+          ),
+          () -> assertNotNull(event.occurredAt()),
+          () -> assertEquals(feedId, event.aggregateId()),
+          () -> assertEquals(authorId, event.actorId()),
+          () -> assertEquals(feedId, event.relatedId()),
+          () -> assertEquals("새로운 피드", event.title()),
+          () -> assertEquals(
+              "팔로우한 사용자가 새 피드를 올렸습니다.",
+              event.content()
+          ),
+          () -> assertEquals(NotificationLevel.INFO, event.level())
+      );
+
+      assertEquals(
+          event.receiverId().toString(),
+          partitionKeys.get(i)
+      );
+    }
+
+    verify(followRepository).findFollowerIdsByFolloweeId(authorId);
+  }
+
+  @Test
+  void 피드_등록시_팔로워가_없으면_알림을_발행하지_않는다() {
+    // given
+    UUID authorId = UUID.randomUUID();
+    UUID weatherId = UUID.randomUUID();
+
+    FeedCreateRequest request = new FeedCreateRequest(
+        authorId,
+        weatherId,
+        List.of(),
+        "오늘의 코디"
+    );
+
+    when(userRepository.existsById(authorId))
+        .thenReturn(true);
+
+    when(weatherRepository.existsById(weatherId))
+        .thenReturn(true);
+
+    when(feedRepository.save(any(Feed.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    // when
+    feedService.create(request);
+
+    // then
+    verify(feedRepository).save(any(Feed.class));
+
+    verify(followRepository).findFollowerIdsByFolloweeId(authorId);
+
+    verifyNoInteractions(outboxEventPublisher);
   }
 }
