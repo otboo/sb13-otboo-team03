@@ -11,8 +11,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -76,6 +80,67 @@ class NotificationKafkaConsumerServiceTest {
 
         verify(notificationEventService, never()).handle(event);
         verifyNoInteractions(sseConnectionManager);
+    }
+
+    @Test
+    void 알림이_생성되지_않으면_SSE로_전달하지_않는다() {
+        NotificationKafkaConsumerService service = newService();
+        NotificationEvent event = event();
+        when(processedEventService.tryMarkProcessed(
+                NotificationKafkaConsumerService.CONSUMER_NAME,
+                event.eventId()
+        )).thenReturn(true);
+        when(notificationEventService.handle(event)).thenReturn(Optional.empty());
+
+        service.process(event);
+
+        verify(notificationEventService).handle(event);
+        verifyNoInteractions(sseConnectionManager);
+    }
+
+    @Test
+    void 트랜잭션이_커밋된_후_SSE로_전달한다() {
+        NotificationKafkaConsumerService service = newService();
+        NotificationEvent event = event();
+        NotificationDto notification = notification(event);
+        when(processedEventService.tryMarkProcessed(
+                NotificationKafkaConsumerService.CONSUMER_NAME,
+                event.eventId()
+        )).thenReturn(true);
+        when(notificationEventService.handle(event)).thenReturn(Optional.of(notification));
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.process(event);
+
+            verifyNoInteractions(sseConnectionManager);
+            List<TransactionSynchronization> synchronizations =
+                    TransactionSynchronizationManager.getSynchronizations();
+            synchronizations.forEach(TransactionSynchronization::afterCommit);
+
+            verify(sseConnectionManager).send(event.receiverId(), notification);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    private NotificationKafkaConsumerService newService() {
+        return new NotificationKafkaConsumerService(
+                processedEventService,
+                notificationEventService,
+                sseConnectionManager
+        );
+    }
+
+    private NotificationDto notification(NotificationEvent event) {
+        return new NotificationDto(
+                UUID.randomUUID(),
+                Instant.now(),
+                event.receiverId(),
+                "새 메시지",
+                "내용",
+                com.otboo.team03.notification.entity.NotificationLevel.INFO
+        );
     }
 
     private NotificationEvent event() {

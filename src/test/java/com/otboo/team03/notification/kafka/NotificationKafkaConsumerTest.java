@@ -7,6 +7,9 @@ import com.otboo.team03.notification.outbox.relay.OutboxKafkaMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import tools.jackson.databind.JsonNode;
@@ -14,6 +17,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
@@ -135,6 +139,33 @@ class NotificationKafkaConsumerTest {
     }
 
     @Test
+    void envelope가_null이면_처리하지_않는다() throws Exception {
+        when(objectMapper.readValue(MESSAGE, OutboxKafkaMessage.class)).thenReturn(null);
+
+        assertThatThrownBy(() -> consumer.consume(MESSAGE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Kafka 알림 이벤트 처리에 실패했습니다.");
+
+        verifyNoInteractions(consumerService);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidEnvelopeProvider")
+    void envelope의_각_필수값이_누락되면_처리하지_않는다(
+            String description,
+            OutboxKafkaMessage invalidEnvelope
+    ) throws Exception {
+        when(objectMapper.readValue(MESSAGE, OutboxKafkaMessage.class))
+                .thenReturn(invalidEnvelope);
+
+        assertThatThrownBy(() -> consumer.consume(MESSAGE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Kafka 알림 이벤트 처리에 실패했습니다.");
+
+        verifyNoInteractions(consumerService);
+    }
+
+    @Test
     void payload가_없으면_처리하지_않는다() throws Exception {
         when(objectMapper.readValue(MESSAGE, OutboxKafkaMessage.class))
                 .thenReturn(new OutboxKafkaMessage(
@@ -171,6 +202,38 @@ class NotificationKafkaConsumerTest {
         JsonNode payload = mock(JsonNode.class);
         when(objectMapper.readValue(MESSAGE, OutboxKafkaMessage.class))
                 .thenReturn(envelopeFor(invalidEvent, payload));
+        when(objectMapper.treeToValue(payload, NotificationEvent.class)).thenReturn(invalidEvent);
+
+        assertThatThrownBy(() -> consumer.consume(MESSAGE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Kafka 알림 이벤트 처리에 실패했습니다.");
+
+        verifyNoInteractions(consumerService);
+    }
+
+    @Test
+    void 변환된_알림_이벤트가_null이면_처리하지_않는다() throws Exception {
+        JsonNode payload = mock(JsonNode.class);
+        OutboxKafkaMessage envelope = validEnvelope(payload);
+        when(objectMapper.readValue(MESSAGE, OutboxKafkaMessage.class)).thenReturn(envelope);
+        when(objectMapper.treeToValue(payload, NotificationEvent.class)).thenReturn(null);
+
+        assertThatThrownBy(() -> consumer.consume(MESSAGE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Kafka 알림 이벤트 처리에 실패했습니다.");
+
+        verifyNoInteractions(consumerService);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidEventProvider")
+    void 알림_이벤트의_각_필수값이_누락되면_처리하지_않는다(
+            String description,
+            NotificationEvent invalidEvent
+    ) throws Exception {
+        JsonNode payload = mock(JsonNode.class);
+        when(objectMapper.readValue(MESSAGE, OutboxKafkaMessage.class))
+                .thenReturn(validEnvelope(payload));
         when(objectMapper.treeToValue(payload, NotificationEvent.class)).thenReturn(invalidEvent);
 
         assertThatThrownBy(() -> consumer.consume(MESSAGE))
@@ -222,6 +285,101 @@ class NotificationKafkaConsumerTest {
                 .hasMessage("Kafka 알림 이벤트 처리에 실패했습니다.");
 
         verifyNoInteractions(consumerService);
+    }
+
+    @Test
+    void envelope과_payload의_schemaVersion이_다르면_처리하지_않는다() throws Exception {
+        NotificationEvent event = event();
+        JsonNode payload = mock(JsonNode.class);
+        OutboxKafkaMessage envelope = new OutboxKafkaMessage(
+                event.eventId(),
+                event.eventType().name(),
+                (short) (event.schemaVersion() + 1),
+                event.occurredAt(),
+                event.aggregateId(),
+                payload
+        );
+        when(objectMapper.readValue(MESSAGE, OutboxKafkaMessage.class)).thenReturn(envelope);
+        when(objectMapper.treeToValue(payload, NotificationEvent.class)).thenReturn(event);
+
+        assertThatThrownBy(() -> consumer.consume(MESSAGE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Kafka 알림 이벤트 처리에 실패했습니다.");
+
+        verifyNoInteractions(consumerService);
+    }
+
+    private static Stream<Arguments> invalidEnvelopeProvider() {
+        UUID eventId = UUID.randomUUID();
+        String eventType = NotificationEventType.DIRECT_MESSAGE_RECEIVED.name();
+        Instant occurredAt = Instant.parse("2026-11-18T00:00:00Z");
+        UUID aggregateId = UUID.randomUUID();
+        JsonNode payload = mock(JsonNode.class);
+
+        return Stream.of(
+                Arguments.of("eventId 누락", new OutboxKafkaMessage(
+                        null, eventType, (short) 1, occurredAt, aggregateId, payload
+                )),
+                Arguments.of("eventType 누락", new OutboxKafkaMessage(
+                        eventId, null, (short) 1, occurredAt, aggregateId, payload
+                )),
+                Arguments.of("occurredAt 누락", new OutboxKafkaMessage(
+                        eventId, eventType, (short) 1, null, aggregateId, payload
+                )),
+                Arguments.of("aggregateId 누락", new OutboxKafkaMessage(
+                        eventId, eventType, (short) 1, occurredAt, null, payload
+                )),
+                Arguments.of("payload 누락", new OutboxKafkaMessage(
+                        eventId, eventType, (short) 1, occurredAt, aggregateId, null
+                ))
+        );
+    }
+
+    private static Stream<Arguments> invalidEventProvider() {
+        NotificationEvent validEvent = new NotificationKafkaConsumerTest().event();
+
+        return Stream.of(
+                Arguments.of("eventId 누락", new NotificationEvent(
+                        null, validEvent.eventType(), validEvent.schemaVersion(), validEvent.occurredAt(),
+                        validEvent.aggregateId(), validEvent.receiverId(), validEvent.actorId(), validEvent.relatedId(),
+                        validEvent.title(), validEvent.content(), validEvent.level()
+                )),
+                Arguments.of("eventType 누락", new NotificationEvent(
+                        validEvent.eventId(), null, validEvent.schemaVersion(), validEvent.occurredAt(),
+                        validEvent.aggregateId(), validEvent.receiverId(), validEvent.actorId(), validEvent.relatedId(),
+                        validEvent.title(), validEvent.content(), validEvent.level()
+                )),
+                Arguments.of("occurredAt 누락", new NotificationEvent(
+                        validEvent.eventId(), validEvent.eventType(), validEvent.schemaVersion(), null,
+                        validEvent.aggregateId(), validEvent.receiverId(), validEvent.actorId(), validEvent.relatedId(),
+                        validEvent.title(), validEvent.content(), validEvent.level()
+                )),
+                Arguments.of("receiverId 누락", new NotificationEvent(
+                        validEvent.eventId(), validEvent.eventType(), validEvent.schemaVersion(), validEvent.occurredAt(),
+                        validEvent.aggregateId(), null, validEvent.actorId(), validEvent.relatedId(), validEvent.title(),
+                        validEvent.content(), validEvent.level()
+                )),
+                Arguments.of("title 누락", new NotificationEvent(
+                        validEvent.eventId(), validEvent.eventType(), validEvent.schemaVersion(), validEvent.occurredAt(),
+                        validEvent.aggregateId(), validEvent.receiverId(), validEvent.actorId(), validEvent.relatedId(), null,
+                        validEvent.content(), validEvent.level()
+                )),
+                Arguments.of("content 누락", new NotificationEvent(
+                        validEvent.eventId(), validEvent.eventType(), validEvent.schemaVersion(), validEvent.occurredAt(),
+                        validEvent.aggregateId(), validEvent.receiverId(), validEvent.actorId(), validEvent.relatedId(),
+                        validEvent.title(), null, validEvent.level()
+                )),
+                Arguments.of("level 누락", new NotificationEvent(
+                        validEvent.eventId(), validEvent.eventType(), validEvent.schemaVersion(), validEvent.occurredAt(),
+                        validEvent.aggregateId(), validEvent.receiverId(), validEvent.actorId(), validEvent.relatedId(),
+                        validEvent.title(), validEvent.content(), null
+                ))
+        );
+    }
+
+    private OutboxKafkaMessage validEnvelope(JsonNode payload) {
+        NotificationEvent event = event();
+        return envelopeFor(event, payload);
     }
 
     private OutboxKafkaMessage envelopeFor(NotificationEvent event, JsonNode payload) {
