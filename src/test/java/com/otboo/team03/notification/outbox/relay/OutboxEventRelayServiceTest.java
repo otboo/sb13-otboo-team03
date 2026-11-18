@@ -201,6 +201,7 @@ class OutboxEventRelayServiceTest {
                 UUID.randomUUID(),
                 UUID.randomUUID().toString(),
                 objectMapper.readTree("{\"content\":\"test\"}"),
+                Instant.now(),
                 Instant.now()
         );
     }
