@@ -1,5 +1,8 @@
 package com.otboo.team03.feed.integration;
 
+import com.otboo.team03.clothes.entity.Clothes;
+import com.otboo.team03.clothes.entity.ClothesType;
+import com.otboo.team03.clothes.repository.ClothesRepository;
 import com.otboo.team03.feed.dto.request.CommentCreateRequest;
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
 import com.otboo.team03.feed.dto.response.FeedDto;
@@ -55,6 +58,9 @@ class FeedNotificationOutboxIntegrationTest extends PostgresTestSupport {
 
   @Autowired
   private PlatformTransactionManager transactionManager;
+
+  @Autowired
+  private ClothesRepository clothesRepository;
 
   @Test
   void 피드_좋아요는_Outbox에_한번만_저장된다() {
@@ -440,6 +446,214 @@ class FeedNotificationOutboxIntegrationTest extends PostgresTestSupport {
         () -> assertEquals(title, event.get("title")),
         () -> assertEquals(content, event.get("content")),
         () -> assertEquals("INFO", event.get("level"))
+    );
+  }
+
+  @Test
+  void 피드_댓글_트랜잭션이_롤백되면_Outbox도_롤백된다() {
+    // given
+    AtomicReference<UUID> feedIdHolder = new AtomicReference<>();
+
+    TransactionTemplate transactionTemplate =
+        new TransactionTemplate(transactionManager);
+
+    transactionTemplate.setPropagationBehavior(
+        TransactionDefinition.PROPAGATION_REQUIRES_NEW
+    );
+
+    // when
+    transactionTemplate.executeWithoutResult(status -> {
+      User author = createUser("피드 작성자");
+      User commenter = createUser("댓글 작성자");
+
+      UUID weatherId = createWeather();
+      Feed feed = createFeed(author.getId(), weatherId);
+
+      feedIdHolder.set(feed.getId());
+
+      CommentCreateRequest request = new CommentCreateRequest(
+          feed.getId(),
+          commenter.getId(),
+          "좋은 코디네요!"
+      );
+
+      feedService.createComment(
+          feed.getId(),
+          commenter.getId(),
+          request
+      );
+
+      entityManager.flush();
+
+      Long commentCount = jdbcTemplate.queryForObject(
+          """
+          SELECT COUNT(*)
+          FROM feed_comments
+          WHERE feed_id = ?
+          """,
+          Long.class,
+          feed.getId()
+      );
+
+      assertEquals(1L, commentCount);
+
+      assertEquals(
+          1,
+          findOutboxEvents(feed.getId(), "FEED_COMMENTED").size()
+      );
+
+      status.setRollbackOnly();
+    });
+
+    UUID feedId = feedIdHolder.get();
+
+    Long commentCount = jdbcTemplate.queryForObject(
+        """
+        SELECT COUNT(*)
+        FROM feed_comments
+        WHERE feed_id = ?
+        """,
+        Long.class,
+        feedId
+    );
+
+    List<Map<String, Object>> events = findOutboxEvents(
+        feedId,
+        "FEED_COMMENTED"
+    );
+
+    // then
+    assertAll(
+        () -> assertNotNull(feedId),
+        () -> assertEquals(0L, commentCount),
+        () -> assertTrue(events.isEmpty())
+    );
+  }
+
+  @Test
+  void 피드_등록_트랜잭션이_롤백되면_의상_연결과_Outbox도_롤백된다() {
+    // given
+    AtomicReference<UUID> feedIdHolder = new AtomicReference<>();
+
+    TransactionTemplate transactionTemplate =
+        new TransactionTemplate(transactionManager);
+
+    transactionTemplate.setPropagationBehavior(
+        TransactionDefinition.PROPAGATION_REQUIRES_NEW
+    );
+
+    // when
+    transactionTemplate.executeWithoutResult(status -> {
+      User author = createUser("피드 작성자");
+      User firstFollower = createUser("첫 번째 팔로워");
+      User secondFollower = createUser("두 번째 팔로워");
+
+      UUID weatherId = createWeather();
+
+      Clothes clothes = clothesRepository.saveAndFlush(
+          new Clothes(
+              "흰색 티셔츠",
+              ClothesType.TOP,
+              null,
+              author
+          )
+      );
+
+      followRepository.saveAndFlush(
+          new Follow(
+              firstFollower.getId(),
+              author.getId()
+          )
+      );
+
+      followRepository.saveAndFlush(
+          new Follow(
+              secondFollower.getId(),
+              author.getId()
+          )
+      );
+
+      FeedCreateRequest request = new FeedCreateRequest(
+          author.getId(),
+          weatherId,
+          List.of(clothes.getId()),
+          "오늘의 코디"
+      );
+
+      FeedDto result = feedService.create(request);
+
+      feedIdHolder.set(result.id());
+
+      entityManager.flush();
+
+      Long feedCount = jdbcTemplate.queryForObject(
+          """
+          SELECT COUNT(*)
+          FROM feeds
+          WHERE id = ?
+          """,
+          Long.class,
+          result.id()
+      );
+
+      Long feedClothesCount = jdbcTemplate.queryForObject(
+          """
+          SELECT COUNT(*)
+          FROM feed_clothes
+          WHERE feed_id = ?
+          """,
+          Long.class,
+          result.id()
+      );
+
+      assertAll(
+          () -> assertEquals(1L, feedCount),
+          () -> assertEquals(1L, feedClothesCount),
+          () -> assertEquals(
+              2,
+              findOutboxEvents(
+                  result.id(),
+                  "FOLLOWING_USER_FEED_CREATED"
+              ).size()
+          )
+      );
+
+      status.setRollbackOnly();
+    });
+
+    UUID feedId = feedIdHolder.get();
+
+    Long feedCount = jdbcTemplate.queryForObject(
+        """
+        SELECT COUNT(*)
+        FROM feeds
+        WHERE id = ?
+        """,
+        Long.class,
+        feedId
+    );
+
+    Long feedClothesCount = jdbcTemplate.queryForObject(
+        """
+        SELECT COUNT(*)
+        FROM feed_clothes
+        WHERE feed_id = ?
+        """,
+        Long.class,
+        feedId
+    );
+
+    List<Map<String, Object>> events = findOutboxEvents(
+        feedId,
+        "FOLLOWING_USER_FEED_CREATED"
+    );
+
+    // then
+    assertAll(
+        () -> assertNotNull(feedId),
+        () -> assertEquals(0L, feedCount),
+        () -> assertEquals(0L, feedClothesCount),
+        () -> assertTrue(events.isEmpty())
     );
   }
 }
