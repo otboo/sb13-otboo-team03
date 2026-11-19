@@ -25,4 +25,8 @@ public interface WeatherRepository extends JpaRepository<Weather, UUID> {
   List<Weather> findAllByLatitudeAndLongitudeAndForecastAtBetweenOrderByForecastAtAsc(
       Double latitude, Double longitude, Instant start, Instant end
   );
+
+  // 동일 좌표 및 동일 예보 대상 시각의 데이터 존재 여부 확인 (중복 적재 방지용)
+  boolean existsByLatitudeAndLongitudeAndForecastAt(Double latitude, Double longitude, Instant forecastAt);
+
 }
