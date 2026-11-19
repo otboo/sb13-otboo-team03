@@ -70,7 +70,9 @@ class OpenWeatherMapperTest {
       "600, CLOUDY, SNOW",            // 눈
       "611, CLOUDY, RAIN_SNOW",       // 진눈깨비
       "615, CLOUDY, RAIN_SNOW",       // 비+눈 (진눈깨비)
-      "701, CLOUDY, NONE"             // 안개
+      "701, CLOUDY, NONE",            // 안개
+      "100, CLOUDY, NONE",            // 200 미만 예외 코드 (code >= 200 거짓 분기 커버)
+      "620, CLOUDY, SNOW"             // 616 초과 일반 눈 코드 (code <= 616 거짓 분기 커버)
   })
 
   @DisplayName("Weather Condition Code에 따라 하늘상태와 강수형태가 정확히 추론된다")
@@ -152,6 +154,7 @@ class OpenWeatherMapperTest {
   void toWeatherEntities_nullSafetyBranches() {
     // 1. response.list()가 null인 경우
     assertThat(mapper.toWeatherEntities(new OpenWeatherForecastResponse("200", 0, 0, null, null), 37.5665, 126.9780)).isEmpty();
+
     // 2. rain 객체는 있으나 threeHour가 null인 경우 & pop이 null인 경우
     ForecastItem item = new ForecastItem(
         1731900000L,
@@ -163,8 +166,37 @@ class OpenWeatherMapperTest {
         null
     );
     List<Weather> weathers = mapper.toWeatherEntities(new OpenWeatherForecastResponse("200", 0, 1, List.of(item), null), 37.5665, 126.9780);
+
     assertThat(weathers.get(0).getPrecipitationProbability()).isEqualTo(0.0);
     assertThat(weathers.get(0).getPrecipitationAmount()).isEqualTo(0.0);
+  }
+
+  @Test
+  @DisplayName("세부 객체의 내부 수치(temp, humidity, speed, snow threeHour) 및 weather가 null이어도 안전하게 0.0으로 매핑된다")
+  void toWeatherEntities_innerNullValues_handledSafely() {
+    // weather == null, main/wind/snow 내부 수치가 null인 케이스
+    ForecastItem item = new ForecastItem(
+        1731900000L,
+        new Main(null, null), // temp, humidity null
+        null,                 // weather null
+        new Wind(null),       // speed null
+        null,
+        null,
+        new OpenWeatherForecastResponse.Snow(null) // snow threeHour null
+    );
+    OpenWeatherForecastResponse response = new OpenWeatherForecastResponse("200", 0, 1, List.of(item), null);
+
+    List<Weather> weathers = mapper.toWeatherEntities(response, 37.5665, 126.9780);
+
+    assertThat(weathers).hasSize(1);
+    Weather weather = weathers.get(0);
+
+    assertThat(weather.getTemperature()).isEqualTo(0.0);
+    assertThat(weather.getHumidity()).isEqualTo(0.0);
+    assertThat(weather.getWindSpeed()).isEqualTo(0.0);
+    assertThat(weather.getPrecipitationAmount()).isEqualTo(0.0);
+    assertThat(weather.getSkyStatus()).isEqualTo(SkyStatus.CLEAR);
+    assertThat(weather.getPrecipitationType()).isEqualTo(PrecipitationType.NONE);
   }
 
 
