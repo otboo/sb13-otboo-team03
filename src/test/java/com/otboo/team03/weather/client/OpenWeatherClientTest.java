@@ -104,5 +104,12 @@ class OpenWeatherClientTest {
     mockServer.verify();
   }
 
+  @Test
+  @DisplayName("RestClient.Builder가 null이어도 기본 빌더로 정상 인스턴스화된다")
+  void constructor_withNullBuilder_success() {
+    OpenWeatherClient defaultClient = new OpenWeatherClient(null, new OpenWeatherMapper(), "https://api.openweathermap.org", "key");
+    assertThat(defaultClient).isNotNull();
+  }
+
 
 }

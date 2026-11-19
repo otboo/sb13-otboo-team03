@@ -59,12 +59,17 @@ class OpenWeatherMapperTest {
   @CsvSource({
       "800, CLEAR, NONE",             // 맑음
       "801, MOSTLY_CLOUDY, NONE",     // 구름 조금
+      "802, MOSTLY_CLOUDY, NONE",     // 구름 보통
+      "803, CLOUDY, NONE",            // 구름 흐림
       "804, CLOUDY, NONE",            // 흐림
+      "200, CLOUDY, RAIN",            // 뇌우 (비)
+      "300, CLOUDY, RAIN",            // 이슬비
       "500, CLOUDY, RAIN",            // 보통 비
       "511, CLOUDY, RAIN_SNOW",       // 어는 비
       "520, CLOUDY, SHOWER",          // 소나기
       "600, CLOUDY, SNOW",            // 눈
       "611, CLOUDY, RAIN_SNOW",       // 진눈깨비
+      "615, CLOUDY, RAIN_SNOW",       // 비+눈 (진눈깨비)
       "701, CLOUDY, NONE"             // 안개
   })
 
@@ -140,6 +145,26 @@ class OpenWeatherMapperTest {
     assertThat(weather.getHumidity()).isEqualTo(0.0);
     assertThat(weather.getWindSpeed()).isEqualTo(0.0);
     assertThat(weather.getPrecipitationProbability()).isEqualTo(0.0);
+  }
+
+  @Test
+  @DisplayName("세부 수치(pop, rain/snow 수치)가 null이거나 list가 null이어도 안전하게 기본값으로 매핑된다")
+  void toWeatherEntities_nullSafetyBranches() {
+    // 1. response.list()가 null인 경우
+    assertThat(mapper.toWeatherEntities(new OpenWeatherForecastResponse("200", 0, 0, null, null), 37.5665, 126.9780)).isEmpty();
+    // 2. rain 객체는 있으나 threeHour가 null인 경우 & pop이 null인 경우
+    ForecastItem item = new ForecastItem(
+        1731900000L,
+        new Main(15.0, 50.0),
+        List.of(new WeatherCondition(500, "Rain", "rain")),
+        new Wind(1.0),
+        null, // pop == null -> 0.0
+        new Rain(null), // threeHour == null -> 0.0
+        null
+    );
+    List<Weather> weathers = mapper.toWeatherEntities(new OpenWeatherForecastResponse("200", 0, 1, List.of(item), null), 37.5665, 126.9780);
+    assertThat(weathers.get(0).getPrecipitationProbability()).isEqualTo(0.0);
+    assertThat(weathers.get(0).getPrecipitationAmount()).isEqualTo(0.0);
   }
 
 
