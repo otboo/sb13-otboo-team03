@@ -228,9 +228,10 @@ public class FeedService {
       UUID authorId,
       CommentCreateRequest request
   ) {
-    if (!feedRepository.existsById(feedId)) {
-      throw new OtbooException(ErrorCode.NOT_FOUND_RESOURCE);
-    }
+    Feed feed = feedRepository.findById(feedId)
+        .orElseThrow(
+            () -> new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
+        );
 
     if (request == null
         || request.feedId() == null
@@ -255,11 +256,6 @@ public class FeedService {
     );
 
     FeedComment savedComment = feedCommentRepository.save(comment);
-
-    Feed feed = feedRepository.findById(feedId)
-        .orElseThrow(
-            () -> new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
-        );
 
     UUID feedAuthorId = feed.getAuthorId();
 

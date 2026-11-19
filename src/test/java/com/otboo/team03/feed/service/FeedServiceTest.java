@@ -784,9 +784,6 @@ class FeedServiceTest {
         "좋은 코디네요!"
     );
 
-    when(feedRepository.existsById(feedId))
-        .thenReturn(true);
-
     when(feedRepository.findById(feedId))
         .thenReturn(Optional.of(feed));
 
@@ -797,7 +794,8 @@ class FeedServiceTest {
     feedService.createComment(feedId, authorId, request);
 
     // then
-    verify(feedRepository).existsById(feedId);
+    verify(feedRepository).findById(feedId);
+    verifyNoMoreInteractions(feedRepository);
 
     verify(feedCommentRepository).save(argThat(
         comment -> feedId.equals(comment.getFeedId())
@@ -818,14 +816,20 @@ class FeedServiceTest {
     UUID feedId = UUID.randomUUID();
     UUID authorId = UUID.randomUUID();
 
+    Feed feed = new Feed(
+        UUID.randomUUID(),
+        UUID.randomUUID(),
+        "오늘의 코디"
+    );
+
     CommentCreateRequest request = new CommentCreateRequest(
         feedId,
         authorId,
         "   "
     );
 
-    when(feedRepository.existsById(feedId))
-        .thenReturn(true);
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
 
     // when
     OtbooException exception = assertThrows(
@@ -850,14 +854,20 @@ class FeedServiceTest {
     UUID otherFeedId = UUID.randomUUID();
     UUID authorId = UUID.randomUUID();
 
+    Feed feed = new Feed(
+        UUID.randomUUID(),
+        UUID.randomUUID(),
+        "오늘의 코디"
+    );
+
     CommentCreateRequest request = new CommentCreateRequest(
         otherFeedId,
         authorId,
         "좋은 코디네요!"
     );
 
-    when(feedRepository.existsById(feedId))
-        .thenReturn(true);
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
 
     // when
     OtbooException exception = assertThrows(
@@ -882,14 +892,20 @@ class FeedServiceTest {
     UUID authorId = UUID.randomUUID();
     UUID otherAuthorId = UUID.randomUUID();
 
+    Feed feed = new Feed(
+        UUID.randomUUID(),
+        UUID.randomUUID(),
+        "오늘의 코디"
+    );
+
     CommentCreateRequest request = new CommentCreateRequest(
         feedId,
         otherAuthorId,
         "좋은 코디네요!"
     );
 
-    when(feedRepository.existsById(feedId))
-        .thenReturn(true);
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
 
     // when
     OtbooException exception = assertThrows(
@@ -937,9 +953,6 @@ class FeedServiceTest {
         ),
         "좋은 코디네요!"
     );
-
-    when(feedRepository.existsById(feedId))
-        .thenReturn(true);
 
     when(feedRepository.findById(feedId))
         .thenReturn(Optional.of(feed));
@@ -1582,9 +1595,6 @@ class FeedServiceTest {
         "코디가 정말 예쁘네요!"
     );
 
-    when(feedRepository.existsById(feedId))
-        .thenReturn(true);
-
     when(feedRepository.findById(feedId))
         .thenReturn(Optional.of(feed));
 
@@ -1779,8 +1789,8 @@ class FeedServiceTest {
         "좋은 코디네요!"
     );
 
-    when(feedRepository.existsById(feedId))
-        .thenReturn(false);
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.empty());
 
     // when
     OtbooException exception = assertThrows(
@@ -1946,6 +1956,12 @@ class FeedServiceTest {
     UUID feedId = UUID.randomUUID();
     UUID authorId = UUID.randomUUID();
 
+    Feed feed = new Feed(
+        UUID.randomUUID(),
+        UUID.randomUUID(),
+        "오늘의 코디"
+    );
+
     CommentCreateRequest request = new CommentCreateRequest(
         feedId,
         authorId,
@@ -1955,8 +1971,8 @@ class FeedServiceTest {
     DataIntegrityViolationException failure =
         new DataIntegrityViolationException("댓글 저장 실패");
 
-    when(feedRepository.existsById(feedId))
-        .thenReturn(true);
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
 
     when(feedCommentRepository.save(any(FeedComment.class)))
         .thenThrow(failure);
