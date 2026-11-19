@@ -72,6 +72,10 @@ otboo:
     default-ttl: 5m
     ttls: { }
 
+  redis:
+    notification-channel: ${REDIS_NOTIFICATION_CHANNEL:otboo:notifications}
+    direct-message-channel: ${REDIS_DIRECT_MESSAGE_CHANNEL:otboo:direct-messages}
+
   outbox:
     relay:
       fixed-delay: ${OUTBOX_RELAY_FIXED_DELAY:PT5S}

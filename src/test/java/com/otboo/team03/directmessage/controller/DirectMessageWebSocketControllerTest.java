@@ -1,7 +1,6 @@
 package com.otboo.team03.directmessage.controller;
 
 import com.otboo.team03.directmessage.dto.request.DirectMessageCreateRequest;
-import com.otboo.team03.directmessage.dto.response.DirectMessageDto;
 import com.otboo.team03.directmessage.service.DirectMessageService;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.global.security.OtbooUserDetails;
@@ -12,7 +11,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 
@@ -30,9 +28,6 @@ class DirectMessageWebSocketControllerTest {
     @Mock
     private DirectMessageService directMessageService;
 
-    @Mock
-    private SimpMessagingTemplate messagingTemplate;
-
     @InjectMocks
     private DirectMessageWebSocketController controller;
 
@@ -44,25 +39,9 @@ class DirectMessageWebSocketControllerTest {
                 receiverId,
                 "메시지"
         );
-        DirectMessageDto response = new DirectMessageDto(
-                UUID.randomUUID(),
-                Instant.parse("2026-01-01T00:00:00Z"),
-                "dm-key",
-                senderId,
-                receiverId,
-                "메시지"
-        );
-        when(directMessageService.send(senderId, receiverId, "메시지"))
-                .thenReturn(response);
-
         controller.send(request, authentication(senderId));
 
         verify(directMessageService).send(senderId, receiverId, "메시지");
-        verify(messagingTemplate).convertAndSend(
-                eq("/sub/direct-messages_" + com.otboo.team03.directmessage.entity.DirectMessage
-                        .createDmKey(senderId, receiverId)),
-                eq(response)
-        );
     }
 
     @Test
