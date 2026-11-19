@@ -34,11 +34,22 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
 
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/otboo_test
       SPRING_DATASOURCE_USERNAME: otboo_test
       SPRING_DATASOURCE_PASSWORD: ci_test_password
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
 
       # JWT 테스트 환경 설정
       JWT_SECRET: otboo-ci-test-secret-key-12345678901234567890
