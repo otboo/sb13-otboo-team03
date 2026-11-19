@@ -96,4 +96,25 @@ public class Weather extends UpdateEntity {
     this.windSpeed = Objects.requireNonNull(windSpeed, "windSpeed는 필수입니다.");
   }
 
+  // 최신 예보 데이터로 갱신
+  public void updateForecast(
+      Instant forecastedAt,
+      SkyStatus skyStatus,
+      PrecipitationType precipitationType,
+      Double precipitationAmount,
+      Double precipitationProbability,
+      Double temperature,
+      Double humidity,
+      Double windSpeed
+  ) {
+    this.forecastedAt = Objects.requireNonNull(forecastedAt, "forecastedAt은 필수입니다.");
+    this.skyStatus = Objects.requireNonNull(skyStatus, "skyStatus는 필수입니다.");
+    this.precipitationType = Objects.requireNonNull(precipitationType, "precipitationType은 필수입니다.");
+    this.precipitationAmount = Objects.requireNonNull(precipitationAmount, "precipitationAmount는 필수입니다.");
+    this.precipitationProbability = Objects.requireNonNull(precipitationProbability, "precipitationProbability는 필수입니다.");
+    this.temperature = Objects.requireNonNull(temperature, "temperature는 필수입니다.");
+    this.humidity = Objects.requireNonNull(humidity, "humidity는 필수입니다.");
+    this.windSpeed = Objects.requireNonNull(windSpeed, "windSpeed는 필수입니다.");
+  }
+
 }

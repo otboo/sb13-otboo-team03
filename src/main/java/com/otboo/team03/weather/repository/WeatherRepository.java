@@ -29,4 +29,7 @@ public interface WeatherRepository extends JpaRepository<Weather, UUID> {
   // 동일 좌표 및 동일 예보 대상 시각의 데이터 존재 여부 확인 (중복 적재 방지용)
   boolean existsByLatitudeAndLongitudeAndForecastAt(Double latitude, Double longitude, Instant forecastAt);
 
+  // 동일 좌표 및 동일 예보 대상 시각의 기존 데이터 조회 (최신 예보 갱신용)
+  Optional<Weather> findByLatitudeAndLongitudeAndForecastAt(Double latitude, Double longitude, Instant forecastAt);
+
 }
