@@ -10,6 +10,10 @@ import com.otboo.team03.follow.repository.FollowRepository;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.notification.entity.NotificationLevel;
+import com.otboo.team03.notification.event.NotificationEvent;
+import com.otboo.team03.notification.event.NotificationEventType;
+import com.otboo.team03.notification.outbox.service.OutboxEventPublisher;
 import com.otboo.team03.user.repository.UserRepository;
 import java.sql.SQLException;
 import java.time.Instant;
@@ -44,6 +48,9 @@ class FollowServiceTest {
 
   @InjectMocks
   private FollowService followService;
+
+  @Mock
+  private OutboxEventPublisher outboxEventPublisher;
 
   @Test
   void 로그인_사용자와_팔로워_ID가_다르면_팔로우를_생성할_수_없다() {
@@ -81,6 +88,9 @@ class FollowServiceTest {
 
     when(userRepository.existsById(followeeId))
         .thenReturn(true);
+
+    when(followRepository.save(any(Follow.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
 
     // when
     followService.create(followerId, request);
@@ -132,6 +142,9 @@ class FollowServiceTest {
 
     when(followRepository.save(any(Follow.class)))
         .thenReturn(savedFollow);
+
+    when(savedFollow.getId())
+        .thenReturn(followId);
 
     when(followDtoAssembler.toDto(savedFollow))
         .thenReturn(expectedResponse);
@@ -186,7 +199,7 @@ class FollowServiceTest {
     );
 
     verify(followRepository, never()).save(any(Follow.class));
-    verifyNoInteractions(followDtoAssembler);
+    verifyNoInteractions(followDtoAssembler, outboxEventPublisher);
   }
 
   @Test
@@ -243,7 +256,7 @@ class FollowServiceTest {
 
     verify(userRepository).existsById(followeeId);
     verify(followRepository, never()).save(any(Follow.class));
-    verifyNoInteractions(followDtoAssembler);
+    verifyNoInteractions(followDtoAssembler, outboxEventPublisher);
   }
 
   @Test
@@ -447,7 +460,7 @@ class FollowServiceTest {
 
     verify(followRepository).save(any(Follow.class));
     verify(followRepository).flush();
-    verifyNoInteractions(followDtoAssembler);
+    verifyNoInteractions(followDtoAssembler, outboxEventPublisher);
   }
 
   @Test
@@ -489,7 +502,7 @@ class FollowServiceTest {
 
     verify(followRepository).save(any(Follow.class));
     verify(followRepository).flush();
-    verifyNoInteractions(followDtoAssembler);
+    verifyNoInteractions(followDtoAssembler, outboxEventPublisher);
   }
 
   @Test
@@ -1496,6 +1509,63 @@ class FollowServiceTest {
         () -> assertFalse(result.followedByMe()),
         () -> assertNull(result.followedByMeId()),
         () -> assertFalse(result.followingMe())
+    );
+  }
+
+  @Test
+  void 팔로우_생성시_대상_사용자에게_알림_이벤트를_발행한다() {
+    // given
+    UUID followerId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+    UUID followId = UUID.randomUUID();
+
+    FollowCreateRequest request = new FollowCreateRequest(
+        followerId,
+        followeeId
+    );
+
+    Follow savedFollow = mock(Follow.class);
+
+    when(userRepository.existsById(followeeId))
+        .thenReturn(true);
+
+    when(followRepository.save(any(Follow.class)))
+        .thenReturn(savedFollow);
+
+    when(savedFollow.getId())
+        .thenReturn(followId);
+
+    // when
+    followService.create(followerId, request);
+
+    // then
+    ArgumentCaptor<NotificationEvent> eventCaptor =
+        ArgumentCaptor.forClass(NotificationEvent.class);
+
+    verify(outboxEventPublisher).publish(
+        eventCaptor.capture(),
+        eq("FOLLOW"),
+        eq(followeeId.toString())
+    );
+
+    NotificationEvent event = eventCaptor.getValue();
+
+    assertAll(
+        () -> assertNotNull(event.eventId()),
+        () -> assertEquals(
+            NotificationEventType.USER_FOLLOWED,
+            event.eventType()
+        ),
+        () -> assertEquals(
+            NotificationEvent.CURRENT_SCHEMA_VERSION,
+            event.schemaVersion()
+        ),
+        () -> assertNotNull(event.occurredAt()),
+        () -> assertEquals(followId, event.aggregateId()),
+        () -> assertEquals(followeeId, event.receiverId()),
+        () -> assertEquals(followerId, event.actorId()),
+        () -> assertEquals(followId, event.relatedId()),
+        () -> assertEquals(NotificationLevel.INFO, event.level())
     );
   }
 }

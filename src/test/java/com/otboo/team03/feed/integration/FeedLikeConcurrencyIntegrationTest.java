@@ -22,7 +22,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mockingDetails;
 
 @SpringBootTest
 class FeedLikeConcurrencyIntegrationTest extends PostgresTestSupport {
@@ -65,20 +68,21 @@ class FeedLikeConcurrencyIntegrationTest extends PostgresTestSupport {
     Timestamp now = Timestamp.from(Instant.now());
 
     jdbcTemplate.update("""
-        INSERT INTO weathers (
-            id, latitude, longitude,
-            forecasted_at, forecast_at,
-            sky_status, precipitation_type,
-            precipitation_amount, precipitation_probability,
-            temperature, humidity, wind_speed,
-            created_at, updated_at
-        ) VALUES (
-            ?, 35.2, 129.1,
-            ?, ?, 'CLEAR', 'NONE',
-            0, 0, 20, 50, 1,
-            ?, ?
-        )
-        """,
+      INSERT INTO weathers (
+          id, latitude, longitude,
+          forecasted_at, forecast_at,
+          sky_status, precipitation_type,
+          precipitation_amount, precipitation_probability,
+          temperature, humidity, wind_speed,
+          created_at, updated_at
+      ) VALUES (
+          ?, 35.2, 129.1,
+          ?, ?,
+          'CLEAR', 'NONE',
+          0, 0, 20, 50, 1,
+          ?, ?
+      )
+      """,
         weatherId, now, now, now, now
     );
 
@@ -89,19 +93,26 @@ class FeedLikeConcurrencyIntegrationTest extends PostgresTestSupport {
     UUID feedId = feed.getId();
     UUID likerId = liker.getId();
 
-    CountDownLatch bothChecked = new CountDownLatch(2);
+    CountDownLatch bothReady = new CountDownLatch(2);
     CountDownLatch start = new CountDownLatch(1);
 
     doAnswer(invocation -> {
-      bothChecked.countDown();
+      bothReady.countDown();
 
-      if (!bothChecked.await(10, TimeUnit.SECONDS)) {
-        throw new AssertionError("두 요청의 중복 검사 동기화 실패");
+      if (!bothReady.await(10, TimeUnit.SECONDS)) {
+        throw new AssertionError("두 요청의 좋아요 저장 동기화 실패");
       }
 
-      return false;
-    }).when(feedLikeRepository)
-        .existsByFeedIdAndUserId(feedId, likerId);
+      return mockingDetails(invocation.getMock())
+          .getMockCreationSettings()
+          .getDefaultAnswer()
+          .answer(invocation);
+    }).when(feedLikeRepository).insertIfAbsent(
+        any(UUID.class),
+        eq(feedId),
+        eq(likerId),
+        any(Instant.class)
+    );
 
     ExecutorService executor = Executors.newFixedThreadPool(2);
 
@@ -136,11 +147,28 @@ class FeedLikeConcurrencyIntegrationTest extends PostgresTestSupport {
           likerId
       );
 
+      Long outboxCount = jdbcTemplate.queryForObject(
+          """
+          SELECT COUNT(*)
+          FROM outbox_events
+          WHERE aggregate_id = ?
+            AND event_type = 'FEED_LIKED'
+          """,
+          Long.class,
+          feedId
+      );
+
+      assertEquals(0L, bothReady.getCount());
       assertEquals(1L, savedCount);
+      assertEquals(1L, outboxCount);
     } finally {
       executor.shutdownNow();
       executor.awaitTermination(10, TimeUnit.SECONDS);
 
+      jdbcTemplate.update(
+          "DELETE FROM outbox_events WHERE aggregate_id = ?",
+          feedId
+      );
       jdbcTemplate.update(
           "DELETE FROM feed_likes WHERE feed_id = ?", feedId
       );

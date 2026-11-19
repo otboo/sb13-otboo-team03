@@ -18,9 +18,14 @@ import com.otboo.team03.feed.repository.FeedLikeRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedSearchQueryRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
+import com.otboo.team03.follow.repository.FollowRepository;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.notification.entity.NotificationLevel;
+import com.otboo.team03.notification.event.NotificationEvent;
+import com.otboo.team03.notification.event.NotificationEventType;
+import com.otboo.team03.notification.outbox.service.OutboxEventPublisher;
 import com.otboo.team03.user.repository.UserRepository;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -48,6 +53,8 @@ public class FeedService {
   private final FeedSearchQueryRepository feedSearchQueryRepository;
   private final FeedLikeRepository feedLikeRepository;
   private final FeedCommentRepository feedCommentRepository;
+  private final OutboxEventPublisher outboxEventPublisher;
+  private final FollowRepository followRepository;
 
   @Transactional
   public FeedDto create(FeedCreateRequest request) {
@@ -90,6 +97,21 @@ public class FeedService {
     for (Clothes item : clothes) {
       feedClothesRepository.save(
           new FeedClothes(savedFeed, item)
+      );
+    }
+
+    List<UUID> followerIds = followRepository.findFollowerIdsByFolloweeId(
+        request.authorId()
+    );
+
+    for (UUID followerId : followerIds) {
+      publishFeedNotification(
+          NotificationEventType.FOLLOWING_USER_FEED_CREATED,
+          savedFeed.getId(),
+          followerId,
+          request.authorId(),
+          "새로운 피드",
+          "팔로우한 사용자가 새 피드를 올렸습니다."
       );
     }
 
@@ -145,15 +167,29 @@ public class FeedService {
 
   @Transactional
   public void like(UUID feedId, UUID userId) {
-    if (!feedRepository.existsById(feedId)) {
-      throw new OtbooException(ErrorCode.NOT_FOUND_RESOURCE);
-    }
+    Feed feed = feedRepository.findById(feedId)
+        .orElseThrow(
+            () -> new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
+        );
 
-    feedLikeRepository.insertIfAbsent(
+    int inserted = feedLikeRepository.insertIfAbsent(
         UUID.randomUUID(),
         feedId,
         userId,
         Instant.now()
+    );
+
+    if (inserted == 0) {
+      return;
+    }
+
+    publishFeedNotification(
+        NotificationEventType.FEED_LIKED,
+        feedId,
+        feed.getAuthorId(),
+        userId,
+        "새로운 좋아요",
+        "누군가 회원님의 피드에 좋아요를 눌렀습니다."
     );
   }
 
@@ -172,9 +208,10 @@ public class FeedService {
       UUID authorId,
       CommentCreateRequest request
   ) {
-    if (!feedRepository.existsById(feedId)) {
-      throw new OtbooException(ErrorCode.NOT_FOUND_RESOURCE);
-    }
+    Feed feed = feedRepository.findById(feedId)
+        .orElseThrow(
+            () -> new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
+        );
 
     if (request == null
         || request.feedId() == null
@@ -200,7 +237,43 @@ public class FeedService {
 
     FeedComment savedComment = feedCommentRepository.save(comment);
 
+    publishFeedNotification(
+        NotificationEventType.FEED_COMMENTED,
+        feedId,
+        feed.getAuthorId(),
+        authorId,
+        "새로운 댓글",
+        "누군가 회원님의 피드에 댓글을 남겼습니다."
+    );
+
     return feedDtoAssembler.toCommentDto(savedComment);
+  }
+
+  private void publishFeedNotification(
+      NotificationEventType eventType,
+      UUID feedId,
+      UUID receiverId,
+      UUID actorId,
+      String title,
+      String content
+  ) {
+    outboxEventPublisher.publish(
+        new NotificationEvent(
+            UUID.randomUUID(),
+            eventType,
+            NotificationEvent.CURRENT_SCHEMA_VERSION,
+            Instant.now(),
+            feedId,
+            receiverId,
+            actorId,
+            feedId,
+            title,
+            content,
+            NotificationLevel.INFO
+        ),
+        "FEED",
+        receiverId.toString()
+    );
   }
 
   @Transactional(readOnly = true)
