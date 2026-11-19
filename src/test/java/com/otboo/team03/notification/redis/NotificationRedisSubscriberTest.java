@@ -82,6 +82,60 @@ class NotificationRedisSubscriberTest {
         verifyNoInteractions(sseConnectionManager);
     }
 
+    @Test
+    void Redis_알림_메시지가_null이면_전달하지_않는다() throws Exception {
+        NotificationRedisSubscriber subscriber = new NotificationRedisSubscriber(
+                objectMapper,
+                sseConnectionManager
+        );
+        when(message.getBody()).thenReturn("redis-message".getBytes());
+        when(objectMapper.readValue("redis-message", NotificationRedisMessage.class))
+                .thenReturn(null);
+
+        subscriber.onMessage(message, null);
+
+        verifyNoInteractions(sseConnectionManager);
+    }
+
+    @Test
+    void 수신자_ID가_null이면_전달하지_않는다() throws Exception {
+        NotificationRedisSubscriber subscriber = new NotificationRedisSubscriber(
+                objectMapper,
+                sseConnectionManager
+        );
+        NotificationDto notification = notification();
+        NotificationRedisMessage redisMessage = new NotificationRedisMessage(
+                null,
+                notification
+        );
+        when(message.getBody()).thenReturn("redis-message".getBytes());
+        when(objectMapper.readValue("redis-message", NotificationRedisMessage.class))
+                .thenReturn(redisMessage);
+
+        subscriber.onMessage(message, null);
+
+        verifyNoInteractions(sseConnectionManager);
+    }
+
+    @Test
+    void 알림_본문이_null이면_전달하지_않는다() throws Exception {
+        NotificationRedisSubscriber subscriber = new NotificationRedisSubscriber(
+                objectMapper,
+                sseConnectionManager
+        );
+        NotificationRedisMessage redisMessage = new NotificationRedisMessage(
+                UUID.randomUUID(),
+                null
+        );
+        when(message.getBody()).thenReturn("redis-message".getBytes());
+        when(objectMapper.readValue("redis-message", NotificationRedisMessage.class))
+                .thenReturn(redisMessage);
+
+        subscriber.onMessage(message, null);
+
+        verifyNoInteractions(sseConnectionManager);
+    }
+
     private NotificationDto notification() {
         return new NotificationDto(
                 UUID.randomUUID(),

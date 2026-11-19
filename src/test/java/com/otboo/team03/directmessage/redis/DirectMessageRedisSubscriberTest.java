@@ -85,6 +85,142 @@ class DirectMessageRedisSubscriberTest {
         verifyNoInteractions(messagingTemplate);
     }
 
+    @Test
+    void Redis_DM_메시지가_null이면_전달하지_않는다() throws Exception {
+        DirectMessageRedisSubscriber subscriber = new DirectMessageRedisSubscriber(
+                objectMapper,
+                messagingTemplate
+        );
+        when(message.getBody()).thenReturn("redis-message".getBytes());
+        when(objectMapper.readValue("redis-message", DirectMessageRedisMessage.class))
+                .thenReturn(null);
+
+        subscriber.onMessage(message, null);
+
+        verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    void DM_key가_null이면_전달하지_않는다() throws Exception {
+        DirectMessageRedisSubscriber subscriber = new DirectMessageRedisSubscriber(
+                objectMapper,
+                messagingTemplate
+        );
+        DirectMessageRedisMessage redisMessage = new DirectMessageRedisMessage(
+                null,
+                directMessage()
+        );
+        when(message.getBody()).thenReturn("redis-message".getBytes());
+        when(objectMapper.readValue("redis-message", DirectMessageRedisMessage.class))
+                .thenReturn(redisMessage);
+
+        subscriber.onMessage(message, null);
+
+        verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    void DM_본문이_null이면_전달하지_않는다() throws Exception {
+        DirectMessageRedisSubscriber subscriber = new DirectMessageRedisSubscriber(
+                objectMapper,
+                messagingTemplate
+        );
+        DirectMessageRedisMessage redisMessage = new DirectMessageRedisMessage(
+                "dm-key",
+                null
+        );
+        when(message.getBody()).thenReturn("redis-message".getBytes());
+        when(objectMapper.readValue("redis-message", DirectMessageRedisMessage.class))
+                .thenReturn(redisMessage);
+
+        subscriber.onMessage(message, null);
+
+        verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    void DM_key가_발신자와_수신자로_생성한_값과_다르면_전달하지_않는다() throws Exception {
+        DirectMessageRedisSubscriber subscriber = new DirectMessageRedisSubscriber(
+                objectMapper,
+                messagingTemplate
+        );
+        DirectMessageDto directMessage = new DirectMessageDto(
+                UUID.randomUUID(),
+                Instant.parse("2026-11-18T00:00:00Z"),
+                "invalid-dm-key",
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "메시지"
+        );
+        DirectMessageRedisMessage redisMessage = new DirectMessageRedisMessage(
+                directMessage.dmKey(),
+                directMessage
+        );
+        when(message.getBody()).thenReturn("redis-message".getBytes());
+        when(objectMapper.readValue("redis-message", DirectMessageRedisMessage.class))
+                .thenReturn(redisMessage);
+
+        subscriber.onMessage(message, null);
+
+        verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    void 발신자_ID가_null이면_전달하지_않는다() throws Exception {
+        DirectMessageRedisSubscriber subscriber = new DirectMessageRedisSubscriber(
+                objectMapper,
+                messagingTemplate
+        );
+        UUID receiverId = UUID.randomUUID();
+        DirectMessageDto directMessage = new DirectMessageDto(
+                UUID.randomUUID(),
+                Instant.parse("2026-11-18T00:00:00Z"),
+                "dm-key",
+                null,
+                receiverId,
+                "메시지"
+        );
+        DirectMessageRedisMessage redisMessage = new DirectMessageRedisMessage(
+                directMessage.dmKey(),
+                directMessage
+        );
+        when(message.getBody()).thenReturn("redis-message".getBytes());
+        when(objectMapper.readValue("redis-message", DirectMessageRedisMessage.class))
+                .thenReturn(redisMessage);
+
+        subscriber.onMessage(message, null);
+
+        verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    void 수신자_ID가_null이면_전달하지_않는다() throws Exception {
+        DirectMessageRedisSubscriber subscriber = new DirectMessageRedisSubscriber(
+                objectMapper,
+                messagingTemplate
+        );
+        UUID senderId = UUID.randomUUID();
+        DirectMessageDto directMessage = new DirectMessageDto(
+                UUID.randomUUID(),
+                Instant.parse("2026-11-18T00:00:00Z"),
+                "dm-key",
+                senderId,
+                null,
+                "메시지"
+        );
+        DirectMessageRedisMessage redisMessage = new DirectMessageRedisMessage(
+                directMessage.dmKey(),
+                directMessage
+        );
+        when(message.getBody()).thenReturn("redis-message".getBytes());
+        when(objectMapper.readValue("redis-message", DirectMessageRedisMessage.class))
+                .thenReturn(redisMessage);
+
+        subscriber.onMessage(message, null);
+
+        verifyNoInteractions(messagingTemplate);
+    }
+
     private DirectMessageDto directMessage() {
         UUID senderId = UUID.randomUUID();
         UUID receiverId = UUID.randomUUID();
