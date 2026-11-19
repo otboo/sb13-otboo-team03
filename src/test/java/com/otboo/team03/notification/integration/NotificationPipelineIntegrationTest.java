@@ -28,7 +28,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.KafkaContainer;
+import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -132,12 +132,17 @@ class NotificationPipelineIntegrationTest {
                 createdAt
         );
 
-        OutboxEvent savedOutboxEvent = saveOutboxEvent(outboxEvent);
+        saveOutboxEvent(outboxEvent);
 
         int relayedCount = outboxEventRelayService.relayPendingEvents(1);
 
         assertThat(relayedCount).isEqualTo(1);
-        assertThat(savedOutboxEvent.getStatus()).isEqualTo(OutboxEventStatus.PUBLISHED);
+        OutboxEvent relayedOutboxEvent = outboxEventRepository
+                .findById(notificationEvent.eventId())
+                .orElseThrow();
+        assertThat(relayedOutboxEvent.getStatus())
+                .as("Outbox 발행 실패 원인: %s", relayedOutboxEvent.getLastError())
+                .isEqualTo(OutboxEventStatus.PUBLISHED);
 
         List<Notification> savedNotifications = awaitNotifications(
                 receiver.getId(),
