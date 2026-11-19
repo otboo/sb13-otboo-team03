@@ -105,22 +105,13 @@ public class FeedService {
     );
 
     for (UUID followerId : followerIds) {
-      outboxEventPublisher.publish(
-          new NotificationEvent(
-              UUID.randomUUID(),
-              NotificationEventType.FOLLOWING_USER_FEED_CREATED,
-              NotificationEvent.CURRENT_SCHEMA_VERSION,
-              Instant.now(),
-              savedFeed.getId(),
-              followerId,
-              request.authorId(),
-              savedFeed.getId(),
-              "새로운 피드",
-              "팔로우한 사용자가 새 피드를 올렸습니다.",
-              NotificationLevel.INFO
-          ),
-          "FEED",
-          followerId.toString()
+      publishFeedNotification(
+          NotificationEventType.FOLLOWING_USER_FEED_CREATED,
+          savedFeed.getId(),
+          followerId,
+          request.authorId(),
+          "새로운 피드",
+          "팔로우한 사용자가 새 피드를 올렸습니다."
       );
     }
 
@@ -192,24 +183,13 @@ public class FeedService {
       return;
     }
 
-    UUID authorId = feed.getAuthorId();
-
-    outboxEventPublisher.publish(
-        new NotificationEvent(
-            UUID.randomUUID(),
-            NotificationEventType.FEED_LIKED,
-            NotificationEvent.CURRENT_SCHEMA_VERSION,
-            Instant.now(),
-            feedId,
-            authorId,
-            userId,
-            feedId,
-            "새로운 좋아요",
-            "누군가 회원님의 피드에 좋아요를 눌렀습니다.",
-            NotificationLevel.INFO
-        ),
-        "FEED",
-        authorId.toString()
+    publishFeedNotification(
+        NotificationEventType.FEED_LIKED,
+        feedId,
+        feed.getAuthorId(),
+        userId,
+        "새로운 좋아요",
+        "누군가 회원님의 피드에 좋아요를 눌렀습니다."
     );
   }
 
@@ -257,27 +237,43 @@ public class FeedService {
 
     FeedComment savedComment = feedCommentRepository.save(comment);
 
-    UUID feedAuthorId = feed.getAuthorId();
-
-    outboxEventPublisher.publish(
-        new NotificationEvent(
-            UUID.randomUUID(),
-            NotificationEventType.FEED_COMMENTED,
-            NotificationEvent.CURRENT_SCHEMA_VERSION,
-            Instant.now(),
-            feedId,
-            feedAuthorId,
-            authorId,
-            feedId,
-            "새로운 댓글",
-            "누군가 회원님의 피드에 댓글을 남겼습니다.",
-            NotificationLevel.INFO
-        ),
-        "FEED",
-        feedAuthorId.toString()
+    publishFeedNotification(
+        NotificationEventType.FEED_COMMENTED,
+        feedId,
+        feed.getAuthorId(),
+        authorId,
+        "새로운 댓글",
+        "누군가 회원님의 피드에 댓글을 남겼습니다."
     );
 
     return feedDtoAssembler.toCommentDto(savedComment);
+  }
+
+  private void publishFeedNotification(
+      NotificationEventType eventType,
+      UUID feedId,
+      UUID receiverId,
+      UUID actorId,
+      String title,
+      String content
+  ) {
+    outboxEventPublisher.publish(
+        new NotificationEvent(
+            UUID.randomUUID(),
+            eventType,
+            NotificationEvent.CURRENT_SCHEMA_VERSION,
+            Instant.now(),
+            feedId,
+            receiverId,
+            actorId,
+            feedId,
+            title,
+            content,
+            NotificationLevel.INFO
+        ),
+        "FEED",
+        receiverId.toString()
+    );
   }
 
   @Transactional(readOnly = true)
