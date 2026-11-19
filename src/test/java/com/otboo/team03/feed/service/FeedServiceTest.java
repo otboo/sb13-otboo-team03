@@ -45,6 +45,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -214,6 +215,7 @@ class FeedServiceTest {
     assertEquals(ErrorCode.INVALID_INPUT_VALUE, exception.getErrorCode());
     verify(feedRepository, never()).save(any(Feed.class));
     verifyNoInteractions(feedDtoAssembler);
+    verifyNoInteractions(followRepository, outboxEventPublisher);
   }
 
   @Test
@@ -244,6 +246,7 @@ class FeedServiceTest {
     assertEquals(ErrorCode.INVALID_INPUT_VALUE, exception.getErrorCode());
     verify(feedRepository, never()).save(any(Feed.class));
     verifyNoInteractions(feedDtoAssembler);
+    verifyNoInteractions(followRepository, outboxEventPublisher);
   }
 
   @Test
@@ -277,6 +280,7 @@ class FeedServiceTest {
     assertEquals(ErrorCode.INVALID_INPUT_VALUE, exception.getErrorCode());
     verify(feedRepository, never()).save(any(Feed.class));
     verifyNoInteractions(feedDtoAssembler);
+    verifyNoInteractions(followRepository, outboxEventPublisher);
   }
 
   @Test
@@ -301,6 +305,7 @@ class FeedServiceTest {
     assertEquals(ErrorCode.INVALID_INPUT_VALUE, exception.getErrorCode());
     verify(feedRepository, never()).save(any(Feed.class));
     verifyNoInteractions(feedDtoAssembler);
+    verifyNoInteractions(followRepository, outboxEventPublisher);
   }
 
   @Test
@@ -346,6 +351,7 @@ class FeedServiceTest {
     verify(feedRepository, never()).save(any(Feed.class));
     verify(feedClothesRepository, never()).save(any(FeedClothes.class));
     verifyNoInteractions(feedDtoAssembler);
+    verifyNoInteractions(followRepository, outboxEventPublisher);
   }
 
   @Test
@@ -684,6 +690,7 @@ class FeedServiceTest {
     );
 
     verifyNoInteractions(feedLikeRepository);
+    verifyNoInteractions(outboxEventPublisher);
   }
 
   @Test
@@ -833,6 +840,7 @@ class FeedServiceTest {
     );
 
     verifyNoInteractions(feedCommentRepository);
+    verifyNoInteractions(outboxEventPublisher);
   }
 
   @Test
@@ -864,6 +872,7 @@ class FeedServiceTest {
     );
 
     verifyNoInteractions(feedCommentRepository);
+    verifyNoInteractions(outboxEventPublisher);
   }
 
   @Test
@@ -895,6 +904,7 @@ class FeedServiceTest {
     );
 
     verifyNoInteractions(feedCommentRepository);
+    verifyNoInteractions(outboxEventPublisher);
   }
 
   @Test
@@ -1757,5 +1767,206 @@ class FeedServiceTest {
     verify(followRepository).findFollowerIdsByFolloweeId(authorId);
 
     verifyNoInteractions(outboxEventPublisher);
+  }
+
+  @Test
+  void 존재하지_않는_피드에는_댓글을_등록할_수_없다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+
+    CommentCreateRequest request = new CommentCreateRequest(
+        feedId,
+        authorId,
+        "좋은 코디네요!"
+    );
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(false);
+
+    // when
+    OtbooException exception = assertThrows(
+        OtbooException.class,
+        () -> feedService.createComment(feedId, authorId, request)
+    );
+
+    // then
+    assertEquals(
+        ErrorCode.NOT_FOUND_RESOURCE,
+        exception.getErrorCode()
+    );
+
+    verifyNoInteractions(feedCommentRepository);
+    verifyNoInteractions(outboxEventPublisher);
+  }
+
+  @Test
+  void 피드_저장에_실패하면_알림_이벤트를_발행하지_않는다() {
+    // given
+    UUID authorId = UUID.randomUUID();
+    UUID weatherId = UUID.randomUUID();
+
+    FeedCreateRequest request = new FeedCreateRequest(
+        authorId,
+        weatherId,
+        List.of(),
+        "오늘의 코디"
+    );
+
+    DataIntegrityViolationException failure =
+        new DataIntegrityViolationException("피드 저장 실패");
+
+    when(userRepository.existsById(authorId))
+        .thenReturn(true);
+
+    when(weatherRepository.existsById(weatherId))
+        .thenReturn(true);
+
+    when(feedRepository.save(any(Feed.class)))
+        .thenThrow(failure);
+
+    // when
+    DataIntegrityViolationException exception = assertThrows(
+        DataIntegrityViolationException.class,
+        () -> feedService.create(request)
+    );
+
+    // then
+    assertSame(failure, exception);
+
+    verify(feedRepository).save(any(Feed.class));
+    verifyNoInteractions(feedClothesRepository);
+    verifyNoInteractions(followRepository, outboxEventPublisher);
+    verifyNoInteractions(feedDtoAssembler);
+  }
+
+  @Test
+  void 피드_의상_연결에_실패하면_알림_이벤트를_발행하지_않는다() {
+    // given
+    UUID authorId = UUID.randomUUID();
+    UUID weatherId = UUID.randomUUID();
+    UUID clothesId = UUID.randomUUID();
+
+    User author = mock(User.class);
+    when(author.getId()).thenReturn(authorId);
+
+    Clothes clothes = new Clothes(
+        "흰색 티셔츠",
+        ClothesType.TOP,
+        null,
+        author
+    );
+
+    FeedCreateRequest request = new FeedCreateRequest(
+        authorId,
+        weatherId,
+        List.of(clothesId),
+        "오늘의 코디"
+    );
+
+    DataIntegrityViolationException failure =
+        new DataIntegrityViolationException("피드 의상 연결 실패");
+
+    when(userRepository.existsById(authorId))
+        .thenReturn(true);
+
+    when(weatherRepository.existsById(weatherId))
+        .thenReturn(true);
+
+    when(clothesRepository.findAllById(request.clothesIds()))
+        .thenReturn(List.of(clothes));
+
+    when(feedRepository.save(any(Feed.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    when(feedClothesRepository.save(any(FeedClothes.class)))
+        .thenThrow(failure);
+
+    // when
+    DataIntegrityViolationException exception = assertThrows(
+        DataIntegrityViolationException.class,
+        () -> feedService.create(request)
+    );
+
+    // then
+    assertSame(failure, exception);
+
+    verify(feedRepository).save(any(Feed.class));
+    verify(feedClothesRepository).save(any(FeedClothes.class));
+    verifyNoInteractions(followRepository, outboxEventPublisher);
+    verifyNoInteractions(feedDtoAssembler);
+  }
+
+  @Test
+  void 좋아요_저장에_실패하면_알림_이벤트를_발행하지_않는다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID userId = UUID.randomUUID();
+
+    DataIntegrityViolationException failure =
+        new DataIntegrityViolationException("좋아요 저장 실패");
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    when(feedLikeRepository.insertIfAbsent(
+        any(UUID.class),
+        eq(feedId),
+        eq(userId),
+        any(Instant.class)
+    )).thenThrow(failure);
+
+    // when
+    DataIntegrityViolationException exception = assertThrows(
+        DataIntegrityViolationException.class,
+        () -> feedService.like(feedId, userId)
+    );
+
+    // then
+    assertSame(failure, exception);
+
+    verify(feedLikeRepository).insertIfAbsent(
+        any(UUID.class),
+        eq(feedId),
+        eq(userId),
+        any(Instant.class)
+    );
+
+    verifyNoInteractions(outboxEventPublisher);
+  }
+
+  @Test
+  void 댓글_저장에_실패하면_알림_이벤트를_발행하지_않는다() {
+    // given
+    UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+
+    CommentCreateRequest request = new CommentCreateRequest(
+        feedId,
+        authorId,
+        "좋은 코디네요!"
+    );
+
+    DataIntegrityViolationException failure =
+        new DataIntegrityViolationException("댓글 저장 실패");
+
+    when(feedRepository.existsById(feedId))
+        .thenReturn(true);
+
+    when(feedCommentRepository.save(any(FeedComment.class)))
+        .thenThrow(failure);
+
+    // when
+    DataIntegrityViolationException exception = assertThrows(
+        DataIntegrityViolationException.class,
+        () -> feedService.createComment(feedId, authorId, request)
+    );
+
+    // then
+    assertSame(failure, exception);
+
+    verify(feedCommentRepository).save(any(FeedComment.class));
+    verifyNoInteractions(outboxEventPublisher);
+    verifyNoInteractions(feedDtoAssembler);
   }
 }
