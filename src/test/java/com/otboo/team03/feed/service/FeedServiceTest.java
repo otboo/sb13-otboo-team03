@@ -614,8 +614,8 @@ class FeedServiceTest {
         "오늘의 코디"
     );
 
-    when(feedRepository.existsById(feedId))
-        .thenReturn(true);
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
 
     when(feedLikeRepository.insertIfAbsent(
         any(UUID.class),
@@ -624,14 +624,12 @@ class FeedServiceTest {
         any(Instant.class)
     )).thenReturn(1);
 
-    when(feedRepository.findById(feedId))
-        .thenReturn(Optional.of(feed));
-
     // when
     feedService.like(feedId, userId);
 
     // then
-    verify(feedRepository).existsById(feedId);
+    verify(feedRepository).findById(feedId);
+    verifyNoMoreInteractions(feedRepository);
 
     verify(feedLikeRepository).insertIfAbsent(
         any(UUID.class),
@@ -674,8 +672,8 @@ class FeedServiceTest {
     UUID feedId = UUID.randomUUID();
     UUID userId = UUID.randomUUID();
 
-    when(feedRepository.existsById(feedId))
-        .thenReturn(false);
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.empty());
 
     // when
     OtbooException exception = assertThrows(
@@ -730,8 +728,8 @@ class FeedServiceTest {
         "오늘의 코디"
     );
 
-    when(feedRepository.existsById(feedId))
-        .thenReturn(true);
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
 
     when(feedLikeRepository.insertIfAbsent(
         any(UUID.class),
@@ -740,14 +738,14 @@ class FeedServiceTest {
         any(Instant.class)
     )).thenReturn(1, 0);
 
-    when(feedRepository.findById(feedId))
-        .thenReturn(Optional.of(feed));
-
     // when
     feedService.like(feedId, userId);
     feedService.like(feedId, userId);
 
     // then
+    verify(feedRepository, times(2)).findById(feedId);
+    verifyNoMoreInteractions(feedRepository);
+
     verify(feedLikeRepository, times(2)).insertIfAbsent(
         any(UUID.class),
         eq(feedId),
@@ -763,6 +761,8 @@ class FeedServiceTest {
         eq("FEED"),
         eq(authorId.toString())
     );
+
+    verifyNoMoreInteractions(outboxEventPublisher);
   }
 
   @Test
@@ -1514,8 +1514,8 @@ class FeedServiceTest {
         "오늘의 코디"
     );
 
-    when(feedRepository.existsById(feedId))
-        .thenReturn(true);
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
 
     when(feedLikeRepository.insertIfAbsent(
         any(UUID.class),
@@ -1523,9 +1523,6 @@ class FeedServiceTest {
         eq(userId),
         any(Instant.class)
     )).thenReturn(1);
-
-    when(feedRepository.findById(feedId))
-        .thenReturn(Optional.of(feed));
 
     // when
     feedService.like(feedId, userId);
@@ -1557,10 +1554,11 @@ class FeedServiceTest {
         () -> assertEquals(authorId, event.receiverId()),
         () -> assertEquals(userId, event.actorId()),
         () -> assertEquals(feedId, event.relatedId()),
-        () -> assertNotNull(event.title()),
-        () -> assertFalse(event.title().isBlank()),
-        () -> assertNotNull(event.content()),
-        () -> assertFalse(event.content().isBlank()),
+        () -> assertEquals("새로운 좋아요", event.title()),
+        () -> assertEquals(
+            "누군가 회원님의 피드에 좋아요를 눌렀습니다.",
+            event.content()
+        ),
         () -> assertEquals(NotificationLevel.INFO, event.level())
     );
   }
@@ -1901,13 +1899,20 @@ class FeedServiceTest {
   void 좋아요_저장에_실패하면_알림_이벤트를_발행하지_않는다() {
     // given
     UUID feedId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
     UUID userId = UUID.randomUUID();
+
+    Feed feed = new Feed(
+        authorId,
+        UUID.randomUUID(),
+        "오늘의 코디"
+    );
 
     DataIntegrityViolationException failure =
         new DataIntegrityViolationException("좋아요 저장 실패");
 
-    when(feedRepository.existsById(feedId))
-        .thenReturn(true);
+    when(feedRepository.findById(feedId))
+        .thenReturn(Optional.of(feed));
 
     when(feedLikeRepository.insertIfAbsent(
         any(UUID.class),

@@ -176,9 +176,10 @@ public class FeedService {
 
   @Transactional
   public void like(UUID feedId, UUID userId) {
-    if (!feedRepository.existsById(feedId)) {
-      throw new OtbooException(ErrorCode.NOT_FOUND_RESOURCE);
-    }
+    Feed feed = feedRepository.findById(feedId)
+        .orElseThrow(
+            () -> new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
+        );
 
     int inserted = feedLikeRepository.insertIfAbsent(
         UUID.randomUUID(),
@@ -190,11 +191,6 @@ public class FeedService {
     if (inserted == 0) {
       return;
     }
-
-    Feed feed = feedRepository.findById(feedId)
-        .orElseThrow(
-            () -> new OtbooException(ErrorCode.NOT_FOUND_RESOURCE)
-        );
 
     UUID authorId = feed.getAuthorId();
 
