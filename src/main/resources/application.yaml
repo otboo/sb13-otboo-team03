@@ -103,6 +103,11 @@ kakao:
   api:
     key: ${KAKAO_API_KEY:}
 
+openweather:
+  api:
+    key: ${OPENWEATHER_API_KEY:}
+    base-url: https://api.openweathermap.org
+
 scheduler:
   sse-heartbeat:
     fixed-delay: ${SSE_HEARTBEAT_FIXED_DELAY:PT15S}
