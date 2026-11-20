@@ -61,6 +61,8 @@ class NotificationPipelineIntegrationTest {
 
     private static final String NOTIFICATION_TOPIC =
             "otboo.notification.events.pipeline-test";
+    private static final String NOTIFICATION_DLT_TOPIC =
+            NOTIFICATION_TOPIC + ".DLT";
     private static final String CONSUMER_GROUP =
             "notification-pipeline-test";
 
@@ -89,7 +91,7 @@ class NotificationPipelineIntegrationTest {
         registry.add("spring.kafka.consumer.auto-offset-reset", () -> "earliest");
         registry.add("spring.kafka.listener.auto-startup", () -> true);
         registry.add("otboo.kafka.notification-topic", () -> NOTIFICATION_TOPIC);
-        registry.add("otboo.kafka.notification-dlt-topic", () -> NOTIFICATION_TOPIC + ".DLT");
+        registry.add("otboo.kafka.notification-dlt-topic", () -> NOTIFICATION_DLT_TOPIC);
         registry.add("spring.task.scheduling.enabled", () -> false);
     }
 
@@ -99,7 +101,10 @@ class NotificationPipelineIntegrationTest {
                 AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG,
                 KAFKA.getBootstrapServers()
         ))) {
-            admin.createTopics(List.of(new NewTopic(NOTIFICATION_TOPIC, 1, (short) 1)))
+            admin.createTopics(List.of(
+                            new NewTopic(NOTIFICATION_TOPIC, 1, (short) 1),
+                            new NewTopic(NOTIFICATION_DLT_TOPIC, 1, (short) 1)
+                    ))
                     .all().get(30, TimeUnit.SECONDS);
         }
     }
