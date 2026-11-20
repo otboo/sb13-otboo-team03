@@ -14,11 +14,16 @@ import com.otboo.team03.notification.repository.NotificationRepository;
 import com.otboo.team03.notification.sse.SseConnectionManager;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
+import java.util.Map;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -77,6 +82,18 @@ class NotificationPipelineIntegrationTest {
         registry.add("otboo.kafka.notification-topic", () -> NOTIFICATION_TOPIC);
         registry.add("otboo.kafka.notification-dlt-topic", () -> NOTIFICATION_TOPIC + ".DLT");
         registry.add("spring.task.scheduling.enabled", () -> false);
+    }
+
+    @BeforeAll
+    static void createNotificationTopic() throws Exception {
+        try (Admin admin = Admin.create(Map.of(
+                AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG,
+                KAFKA.getBootstrapServers()
+        ))) {
+            admin.createTopics(List.of(new NewTopic(NOTIFICATION_TOPIC, 1, (short) 1)))
+                    .all()
+                    .get(30, TimeUnit.SECONDS);
+        }
     }
 
     @Autowired
