@@ -14,9 +14,10 @@ import com.otboo.team03.notification.repository.NotificationRepository;
 import com.otboo.team03.notification.sse.SseConnectionManager;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
-import java.util.Map;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.admin.Admin;
@@ -27,6 +28,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
+import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -44,9 +47,14 @@ import static org.assertj.core.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
-import static org.mockito.ArgumentMatchers.argThat;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+        "spring.kafka.listener.auto-startup=true",
+        "spring.kafka.consumer.group-id=notification-pipeline-test",
+        "spring.kafka.consumer.auto-offset-reset=earliest",
+        "otboo.kafka.notification-topic=otboo.notification.events.pipeline-test",
+        "otboo.kafka.notification-dlt-topic=otboo.notification.events.pipeline-test.DLT"
+})
 @ActiveProfiles("test")
 @Testcontainers
 class NotificationPipelineIntegrationTest {
@@ -66,7 +74,8 @@ class NotificationPipelineIntegrationTest {
 
     @Container
     static final KafkaContainer KAFKA =
-            new KafkaContainer("apache/kafka-native:3.8.0");
+            new KafkaContainer("apache/kafka-native:3.8.0")
+                    .withStartupTimeout(Duration.ofMinutes(2));
 
     @DynamicPropertySource
     static void testProperties(DynamicPropertyRegistry registry) {
@@ -91,8 +100,7 @@ class NotificationPipelineIntegrationTest {
                 KAFKA.getBootstrapServers()
         ))) {
             admin.createTopics(List.of(new NewTopic(NOTIFICATION_TOPIC, 1, (short) 1)))
-                    .all()
-                    .get(30, TimeUnit.SECONDS);
+                    .all().get(30, TimeUnit.SECONDS);
         }
     }
 
@@ -114,6 +122,9 @@ class NotificationPipelineIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private KafkaListenerEndpointRegistry kafkaListenerEndpointRegistry;
+
     @MockitoBean
     private OutboxEventRelayScheduler outboxEventRelayScheduler;
 
@@ -122,6 +133,8 @@ class NotificationPipelineIntegrationTest {
 
     @Test
     void Outbox부터_SSE까지_알림_파이프라인을_통합검증한다() throws Exception {
+        awaitKafkaListenerAssignment();
+
         User receiver = userRepository.saveAndFlush(new User(
                 UUID.randomUUID() + "@example.com",
                 "encoded-password",
@@ -192,6 +205,23 @@ class NotificationPipelineIntegrationTest {
                             .isEqualTo("새로운 메시지가 도착했습니다.");
                     assertThat(notification.level()).isEqualTo(NotificationLevel.INFO);
                 });
+    }
+
+    private void awaitKafkaListenerAssignment() throws InterruptedException {
+        MessageListenerContainer container = kafkaListenerEndpointRegistry
+                .getListenerContainer("notificationKafkaConsumer");
+        assertThat(container).isNotNull();
+
+        long deadline = System.nanoTime()
+                + TimeUnit.SECONDS.toNanos(30);
+        while (System.nanoTime() < deadline
+                && container.getAssignedPartitions().isEmpty()) {
+            Thread.sleep(100);
+        }
+
+        assertThat(container.getAssignedPartitions())
+                .as("Kafka Listener가 파티션을 할당받지 못했습니다.")
+                .isNotEmpty();
     }
 
     private OutboxEvent saveOutboxEvent(OutboxEvent outboxEvent) {

@@ -15,6 +15,7 @@ public class NotificationKafkaConsumer {
     private final NotificationKafkaConsumerService consumerService;
 
     @KafkaListener(
+            id = "notificationKafkaConsumer",
             topics = "${otboo.kafka.notification-topic}",
             groupId = "${spring.kafka.consumer.group-id}"
     )
