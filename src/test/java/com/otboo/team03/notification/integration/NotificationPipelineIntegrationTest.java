@@ -73,6 +73,7 @@ class NotificationPipelineIntegrationTest {
         registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
         registry.add("spring.kafka.consumer.group-id", () -> CONSUMER_GROUP);
         registry.add("spring.kafka.consumer.auto-offset-reset", () -> "earliest");
+        registry.add("spring.kafka.listener.auto-startup", () -> true);
         registry.add("otboo.kafka.notification-topic", () -> NOTIFICATION_TOPIC);
         registry.add("otboo.kafka.notification-dlt-topic", () -> NOTIFICATION_TOPIC + ".DLT");
         registry.add("spring.task.scheduling.enabled", () -> false);
