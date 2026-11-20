@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.Objects;
 import lombok.AccessLevel;
@@ -17,7 +18,10 @@ import org.hibernate.type.SqlTypes;
 
 // 기상청 / OpenWeatherMap 단기예보 기반 날씨 데이터 엔티티
 @Entity
-@Table(name = "weathers")
+@Table(name = "weathers", uniqueConstraints = {
+    @UniqueConstraint(name = "uk_weathers_location_forecast_at",
+    columnNames = {"latitude", "longitude", "forecast_at"})
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Weather extends UpdateEntity {
