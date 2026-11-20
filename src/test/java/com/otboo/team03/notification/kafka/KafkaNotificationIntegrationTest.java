@@ -83,6 +83,7 @@ class KafkaNotificationIntegrationTest {
             try (Consumer<String, String> kafkaConsumer = kafkaConsumer()) {
                 kafkaConsumer.subscribe(List.of(TOPIC));
                 ConsumerRecord<String, String> record = pollRecord(kafkaConsumer);
+                assertThat(record.key()).isEqualTo(event.receiverId().toString());
 
                 consumer.consume(record.value());
             }

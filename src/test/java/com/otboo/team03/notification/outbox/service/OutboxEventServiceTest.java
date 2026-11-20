@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,7 +49,7 @@ class OutboxEventServiceTest {
                 eventId,
                 NotificationEventType.USER_ROLE_CHANGED,
                 NotificationEvent.CURRENT_SCHEMA_VERSION,
-                Instant.parse("2026-11-12T00:00:00Z"),
+                Instant.parse("2026-11-12T00:00:00.123456789Z"),
                 aggregateId,
                 receiverId,
                 UUID.randomUUID(),
@@ -70,7 +71,10 @@ class OutboxEventServiceTest {
         assertThat(saved.getAggregateType()).isEqualTo("USER");
         assertThat(saved.getAggregateId()).isEqualTo(aggregateId);
         assertThat(saved.getPartitionKey()).isEqualTo(receiverId.toString());
-        assertThat(saved.getOccurredAt()).isEqualTo(event.occurredAt());
+        Instant normalizedOccurredAt = event.occurredAt().truncatedTo(ChronoUnit.MICROS);
+        assertThat(saved.getOccurredAt()).isEqualTo(normalizedOccurredAt);
+        assertThat(saved.getPayload().get("occurredAt").asText())
+                .isEqualTo(normalizedOccurredAt.toString());
         assertThat(saved.getPayload().get("receiverId").asText()).isEqualTo(receiverId.toString());
         assertThat(saved.getStatus()).hasToString("PENDING");
         assertThat(saved.getCreatedAt()).isNotNull();

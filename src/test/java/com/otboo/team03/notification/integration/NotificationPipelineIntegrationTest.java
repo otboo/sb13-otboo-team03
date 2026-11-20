@@ -10,6 +10,7 @@ import com.otboo.team03.notification.outbox.entity.OutboxEventStatus;
 import com.otboo.team03.notification.outbox.repository.OutboxEventRepository;
 import com.otboo.team03.notification.outbox.relay.OutboxEventRelayService;
 import com.otboo.team03.notification.outbox.relay.OutboxEventRelayScheduler;
+import com.otboo.team03.notification.outbox.service.OutboxEventService;
 import com.otboo.team03.notification.repository.NotificationRepository;
 import com.otboo.team03.notification.sse.SseConnectionManager;
 import com.otboo.team03.user.entity.User;
@@ -40,7 +41,6 @@ import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -116,6 +116,9 @@ class NotificationPipelineIntegrationTest {
     private OutboxEventRelayService outboxEventRelayService;
 
     @Autowired
+    private OutboxEventService outboxEventService;
+
+    @Autowired
     private NotificationRepository notificationRepository;
 
     @Autowired
@@ -123,9 +126,6 @@ class NotificationPipelineIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
-
-    @Autowired
-    private ObjectMapper objectMapper;
 
     @Autowired
     private KafkaListenerEndpointRegistry kafkaListenerEndpointRegistry;
@@ -155,20 +155,11 @@ class NotificationPipelineIntegrationTest {
                 receiver.getId(),
                 actor.getId()
         );
-        Instant createdAt = Instant.now().minusSeconds(1);
-        OutboxEvent outboxEvent = new OutboxEvent(
-                notificationEvent.eventId(),
-                notificationEvent.eventType().name(),
-                (short) notificationEvent.schemaVersion(),
+        outboxEventService.publish(
+                notificationEvent,
                 "DIRECT_MESSAGE",
-                notificationEvent.aggregateId(),
-                receiver.getId().toString(),
-                objectMapper.readTree(objectMapper.writeValueAsString(notificationEvent)),
-                notificationEvent.occurredAt(),
-                createdAt
+                receiver.getId().toString()
         );
-
-        saveOutboxEvent(outboxEvent);
 
         int relayedCount = outboxEventRelayService.relayPendingEvents(1);
 
@@ -204,6 +195,7 @@ class NotificationPipelineIntegrationTest {
         );
         assertThat(deliveredNotification.getValue())
                 .satisfies(notification -> {
+                    assertThat(notification.id()).isEqualTo(savedNotification.getId());
                     assertThat(notification.receiverId()).isEqualTo(receiver.getId());
                     assertThat(notification.title()).isEqualTo("새 메시지");
                     assertThat(notification.content())
@@ -213,24 +205,24 @@ class NotificationPipelineIntegrationTest {
     }
 
     private void awaitKafkaListenerAssignment() throws InterruptedException {
-        MessageListenerContainer container = kafkaListenerEndpointRegistry
-                .getListenerContainer("notificationKafkaConsumer");
-        assertThat(container).isNotNull();
-
         long deadline = System.nanoTime()
                 + TimeUnit.SECONDS.toNanos(30);
-        while (System.nanoTime() < deadline
-                && container.getAssignedPartitions().isEmpty()) {
+        MessageListenerContainer container = null;
+        while (System.nanoTime() < deadline) {
+            container = kafkaListenerEndpointRegistry
+                    .getListenerContainer("notificationKafkaConsumer");
+            if (container != null && !container.getAssignedPartitions().isEmpty()) {
+                break;
+            }
             Thread.sleep(100);
         }
 
+        assertThat(container)
+                .as("Kafka Listener Container가 제한 시간 안에 등록되지 않았습니다.")
+                .isNotNull();
         assertThat(container.getAssignedPartitions())
                 .as("Kafka Listener가 파티션을 할당받지 못했습니다.")
                 .isNotEmpty();
-    }
-
-    private OutboxEvent saveOutboxEvent(OutboxEvent outboxEvent) {
-        return outboxEventRepository.saveAndFlush(outboxEvent);
     }
 
     private NotificationEvent notificationEvent(UUID receiverId, UUID actorId) {
@@ -238,7 +230,7 @@ class NotificationPipelineIntegrationTest {
                 UUID.randomUUID(),
                 NotificationEventType.DIRECT_MESSAGE_RECEIVED,
                 NotificationEvent.CURRENT_SCHEMA_VERSION,
-                Instant.now(),
+                Instant.parse("2026-11-19T00:00:00.123456789Z"),
                 UUID.randomUUID(),
                 receiverId,
                 actorId,

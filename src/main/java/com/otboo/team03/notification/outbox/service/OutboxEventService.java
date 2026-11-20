@@ -10,6 +10,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 
 @Service
@@ -26,15 +27,30 @@ public class OutboxEventService implements OutboxEventPublisher {
         validateText(aggregateType, "aggregateType");
         validateText(partitionKey, "partitionKey");
 
-        outboxEventRepository.save(new OutboxEvent(
+        Instant normalizedOccurredAt = event.occurredAt().truncatedTo(ChronoUnit.MICROS);
+        NotificationEvent normalizedEvent = new NotificationEvent(
                 event.eventId(),
-                event.eventType().name(),
-                toSchemaVersion(event.schemaVersion()),
-                aggregateType,
+                event.eventType(),
+                event.schemaVersion(),
+                normalizedOccurredAt,
                 event.aggregateId(),
+                event.receiverId(),
+                event.actorId(),
+                event.relatedId(),
+                event.title(),
+                event.content(),
+                event.level()
+        );
+
+        outboxEventRepository.save(new OutboxEvent(
+                normalizedEvent.eventId(),
+                normalizedEvent.eventType().name(),
+                toSchemaVersion(normalizedEvent.schemaVersion()),
+                aggregateType,
+                normalizedEvent.aggregateId(),
                 partitionKey,
-                toPayload(event),
-                event.occurredAt(),
+                toPayload(normalizedEvent),
+                normalizedOccurredAt,
                 Instant.now()
         ));
     }
