@@ -3,6 +3,7 @@ package com.otboo.team03.directmessage.service;
 import com.otboo.team03.directmessage.dto.response.DirectMessageDto;
 import com.otboo.team03.directmessage.entity.DirectMessage;
 import com.otboo.team03.directmessage.repository.DirectMessageRepository;
+import com.otboo.team03.directmessage.redis.DirectMessageRedisPublisher;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.notification.entity.NotificationLevel;
 import com.otboo.team03.notification.event.NotificationEvent;
@@ -17,6 +18,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.List;
@@ -24,6 +27,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -43,6 +47,9 @@ class DirectMessageServiceTest {
 
     @Mock
     private OutboxEventPublisher outboxEventPublisher;
+
+    @Mock
+    private DirectMessageRedisPublisher directMessageRedisPublisher;
 
     @InjectMocks
     private DirectMessageService directMessageService;
@@ -97,6 +104,66 @@ class DirectMessageServiceTest {
         assertThat(event.level()).isEqualTo(NotificationLevel.INFO);
         assertThat(event.occurredAt()).isNotNull();
         assertThat(event.eventId()).isNotNull();
+        verify(directMessageRedisPublisher).publish(result);
+    }
+
+    @Test
+    void DM은_트랜잭션_커밋_후_Redis로_발행한다() {
+        UUID senderId = UUID.randomUUID();
+        UUID receiverId = UUID.randomUUID();
+        User sender = userWithId(senderId);
+        User receiver = userWithId(receiverId);
+        DirectMessage directMessage = mockMessage(senderId, receiverId, "메시지");
+
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(receiverId)).thenReturn(Optional.of(receiver));
+        when(directMessageRepository.save(any(DirectMessage.class))).thenReturn(directMessage);
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            DirectMessageDto result = directMessageService.send(
+                    senderId, receiverId, "메시지"
+            );
+
+            verifyNoInteractions(directMessageRedisPublisher);
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+
+            verify(directMessageRedisPublisher).publish(result);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void Redis_DM_발행에_실패해도_저장된_DM_응답은_반환한다() {
+        UUID senderId = UUID.randomUUID();
+        UUID receiverId = UUID.randomUUID();
+        User sender = userWithId(senderId);
+        User receiver = userWithId(receiverId);
+        DirectMessage directMessage = mockMessage(senderId, receiverId, "메시지");
+
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(receiverId)).thenReturn(Optional.of(receiver));
+        when(directMessageRepository.save(any(DirectMessage.class))).thenReturn(directMessage);
+        org.mockito.Mockito.doThrow(new IllegalStateException("Redis 장애"))
+                .when(directMessageRedisPublisher).publish(any(DirectMessageDto.class));
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            DirectMessageDto result = directMessageService.send(
+                    senderId, receiverId, "메시지"
+            );
+
+            assertThatCode(() -> TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit))
+                    .doesNotThrowAnyException();
+            assertThat(result.content()).isEqualTo("메시지");
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
