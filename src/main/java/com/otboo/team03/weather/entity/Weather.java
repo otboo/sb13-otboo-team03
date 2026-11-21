@@ -107,7 +107,13 @@ public class Weather extends UpdateEntity {
       Double humidity,
       Double windSpeed
   ) {
-    this.forecastedAt = Objects.requireNonNull(forecastedAt, "forecastedAt은 필수입니다.");
+    Objects.requireNonNull(forecastedAt, "forecastedAt은 필수입니다.");
+    // 기존 예보보다 오래된(과거의) 데이터가 들어오면 덮어쓰지 않고 무시
+    if (this.forecastedAt != null && forecastedAt.isBefore(this.forecastedAt)) {
+      return;
+    }
+
+    this.forecastedAt = forecastedAt;
     this.skyStatus = Objects.requireNonNull(skyStatus, "skyStatus는 필수입니다.");
     this.precipitationType = Objects.requireNonNull(precipitationType, "precipitationType은 필수입니다.");
     this.precipitationAmount = Objects.requireNonNull(precipitationAmount, "precipitationAmount는 필수입니다.");

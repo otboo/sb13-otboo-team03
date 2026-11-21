@@ -2,6 +2,7 @@ package com.otboo.team03.weather.batch;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import com.otboo.team03.weather.client.OpenWeatherClient;
 import com.otboo.team03.weather.entity.PrecipitationType;
@@ -10,6 +11,8 @@ import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.repository.WeatherRepository;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.batch.core.job.Job;
@@ -19,10 +22,8 @@ import org.springframework.batch.core.launch.JobOperator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
-@Transactional
 class WeatherBatchIntegrationTest {
 
   @Autowired
@@ -37,6 +38,11 @@ class WeatherBatchIntegrationTest {
   // 실제 외부 API 호출을 방지하고 테스트 데이터를 공급하기 위해 모킹
   @MockitoBean
   private OpenWeatherClient openWeatherClient;
+
+  @BeforeEach
+  void setUp() {
+    weatherRepository.deleteAll();
+  }
 
   private Weather createWeather(Double lat, Double lon, Instant forecastAt, Double temp) {
     return Weather.builder()
@@ -55,28 +61,38 @@ class WeatherBatchIntegrationTest {
   }
 
   @Test
-  @DisplayName("배치 Job 실행 시 Step과 Tasklet을 거쳐 실제 DB에 날씨 데이터가 정상 적재된다")
-  void weatherCollectionJob_executesSuccessfullyAndSavesData() throws Exception {
+  @DisplayName("거점별 예보 수집 시 신규 적재와 기존 예보 갱신이 실제 DB에 각각 정상 반영된다")
+  void weatherCollectionJob_executesSuccessfullyWithInsertAndUpdate() throws Exception {
     // given
-    Instant forecastTime = Instant.parse("2026-11-19T06:00:00Z");
-    Weather weather = createWeather(37.4979, 127.0276, forecastTime, 17.5);
+    Instant forecastTime = Instant.parse("2026-11-20T12:00:00Z");
+    Weather existingGangnam = weatherRepository.save(
+        createWeather(37.4979, 127.0276, forecastTime, 18.0)
+    );
+    Weather newGangnam = createWeather(37.4979, 127.0276, forecastTime, 15.0);
+    Weather newJung = createWeather(37.5665, 126.9780, forecastTime, 21.0);
 
-    // 외부 API 호출 시 위 가짜 날씨 데이터를 반환하도록 설정
-    given(openWeatherClient.fetchForecast(anyDouble(), anyDouble()))
-        .willReturn(List.of(weather));
+    given(openWeatherClient.fetchForecast(eq(37.4979), anyDouble()))
+        .willReturn(List.of(newGangnam));
+    given(openWeatherClient.fetchForecast(eq(37.5665), anyDouble()))
+        .willReturn(List.of(newJung));
 
     JobParameters jobParameters = new JobParametersBuilder()
         .addLong("timestamp", System.currentTimeMillis())
         .toJobParameters();
 
-    // when (JobOperator를 통해 실제 배치 Job 실행)
+    // when
     jobOperator.start(weatherCollectionJob, jobParameters);
 
-    // then (실제 DB에 날씨 데이터가 2개 거점 분량으로 정상 저장되었는지 검증)
-    List<Weather> savedWeathers = weatherRepository.findAll();
-    assertThat(savedWeathers).isNotEmpty();
-    assertThat(savedWeathers)
-        .anyMatch(w -> w.getTemperature().equals(17.5) && w.getForecastAt().equals(forecastTime));
+    // then
+    Optional<Weather> updatedGangnam = weatherRepository.findById(existingGangnam.getId());
+    assertThat(updatedGangnam).isPresent();
+    assertThat(updatedGangnam.get().getTemperature()).isEqualTo(15.0);
+
+    List<Weather> jungguList = weatherRepository.findAllByLatitudeAndLongitudeAndForecastAtBetweenOrderByForecastAtAsc(
+        37.5665, 126.9780, forecastTime.minusSeconds(1), forecastTime.plusSeconds(1)
+    );
+    assertThat(jungguList).hasSize(1);
+    assertThat(jungguList.get(0).getTemperature()).isEqualTo(21.0);
   }
 
 
