@@ -1,97 +1,70 @@
 package com.otboo.team03.recommendation.service;
 
 import com.otboo.team03.clothes.entity.Clothes;
-import com.otboo.team03.clothes.entity.ClothesAttribute;
-import com.otboo.team03.clothes.repository.ClothesRepository;
-import com.otboo.team03.clothes.repository.ClothesAttributeRepository;
+import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.clothes.service.ClothesService;
 import com.otboo.team03.feed.dto.response.OotdDto;
-import com.otboo.team03.profile.service.ProfileService;
 import com.otboo.team03.recommendation.algorithm.BasicOutfitAlgorithm;
-import com.otboo.team03.recommendation.algorithm.AttributeSemanticAnalyzer;
-import com.otboo.team03.recommendation.algorithm.ClothesAttributeEstimator;
-import com.otboo.team03.recommendation.algorithm.SleeveLengthAnalyzer;
-import com.otboo.team03.recommendation.entity.SleeveLength;
-import com.otboo.team03.recommendation.entity.ThicknessLevel;
 import com.otboo.team03.recommendation.dto.RecommendationDto;
+import com.otboo.team03.recommendation.dto.RecommendationSnapshot;
 import com.otboo.team03.recommendation.repository.RedisRecommendationHistoryRepository;
-import com.otboo.team03.weather.exception.WeatherNotFoundException;
-import com.otboo.team03.weather.repository.WeatherRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class RecommendationService {
 
-    private final ClothesRepository clothesRepository;
-    private final ClothesAttributeRepository clothesAttributeRepository;
-    private final WeatherRepository weatherRepository;
-    private final ProfileService profileService;
-    private final ClothesService clothesService;
+    private static final List<ClothesType> RESPONSE_ORDER = List.of(ClothesType.TOP, ClothesType.BOTTOM,
+            ClothesType.DRESS, ClothesType.OUTER, ClothesType.SHOES, ClothesType.SOCKS,
+            ClothesType.BAG, ClothesType.HAT, ClothesType.ACCESSORY, ClothesType.SCARF);
+
+    private final RecommendationInputReader inputReader;
     private final BasicOutfitAlgorithm algorithm;
-    private final AttributeSemanticAnalyzer attributeAnalyzer;
-    private final ClothesAttributeEstimator attributeEstimator;
-    private final SleeveLengthAnalyzer sleeveAnalyzer;
+    private final LlmOutfitRecommender llmRecommender;
+    private final ClothesService clothesService;
     private final RedisRecommendationHistoryRepository historyRepository;
 
+    // 입력 조회의 짧은 트랜잭션이 끝난 뒤 외부 API를 호출한다.
     public RecommendationDto recommend(UUID weatherId, UUID userId) {
-        Double temperature = weatherRepository.findById(weatherId)
-                .orElseThrow(WeatherNotFoundException::new)
-                .getTemperature();
-
-        Integer sensitivity = profileService.getProfile(userId).temperatureSensitivity();
-        int effectiveSensitivity = sensitivity != null ? sensitivity : 3;
-
-        List<Clothes> clothes = clothesRepository.findAllByOwner_Id(userId);
-        List<UUID> clothesIds = clothes.stream().map(Clothes::getId).toList();
-        Map<UUID, List<ClothesAttribute>> attributesByClothesId = clothesIds.isEmpty()
-                ? Map.of() : loadAttributesByClothesId(clothesIds);
-        Map<UUID, ThicknessLevel> thicknessByClothesId = new HashMap<>();
-        Map<UUID, SleeveLength> sleeveByClothesId = new HashMap<>();
-        for (UUID clothesId : clothesIds) {
-            List<ThicknessLevel> thicknessLevels = new ArrayList<>();
-            List<SleeveLength> sleeveLengths = new ArrayList<>();
-            for (ClothesAttribute attribute : attributesByClothesId.getOrDefault(clothesId, List.of())) {
-                String name = attribute.getDefinition().getName();
-                String value = attribute.getValue();
-                thicknessLevels.add(attributeAnalyzer.analyze(name, value));
-                sleeveLengths.add(sleeveAnalyzer.analyze(name, value));
-            }
-            thicknessByClothesId.put(clothesId, attributeEstimator.estimateThickness(thicknessLevels));
-            sleeveByClothesId.put(clothesId, attributeEstimator.estimateSleeveLength(sleeveLengths));
-        }
+        RecommendationSnapshot snapshot = inputReader.read(weatherId, userId);
         Set<UUID> previousOutfitIds = historyRepository.find(userId, weatherId);
-        List<Clothes> recommended = algorithm.recommend(
-                clothes, thicknessByClothesId, sleeveByClothesId, temperature, effectiveSensitivity, previousOutfitIds);
+        List<Clothes> recommended = chooseOutfit(snapshot, previousOutfitIds);
 
         List<OotdDto> ootds = recommended.stream()
-                .map(c -> clothesService.toClothesDto(c, attributesByClothesId.getOrDefault(c.getId(), List.of())))
+                .map(item -> clothesService.toClothesDto(item,
+                        snapshot.attributesByClothesId().getOrDefault(item.getId(), List.of())))
                 .map(OotdDto::fromClothesDto)
                 .toList();
-
         if (recommended.isEmpty()) {
             historyRepository.delete(userId, weatherId);
         } else {
-            Set<UUID> recommendedIds = recommended.stream().map(Clothes::getId).collect(Collectors.toUnmodifiableSet());
-            historyRepository.save(userId, weatherId, recommendedIds);
+            Set<UUID> ids = recommended.stream().map(Clothes::getId).collect(Collectors.toUnmodifiableSet());
+            historyRepository.save(userId, weatherId, ids);
         }
-
         return new RecommendationDto(weatherId, userId, ootds);
     }
 
-    private Map<UUID, List<ClothesAttribute>> loadAttributesByClothesId(List<UUID> clothesIds) {
-        return clothesAttributeRepository.findAllByClothes_IdIn(clothesIds).stream()
-                .collect(Collectors.groupingBy(attribute -> attribute.getClothes().getId()));
+    private List<Clothes> chooseOutfit(RecommendationSnapshot snapshot, Set<UUID> previousOutfitIds) {
+        List<Clothes> fallback = algorithm.recommend(snapshot.clothes(), snapshot.thicknessByClothesId(),
+                snapshot.sleeveByClothesId(), snapshot.weather().temperature(), snapshot.sensitivity(), previousOutfitIds);
+        if (fallback.isEmpty()) {
+            return fallback;
+        }
+        return llmRecommender.recommend(snapshot.llmInput(previousOutfitIds))
+                .map(decision -> selectOwnedClothes(snapshot, Set.copyOf(decision.clothesIds())))
+                .orElse(fallback);
+    }
+
+    private List<Clothes> selectOwnedClothes(RecommendationSnapshot snapshot, Set<UUID> selectedIds) {
+        return snapshot.clothes().stream()
+                .filter(item -> selectedIds.contains(item.getId()))
+                .sorted(Comparator.comparingInt(item -> RESPONSE_ORDER.indexOf(item.getType())))
+                .toList();
     }
 }
