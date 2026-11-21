@@ -11,16 +11,8 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ClothesPageClientTest {
-    private final ClothesPageClient client = new ClothesPageClient();
+    private final ClothesPageClient client = new ClothesPageClient(new PurchaseUrlValidator());
     private final String url = "https://www.musinsa.com/products/1";
-
-    @ParameterizedTest
-    @ValueSource(strings = {"https://product.29cm.co.kr/catalog/2238612?source=brand",
-            "https://www.musinsa.com/products/123", "https://store.musinsa.com/app/goods/123",
-            "https://www.wconcept.co.kr/Product/123", "https://www.musinsa.com:443/products/123"})
-    void acceptsActualProductUrlFormats(String input) {
-        assertThat(client.validate(input).toString()).isEqualTo(input);
-    }
 
     @ParameterizedTest
     @ValueSource(strings = {"https://www.musinsa.com", "https://www.musinsa.com/login",
@@ -77,7 +69,8 @@ class ClothesPageClientTest {
             when(response.bodyAsBytes()).thenReturn(new byte["oversize".equals(contentType) ? 2 * 1024 * 1024 + 1 : 10]);
             when(response.body()).thenReturn("<html></html>");
             if (contentType != null && contentType.startsWith("text/html")) {
-                assertThat(client.fetch(url)).isEqualTo("<html></html>");
+                jsoup.when(() -> Jsoup.parse("<html></html>", url)).thenCallRealMethod();
+                assertThat(client.fetch(url).location()).isEqualTo(url);
             } else {
                 assertThatThrownBy(() -> client.fetch(url)).isInstanceOf(OtbooException.class);
             }

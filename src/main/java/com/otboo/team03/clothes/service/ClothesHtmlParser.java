@@ -2,86 +2,104 @@ package com.otboo.team03.clothes.service;
 
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
-import org.jsoup.Jsoup;
+import java.net.URI;
+import java.util.List;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.springframework.stereotype.Component;
-
-import java.net.URI;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 @Component
 public class ClothesHtmlParser {
+    private static final JsonMapper JSON = JsonMapper.builder().build();
+    private static final List<String> PRODUCT_TYPES = List.of(
+            "Product", "https://schema.org/Product", "http://schema.org/Product");
 
-    /**
-     * 전달받은 HTML에서 상품명과 대표 이미지를 추출한다.
-     * pageUrl은 상대 이미지 경로를 절대 URL로 변환하는 기준이다.
-     */
-    public ExtractedClothes parse(String html, String pageUrl) {
-        Document document = Jsoup.parse(html, pageUrl);
-
-        // Open Graph 제목을 우선 사용하고, 없으면 HTML 제목을 사용한다.
-        String name = readMeta(document, "meta[property=og:title]");
-
-        if (name == null) {
+    public ExtractedClothes parse(Document document) {
+        JsonNode product = structuredProduct(document);
+        String type = meta(document, "og:type");
+        if (product == null && !"product".equalsIgnoreCase(type) && !"og:product".equalsIgnoreCase(type)) {
+            throw new OtbooException(ErrorCode.CLOTHES_EXTRACTION_FAILED);
+        }
+        String name = meta(document, "og:title");
+        if (name.isBlank() && product != null) {
+            name = product.path("name").asString("").strip();
+        }
+        if (name.isBlank()) {
             name = document.title().strip();
         }
-
-        // 이름조차 추출하지 못하면 초기 정보를 제공할 수 없다고 판단한다.
-        if (name == null || name.isBlank()) {
-            throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+        if (name.isBlank() || name.length() > 255) {
+            throw new OtbooException(ErrorCode.CLOTHES_EXTRACTION_FAILED);
         }
-
-        String imageUrl = readImageUrl(document);
-
-        return new ExtractedClothes(name, imageUrl);
+        String image = imageUrl(document.location(), meta(document, "og:image"));
+        if (image == null && product != null) {
+            image = structuredImage(document.location(), product.path("image"));
+        }
+        return new ExtractedClothes(name, image);
     }
 
-    private String readMeta(Document document, String selector) {
-        Element element = document.selectFirst(selector);
-
-        if (element == null) {
-            return null;
-        }
-
-        String content = element.attr("content").strip();
-        return content.isBlank() ? null : content;
+    private String meta(Document document, String property) {
+        Element element = document.selectFirst("meta[property=" + property + "]");
+        return element == null ? "" : element.attr("content").strip();
     }
 
-    private String readImageUrl(Document document) {
-        Element element = document.selectFirst("meta[property=og:image]");
-
-        if (element == null) {
-            return null;
-        }
-
-        // 빈 값은 absUrl 변환 시 상품 페이지 주소가 될 수 있으므로 먼저 거부한다.
-        if (element.attr("content").isBlank()) {
-            return null;
-        }
-
-        // /images/item.jpg 같은 상대 경로도 절대 URL로 변환한다.
-        String absoluteUrl = element.absUrl("content");
-
-        try {
-            URI uri = URI.create(absoluteUrl);
-
-            // 이미지 URL은 HTTP/HTTPS 주소만 결과에 포함한다.
-            if (uri.getHost() == null
-                    || (!"https".equalsIgnoreCase(uri.getScheme())
-                    && !"http".equalsIgnoreCase(uri.getScheme()))) {
-                return null;
+    private JsonNode structuredProduct(Document document) {
+        for (Element script : document.select("script[type=application/ld+json]")) {
+            try {
+                JsonNode product = findProduct(JSON.readTree(script.data()));
+                if (product != null) return product;
+            } catch (JacksonException ignored) {
+                // 독립된 다음 JSON-LD 블록을 검사한다.
             }
+        }
+        return null;
+    }
 
-            return uri.toString();
-        } catch (IllegalArgumentException e) {
+    private JsonNode findProduct(JsonNode node) {
+        if (node == null) return null;
+        if (node.isArray()) {
+            for (JsonNode item : node) {
+                JsonNode product = findProduct(item);
+                if (product != null) return product;
+            }
+        }
+        if (!node.isObject()) return null;
+        JsonNode type = node.path("@type");
+        if (PRODUCT_TYPES.contains(type.asString(""))) return node;
+        for (JsonNode entry : type) {
+            if (PRODUCT_TYPES.contains(entry.asString(""))) return node;
+        }
+        // 추천 목록의 Product는 현재 페이지의 상품이 아니다.
+        JsonNode main = findProduct(node.get("mainEntity"));
+        return main != null ? main : findProduct(node.get("@graph"));
+    }
+
+    private String structuredImage(String base, JsonNode node) {
+        if (node.isArray()) {
+            for (JsonNode item : node) {
+                String image = structuredImage(base, item);
+                if (image != null) return image;
+            }
             return null;
         }
+        String value = node.isObject() ? node.path("url").asString(node.path("contentUrl").asString(""))
+                : node.asString("");
+        return imageUrl(base, value);
     }
 
-    // 저장 엔티티와 구분되는 추출 결과다.
-    public record ExtractedClothes(
-            String name,
-            String imageUrl
-    ) {
+    private String imageUrl(String base, String value) {
+        if (value.isBlank()) return null;
+        try {
+            URI uri = URI.create(base).resolve(value.strip());
+            if (uri.getHost() != null && ("https".equalsIgnoreCase(uri.getScheme())
+                    || "http".equalsIgnoreCase(uri.getScheme()))) return uri.toString();
+        } catch (IllegalArgumentException ignored) {
+            // 이미지 URL 오류는 상품명 추출을 막지 않는다.
+        }
+        return null;
     }
+
+    public record ExtractedClothes(String name, String imageUrl) {}
 }
