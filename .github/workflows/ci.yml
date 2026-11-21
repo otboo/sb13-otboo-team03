@@ -50,6 +50,7 @@ jobs:
       SPRING_DATASOURCE_PASSWORD: ci_test_password
       REDIS_HOST: localhost
       REDIS_PORT: 6379
+      SPRING_KAFKA_LISTENER_AUTO_STARTUP: false
 
       # JWT 테스트 환경 설정
       JWT_SECRET: otboo-ci-test-secret-key-12345678901234567890
