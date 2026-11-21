@@ -51,6 +51,14 @@ spring:
           writetimeout: 5000
 
 otboo:
+  recommendation:
+    llm:
+      enabled: ${RECOMMENDATION_LLM_ENABLED:false}
+      model: ${GROQ_RECOMMENDATION_MODEL:openai/gpt-oss-120b}
+      max-clothes: 80
+      max-input-characters: 12000
+      max-completion-tokens: 2048
+
   admin:
     email: ${ADMIN_EMAIL}
     password: ${ADMIN_PASSWORD}
@@ -106,6 +114,11 @@ management:
 kakao:
   api:
     key: ${KAKAO_API_KEY:}
+
+groq:
+  api-key: ${GROQ_API_KEY:}
+  connect-timeout: 2s
+  read-timeout: 8s
 
 openweather:
   api:
