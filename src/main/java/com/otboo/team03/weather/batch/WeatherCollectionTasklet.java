@@ -35,17 +35,34 @@ public class WeatherCollectionTasklet implements Tasklet {
       try {
         List<Weather> weathers = openWeatherClient.fetchForecast(target.lat(), target.lon());
 
-        List<Weather> newWeathers = weathers.stream()
-            .filter(w -> !weatherRepository.existsByLatitudeAndLongitudeAndForecastAt(
-                w.getLatitude(), w.getLongitude(), w.getForecastAt()))
-            .toList();
+        int newCount = 0;
+        int updateCount = 0;
 
-        if (!newWeathers.isEmpty()) {
-          weatherRepository.saveAll(newWeathers);
-          log.info(">>>>> [WeatherBatch] {} 신규 날씨 데이터 {}건 저장 완료", target.name(), newWeathers.size());
-        } else {
-          log.info(">>>>> [WeatherBatch] {} 모든 예보 데이터가 이미 최신 상태입니다.", target.name());
+        for (Weather fetched : weathers) {
+          var existingOpt = weatherRepository.findByLatitudeAndLongitudeAndForecastAt(
+              fetched.getLatitude(), fetched.getLongitude(), fetched.getForecastAt());
+          if (existingOpt.isPresent()) {
+            // 이미 존재하는 예보 시각: 최신 예보 수치로 업데이트
+            Weather existing = existingOpt.get();
+            existing.updateForecast(
+                fetched.getForecastedAt(),
+                fetched.getSkyStatus(),
+                fetched.getPrecipitationType(),
+                fetched.getPrecipitationAmount(),
+                fetched.getPrecipitationProbability(),
+                fetched.getTemperature(),
+                fetched.getHumidity(),
+                fetched.getWindSpeed()
+            );
+            weatherRepository.save(existing);
+            updateCount++;
+          } else {
+            // 신규 예보 시각: 새로 저장
+            weatherRepository.save(fetched);
+            newCount++;
+          }
         }
+        log.info(">>>>> [WeatherBatch] {} 날씨 수집 완료 - 신규: {}건, 최신 갱신: {}건", target.name(), newCount, updateCount);
       } catch (Exception e) {
         log.error(">>>>> [WeatherBatch] {} 날씨 수집 중 오류 발생: {}", target.name(), e.getMessage());
       }
