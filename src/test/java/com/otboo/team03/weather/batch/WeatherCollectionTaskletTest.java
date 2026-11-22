@@ -141,5 +141,27 @@ class WeatherCollectionTaskletTest {
     verify(contribution).setExitStatus(ExitStatus.FAILED);
   }
 
+  @Test
+  @DisplayName("수집된 날씨 리스트가 null인 경우 해당 거점은 건너뛰고 다음 거점을 정상 수집한다")
+  void execute_whenWeatherListIsNull_continuesNextTarget() {
+    // given
+    Weather jungguWeather = createWeather(37.5665, 126.9780, Instant.parse("2026-11-19T03:00:00Z"), 19.0);
+
+    given(openWeatherClient.fetchForecast(eq(37.4979), anyDouble()))
+        .willReturn(null);
+    given(openWeatherClient.fetchForecast(eq(37.5665), anyDouble()))
+        .willReturn(List.of(jungguWeather));
+
+    given(weatherRepository.findAllByLatitudeAndLongitudeAndForecastAtIn(eq(37.5665), anyDouble(), any()))
+        .willReturn(Collections.emptyList());
+
+    // when
+    RepeatStatus status = tasklet.execute(null, null);
+
+    // then
+    assertThat(status).isEqualTo(RepeatStatus.FINISHED);
+    verify(weatherRepository, times(1)).saveAll(List.of(jungguWeather));
+  }
+
 
 }
