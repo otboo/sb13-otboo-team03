@@ -32,4 +32,9 @@ public interface WeatherRepository extends JpaRepository<Weather, UUID> {
   // 동일 좌표 및 동일 예보 대상 시각의 기존 데이터 조회 (최신 예보 갱신용)
   Optional<Weather> findByLatitudeAndLongitudeAndForecastAt(Double latitude, Double longitude, Instant forecastAt);
 
+  // 특정 좌표에서 예보 대상 시각 목록에 해당하는 기존 예보들을 한 번에 일괄 조회
+  List<Weather> findAllByLatitudeAndLongitudeAndForecastAtIn(
+      Double latitude, Double longitude, List<Instant> forecastAts
+  );
+
 }

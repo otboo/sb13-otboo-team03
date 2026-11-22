@@ -1,8 +1,10 @@
 package com.otboo.team03.weather.batch;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -14,14 +16,16 @@ import com.otboo.team03.weather.entity.SkyStatus;
 import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.repository.WeatherRepository;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.batch.core.ExitStatus;
+import org.springframework.batch.core.step.StepContribution;
 import org.springframework.batch.infrastructure.repeat.RepeatStatus;
 
 @ExtendWith(MockitoExtension.class)
@@ -53,7 +57,7 @@ class WeatherCollectionTaskletTest {
   }
 
   @Test
-  @DisplayName("외부 API로부터 날씨 데이터를 정상 수집하여 중복되지 않은 신규 데이터만 저장한다")
+  @DisplayName("신규 예보 데이터인 경우 일괄 조회 후 신규 데이터만 saveAll로 저장한다")
   void execute_savesNewWeathersSuccessfully() {
     // given
     Instant time1 = Instant.parse("2026-11-19T03:00:00Z");
@@ -62,17 +66,15 @@ class WeatherCollectionTaskletTest {
     given(openWeatherClient.fetchForecast(anyDouble(), anyDouble()))
         .willReturn(List.of(fetched));
 
-    // DB에 해당 시각 예보가 없는 상태
-    given(weatherRepository.findByLatitudeAndLongitudeAndForecastAt(anyDouble(), anyDouble(), any(Instant.class)))
-        .willReturn(Optional.empty());
+    given(weatherRepository.findAllByLatitudeAndLongitudeAndForecastAtIn(anyDouble(), anyDouble(), any()))
+        .willReturn(Collections.emptyList());
 
     // when
     RepeatStatus status = tasklet.execute(null, null);
 
     // then
     assertThat(status).isEqualTo(RepeatStatus.FINISHED);
-    // 중복된 time1은 제외되고 신규 데이터인 time2만 저장되었는지 검증
-    verify(weatherRepository, times(2)).save(fetched);
+    verify(weatherRepository, times(2)).saveAll(List.of(fetched));
   }
 
   @Test
@@ -82,34 +84,84 @@ class WeatherCollectionTaskletTest {
     Instant time1 = Instant.parse("2026-11-19T03:00:00Z");
     Weather existing = createWeather(37.4979, 127.0276, time1, 18.0); // 기존 예보: 18도
     Weather fetched = createWeather(37.4979, 127.0276, time1, 15.0);  // 새로 발표된 예보: 15도로 수정됨
+
     given(openWeatherClient.fetchForecast(anyDouble(), anyDouble()))
         .willReturn(List.of(fetched));
     // DB에 이미 기존 예보가 존재함
-    given(weatherRepository.findByLatitudeAndLongitudeAndForecastAt(anyDouble(), anyDouble(), any(Instant.class)))
-        .willReturn(Optional.of(existing));
+    given(weatherRepository.findAllByLatitudeAndLongitudeAndForecastAtIn(anyDouble(), anyDouble(), any()))
+        .willReturn(List.of(existing));
+
     // when
     RepeatStatus status = tasklet.execute(null, null);
+
     // then
     assertThat(status).isEqualTo(RepeatStatus.FINISHED);
     // 기존 데이터의 기온이 최신 예보인 15.0도로 업데이트되었는지 확인
     assertThat(existing.getTemperature()).isEqualTo(15.0);
-    // 거점 2곳(강남, 중구) 각각 1회씩 총 2회 갱신 저장 호출 검증
-    verify(weatherRepository, times(2)).save(existing);
+    verify(weatherRepository, never()).saveAll(any());
   }
 
   @Test
-  @DisplayName("수집 대상 지역 중 특정 지역 호출에서 예외가 발생해도 배치가 중단되지 않고 정상 완료된다")
-  void execute_whenApiExceptionOccurs_continuesNextTarget() {
-    // given (API 호출 시 네트워크 예외 발생 시뮬레이션)
-    given(openWeatherClient.fetchForecast(anyDouble(), anyDouble()))
-        .willThrow(new RuntimeException("API Connection Timeout"));
+  @DisplayName("첫 번째 거점(강남) 호출이 실패해도 두 번째 거점(중구)은 정상적으로 수집되어 저장된다 (장애 격리)")
+  void execute_whenFirstTargetFails_secondTargetSucceeds() {
+    // given
+    Weather jungguWeather = createWeather(37.5665, 126.9780, Instant.parse("2026-11-19T03:00:00Z"), 19.0);
+
+    // 강남(37.4979)은 API 예외 발생, 중구(37.5665)는 정상 데이터 반환
+    given(openWeatherClient.fetchForecast(eq(37.4979), anyDouble()))
+        .willThrow(new RuntimeException("Gangnam API Timeout"));
+    given(openWeatherClient.fetchForecast(eq(37.5665), anyDouble()))
+        .willReturn(List.of(jungguWeather));
+
+    given(weatherRepository.findAllByLatitudeAndLongitudeAndForecastAtIn(eq(37.5665), anyDouble(), any()))
+        .willReturn(Collections.emptyList());
 
     // when
     RepeatStatus status = tasklet.execute(null, null);
 
-    // then: 예외가 상위로 터지지 않고 장애 격리되어 FINISHED로 안전하게 끝남
+    // then: 전체 배치는 정상 종료되고, 중구 데이터는 성공적으로 저장됨
     assertThat(status).isEqualTo(RepeatStatus.FINISHED);
-    verify(weatherRepository, never()).save(any());
+    verify(weatherRepository, times(1)).saveAll(List.of(jungguWeather));
   }
+
+  @Test
+  @DisplayName("모든 대상 지역 수집이 실패한 경우 Step이 FAILED 처리되고 예외를 던진다")
+  void execute_whenAllTargetsFail_stepBecomesFailed() {
+    // given: 강남, 중구 모두 실패
+    given(openWeatherClient.fetchForecast(anyDouble(), anyDouble()))
+        .willReturn(Collections.emptyList());
+
+    StepContribution contribution = org.mockito.Mockito.mock(StepContribution.class);
+
+    // when & then
+    assertThatThrownBy(() -> tasklet.execute(contribution, null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("모든 대상 지역의 날씨 수집에 실패했습니다.");
+
+    verify(contribution).setExitStatus(ExitStatus.FAILED);
+  }
+
+  @Test
+  @DisplayName("수집된 날씨 리스트가 null인 경우 해당 거점은 건너뛰고 다음 거점을 정상 수집한다")
+  void execute_whenWeatherListIsNull_continuesNextTarget() {
+    // given
+    Weather jungguWeather = createWeather(37.5665, 126.9780, Instant.parse("2026-11-19T03:00:00Z"), 19.0);
+
+    given(openWeatherClient.fetchForecast(eq(37.4979), anyDouble()))
+        .willReturn(null);
+    given(openWeatherClient.fetchForecast(eq(37.5665), anyDouble()))
+        .willReturn(List.of(jungguWeather));
+
+    given(weatherRepository.findAllByLatitudeAndLongitudeAndForecastAtIn(eq(37.5665), anyDouble(), any()))
+        .willReturn(Collections.emptyList());
+
+    // when
+    RepeatStatus status = tasklet.execute(null, null);
+
+    // then
+    assertThat(status).isEqualTo(RepeatStatus.FINISHED);
+    verify(weatherRepository, times(1)).saveAll(List.of(jungguWeather));
+  }
+
 
 }

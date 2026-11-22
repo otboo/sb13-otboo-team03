@@ -224,4 +224,90 @@ class WeatherTest {
     assertThat(exception.getErrorCode().getMessage()).isEqualTo("날씨 정보가 존재하지 않습니다.");
   }
 
+  @Nested
+  @DisplayName("updateForecast 예보 갱신 도메인 메서드 검증")
+  class UpdateForecastTest {
+    private Weather createInitialWeather() {
+      Instant baseTime = Instant.parse("2026-11-22T00:00:00Z");
+      return Weather.builder()
+          .latitude(37.5665)
+          .longitude(126.9780)
+          .forecastedAt(baseTime)
+          .forecastAt(baseTime.plusSeconds(3600))
+          .skyStatus(SkyStatus.CLEAR)
+          .precipitationType(PrecipitationType.NONE)
+          .precipitationAmount(0.0)
+          .precipitationProbability(0.0)
+          .temperature(18.0)
+          .humidity(50.0)
+          .windSpeed(2.0)
+          .build();
+    }
+
+    @Test
+    @DisplayName("더 최신 수집 시각(forecastedAt)의 예보가 들어오면 수치가 정상 갱신된다")
+    void updateForecast_whenNewerForecastArrives_updatesSuccessfully() {
+      // given
+      Weather weather = createInitialWeather();
+      Instant newerTime = Instant.parse("2026-11-22T01:00:00Z");
+
+      // when
+      weather.updateForecast(
+          newerTime,
+          SkyStatus.CLOUDY,
+          PrecipitationType.RAIN,
+          5.0,
+          80.0,
+          15.0,
+          70.0,
+          4.5
+      );
+
+      // then
+      assertThat(weather.getForecastedAt()).isEqualTo(newerTime);
+      assertThat(weather.getSkyStatus()).isEqualTo(SkyStatus.CLOUDY);
+      assertThat(weather.getPrecipitationType()).isEqualTo(PrecipitationType.RAIN);
+      assertThat(weather.getPrecipitationAmount()).isEqualTo(5.0);
+      assertThat(weather.getPrecipitationProbability()).isEqualTo(80.0);
+      assertThat(weather.getTemperature()).isEqualTo(15.0);
+      assertThat(weather.getHumidity()).isEqualTo(70.0);
+      assertThat(weather.getWindSpeed()).isEqualTo(4.5);
+    }
+
+    @Test
+    @DisplayName("기존 수집 시각보다 과거 시점(오래된)의 예보가 유입되면 덮어쓰지 않고 기존 값을 유지한다 (방어)")
+    void updateForecast_whenOlderForecastArrives_ignoresAndKeepsExisting() {
+      // given
+      Weather weather = createInitialWeather();
+      Instant olderTime = Instant.parse("2026-11-21T23:00:00Z"); // 기존(00:00)보다 1시간 전 과거 데이터
+
+      // when
+      weather.updateForecast(
+          olderTime,
+          SkyStatus.CLOUDY,
+          PrecipitationType.RAIN,
+          10.0,
+          90.0,
+          5.0,
+          80.0,
+          6.0
+      );
+
+      // then: 덮어쓰지 않고 기존 값(18.0도, CLEAR 등)이 그대로 유지됨
+      assertThat(weather.getForecastedAt()).isEqualTo(Instant.parse("2026-11-22T00:00:00Z"));
+      assertThat(weather.getSkyStatus()).isEqualTo(SkyStatus.CLEAR);
+      assertThat(weather.getTemperature()).isEqualTo(18.0);
+    }
+
+    @Test
+    @DisplayName("forecastedAt이 null이면 예외가 발생한다")
+    void updateForecast_nullForecastedAt_throwsException() {
+      Weather weather = createInitialWeather();
+      assertThatThrownBy(() -> weather.updateForecast(
+          null, SkyStatus.CLEAR, PrecipitationType.NONE, 0.0, 0.0, 20.0, 50.0, 2.0
+      )).isInstanceOf(NullPointerException.class);
+    }
+  }
+
+
 }

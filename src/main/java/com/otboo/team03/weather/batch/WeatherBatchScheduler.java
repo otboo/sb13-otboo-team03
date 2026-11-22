@@ -1,6 +1,7 @@
 package com.otboo.team03.weather.batch;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.job.Job;
@@ -23,11 +24,14 @@ public class WeatherBatchScheduler {
   @Scheduled(cron = "0 0 * * * *")
   public void runWeatherCollectionJob() {
     try {
+      // 다중 인스턴스(Docker 앱 2대) 환경에서 동일 작업으로 인식되도록 정각 시각으로 고정
+      LocalDateTime scheduledTime = LocalDateTime.now().truncatedTo(ChronoUnit.HOURS);
+
       JobParameters jobParameters = new JobParametersBuilder()
-          .addLocalDateTime("runAt", LocalDateTime.now())
+          .addLocalDateTime("runAt", scheduledTime)
           .toJobParameters();
 
-      log.info(">>>>> [WeatherBatchScheduler] 날씨 데이터 자동 수집 배치 실행 시작: {}", LocalDateTime.now());
+      log.info(">>>>> [WeatherBatchScheduler] 날씨 데이터 자동 수집 배치 실행 시작: {}", scheduledTime);
       jobOperator.start(weatherCollectionJob, jobParameters);
     } catch (Exception e) {
       log.error(">>>>> [WeatherBatchScheduler] 날씨 데이터 자동 수집 배치 실행 중 오류 발생: {}", e.getMessage());

@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 import java.util.Objects;
 import lombok.AccessLevel;
@@ -17,7 +18,10 @@ import org.hibernate.type.SqlTypes;
 
 // 기상청 / OpenWeatherMap 단기예보 기반 날씨 데이터 엔티티
 @Entity
-@Table(name = "weathers")
+@Table(name = "weathers", uniqueConstraints = {
+    @UniqueConstraint(name = "uk_weathers_location_forecast_at",
+    columnNames = {"latitude", "longitude", "forecast_at"})
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Weather extends UpdateEntity {
@@ -107,7 +111,13 @@ public class Weather extends UpdateEntity {
       Double humidity,
       Double windSpeed
   ) {
-    this.forecastedAt = Objects.requireNonNull(forecastedAt, "forecastedAt은 필수입니다.");
+    Objects.requireNonNull(forecastedAt, "forecastedAt은 필수입니다.");
+    // 기존 예보보다 오래된(과거의) 데이터가 들어오면 덮어쓰지 않고 무시
+    if (this.forecastedAt != null && forecastedAt.isBefore(this.forecastedAt)) {
+      return;
+    }
+
+    this.forecastedAt = forecastedAt;
     this.skyStatus = Objects.requireNonNull(skyStatus, "skyStatus는 필수입니다.");
     this.precipitationType = Objects.requireNonNull(precipitationType, "precipitationType은 필수입니다.");
     this.precipitationAmount = Objects.requireNonNull(precipitationAmount, "precipitationAmount는 필수입니다.");
