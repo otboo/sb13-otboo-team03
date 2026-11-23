@@ -125,6 +125,15 @@ public class SseConnectionManager {
         emitter.complete();
     }
 
+    public void disconnectAll(UUID receiverId) {
+        Set<SseEmitter> receiverEmitters = emitters.remove(receiverId);
+        if (receiverEmitters == null) {
+            return;
+        }
+
+        receiverEmitters.forEach(SseEmitter::complete);
+    }
+
     int connectionCount(UUID receiverId) {
         Set<SseEmitter> receiverEmitters = emitters.get(receiverId);
         return receiverEmitters == null ? 0 : receiverEmitters.size();

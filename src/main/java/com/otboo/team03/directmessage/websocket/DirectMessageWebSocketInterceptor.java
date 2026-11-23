@@ -4,6 +4,7 @@ import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.global.security.OtbooUserDetailsService;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.security.jwt.JwtTokenProvider;
+import com.otboo.team03.realtime.websocket.WebSocketSessionRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
@@ -27,6 +28,7 @@ public class DirectMessageWebSocketInterceptor implements ChannelInterceptor {
     private final JwtRegistry jwtRegistry;
     private final OtbooUserDetailsService userDetailsService;
     private final DirectMessageDestinationValidator destinationValidator;
+    private final WebSocketSessionRegistry sessionRegistry;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
@@ -39,7 +41,11 @@ public class DirectMessageWebSocketInterceptor implements ChannelInterceptor {
         }
 
         if (StompCommand.CONNECT.equals(accessor.getCommand())) {
-            accessor.setUser(authenticate(accessor));
+            Authentication authentication = authenticate(accessor);
+            accessor.setUser(authentication);
+            if (authentication.getPrincipal() instanceof OtbooUserDetails userDetails) {
+                sessionRegistry.bindUser(accessor.getSessionId(), userDetails.getUserDto().id());
+            }
             return message;
         }
 
