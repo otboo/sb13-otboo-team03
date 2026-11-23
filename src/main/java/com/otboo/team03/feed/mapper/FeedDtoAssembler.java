@@ -7,6 +7,7 @@ import com.otboo.team03.feed.dto.response.WeatherSummaryDto;
 import com.otboo.team03.feed.entity.FeedComment;
 import com.otboo.team03.feed.repository.FeedBatchQueryRepository;
 import com.otboo.team03.global.storage.ImageStorage;
+import com.otboo.team03.weather.exception.WeatherNotFoundException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -109,10 +110,11 @@ public class FeedDtoAssembler {
         throw new UserNotFoundException();
       }
 
-      WeatherSummaryDto weather = Objects.requireNonNull(
-          weathers.get(feed.getWeatherId()),
-          "Weather not found"
-      );
+      WeatherSummaryDto weather = weathers.get(feed.getWeatherId());
+
+      if (weather == null) {
+        throw new WeatherNotFoundException();
+      }
 
       FeedBatchQueryRepository.FeedCounts aggregate =
           counts.getOrDefault(

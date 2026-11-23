@@ -285,13 +285,13 @@ class FeedDtoAssemblerBatchTest {
         .thenReturn(Map.of(authorId, new AuthorDto(authorId, "작성자", null)));
 
     // when
-    NullPointerException exception = assertThrows(
-        NullPointerException.class,
+    WeatherNotFoundException exception = assertThrows(
+        WeatherNotFoundException.class,
         () -> assembler.toDtos(List.of(feed), null)
     );
 
     // then
-    assertEquals("Weather not found", exception.getMessage());
+    assertNotNull(exception);
   }
 
   @Test
