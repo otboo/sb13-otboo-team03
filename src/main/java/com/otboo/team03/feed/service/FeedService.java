@@ -100,6 +100,8 @@ public class FeedService {
       );
     }
 
+    feedClothesRepository.flush();
+
     List<UUID> followerIds = followRepository.findFollowerIdsByFolloweeId(
         request.authorId()
     );

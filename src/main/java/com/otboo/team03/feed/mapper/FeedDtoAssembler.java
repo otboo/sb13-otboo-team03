@@ -43,57 +43,7 @@ public class FeedDtoAssembler {
   private final FeedBatchQueryRepository batchQueryRepository;
 
   public FeedDto toDto(Feed feed, UUID viewerId) {
-    AuthorDto authorDto = toAuthorDto(feed.getAuthorId());
-
-    List<OotdDto> ootds = feedClothesRepository
-        .findAllByFeed_Id(feed.getId())
-        .stream()
-        .map(link -> toOotdDto(link.getClothes()))
-        .toList();
-
-    Long likeCount = jdbcTemplate.queryForObject(
-        "SELECT COUNT(*) FROM feed_likes WHERE feed_id = ?",
-        Long.class,
-        feed.getId()
-    );
-
-    Integer commentCount = jdbcTemplate.queryForObject(
-        "SELECT COUNT(*) FROM feed_comments WHERE feed_id = ?",
-        Integer.class,
-        feed.getId()
-    );
-
-    boolean likedByMe = false;
-
-    if (viewerId != null) {
-      Boolean liked = jdbcTemplate.queryForObject(
-          """
-          SELECT EXISTS (
-              SELECT 1
-              FROM feed_likes
-              WHERE feed_id = ? AND user_id = ?
-          )
-          """,
-          Boolean.class,
-          feed.getId(),
-          viewerId
-      );
-
-      likedByMe = Boolean.TRUE.equals(liked);
-    }
-
-    return new FeedDto(
-        feed.getId(),
-        feed.getCreatedAt(),
-        feed.getUpdatedAt(),
-        authorDto,
-        weatherRepository.findSummaryById(feed.getWeatherId()),
-        ootds,
-        feed.getContent(),
-        likeCount,
-        commentCount,
-        likedByMe
-    );
+    return toDtos(List.of(feed), viewerId).get(0);
   }
 
   public List<FeedDto> toDtos(List<Feed> feeds, UUID viewerId) {
