@@ -80,6 +80,20 @@ class ClothesPageClientTest {
     }
 
     @Test
+    void 다른_쇼핑몰의_403에는_무신사_안내를_반환하지_않는다() throws Exception {
+        String shopUrl = "https://www.29cm.co.kr/products/123";
+        try (var jsoup = mockStatic(Jsoup.class)) {
+            Connection connection = mock(Connection.class, RETURNS_SELF);
+            Connection.Response response = mock(Connection.Response.class);
+            jsoup.when(() -> Jsoup.connect(shopUrl)).thenReturn(connection);
+            when(connection.execute()).thenReturn(response);
+            when(response.statusCode()).thenReturn(403);
+            assertThatThrownBy(() -> client.fetch(shopUrl)).isInstanceOfSatisfying(OtbooException.class,
+                    e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.CLOTHES_EXTRACTION_FAILED));
+        }
+    }
+
+    @Test
     void mapsTimeoutToExtractionFailure() throws Exception {
         try (var jsoup = mockStatic(Jsoup.class)) {
             Connection connection = mock(Connection.class, RETURNS_SELF);

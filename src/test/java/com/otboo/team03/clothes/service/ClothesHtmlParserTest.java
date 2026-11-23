@@ -1,7 +1,14 @@
 package com.otboo.team03.clothes.service;
 
 import com.otboo.team03.global.exception.OtbooException;
+import org.jsoup.Jsoup;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -178,5 +185,87 @@ class ClothesHtmlParserTest {
                 """, PAGE_URL);
 
         assertEquals("http://cdn.example.com/shirt.jpg", result.imageUrl());
+    }
+
+    static Stream<Arguments> invalidMusinsaImages() {
+        String image = "https://image.msscdn.net/goods_img/123/main.jpg";
+        return Stream.of(
+                Arguments.of("", "재킷"),
+                Arguments.of("https://other.example/goods_img/123/main.jpg", "재킷"),
+                Arguments.of("https://image.msscdn.net/banner/123/main.jpg", "재킷"),
+                Arguments.of(image, ""),
+                Arguments.of(image, "가".repeat(256)),
+                Arguments.of(image, "다른 상품"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidMusinsaImages")
+    void 무신사_대표사진_조건을_충족하지_않으면_사진을_생략한다(String src, String alt) {
+        String title = "재킷 " + "가".repeat(256);
+        var result = parseProduct("""
+                <title>%s</title><meta property="og:title" content="재킷">
+                <img src="%s" alt="%s">
+                """.formatted(title, src, alt), PAGE_URL);
+        assertEquals("재킷", result.name());
+        assertNull(result.imageUrl());
+    }
+
+    static Stream<Arguments> invalid29cmTitles() {
+        return Stream.of(Arguments.of("", "점퍼"), Arguments.of("가".repeat(256), "가".repeat(256)),
+                Arguments.of("점퍼", "다른 상품"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalid29cmTitles")
+    void 이십구센티_상품번호만_일치하면_추출을_거절한다(String title, String heading) {
+        var document = Jsoup.parse("<title>" + title + "</title><h2>" + heading + "</h2>상품번호: 123",
+                "https://www.29cm.co.kr/products/123");
+        assertThrows(OtbooException.class, () -> parser.parse(document));
+    }
+
+    @Test
+    void 여러_mainEntity_후보에서_페이지_URL이_일치하는_상품을_고른다() {
+        var result = parseProduct("""
+                <script type="application/ld+json">
+                {"mainEntity":["#first","#second"],"@graph":[
+                  {"@type":"Product","@id":"#first","name":"다른 상품"},
+                  {"@type":"Product","@id":"#second","url":"/products/123","name":"현재 상품"}]}
+                </script>
+                """, PAGE_URL);
+        assertEquals("현재 상품", result.name());
+    }
+
+    @Test
+    void mainEntity가_누락된_상품을_가리키면_다른_상품의_사진을_쓰지_않는다() {
+        var result = parseProduct("""
+                <title>현재 상품</title><script type="application/ld+json">
+                {"mainEntity":"#missing","@graph":[{"@type":"Product","name":"추천","image":"/other.jpg"}]}
+                </script>
+                """, PAGE_URL);
+        assertEquals("현재 상품", result.name());
+        assertNull(result.imageUrl());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"https://other.example/products/123", "http://www.musinsa.com/products/123",
+            "https://www.musinsa.com:8443/products/123"})
+    void 출처가_다른_JSON_LD_상품은_경로가_같아도_제외한다(String url) {
+        var document = Jsoup.parse("""
+                <script type="application/ld+json">
+                {"@type":"Product","url":{"@id":"%s"},"name":"다른 상품"}
+                </script>
+                """.formatted(url), PAGE_URL);
+        assertThrows(OtbooException.class, () -> parser.parse(document));
+    }
+
+    @Test
+    void 이미지_후보가_모두_유효하지_않으면_상품명만_반환한다() {
+        var result = parseProduct("""
+                <script type="application/ld+json">
+                {"@type":"Product","name":"점퍼","image":["","ftp://cdn.example/main.jpg"]}
+                </script>
+                """, PAGE_URL);
+        assertEquals("점퍼", result.name());
+        assertNull(result.imageUrl());
     }
 }
