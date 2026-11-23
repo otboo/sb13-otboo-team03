@@ -5,6 +5,7 @@ import com.otboo.team03.notification.entity.Notification;
 import com.otboo.team03.notification.entity.NotificationLevel;
 import com.otboo.team03.notification.exception.NotificationNotFoundException;
 import com.otboo.team03.notification.repository.NotificationRepository;
+import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -148,6 +149,17 @@ class NotificationServiceTest {
                 .isThrownBy(() -> notificationService.getNotifications(
                         UUID.randomUUID(), null, null, 0
                 ));
+    }
+
+    @Test
+    void 커서와_ID가_짝지어_전달되지_않으면_거부한다() {
+        assertThatThrownBy(() -> notificationService.getNotifications(
+                UUID.randomUUID(), Instant.now(), null, 20
+        )).isInstanceOf(OtbooException.class);
+
+        assertThatThrownBy(() -> notificationService.getNotifications(
+                UUID.randomUUID(), null, UUID.randomUUID(), 20
+        )).isInstanceOf(OtbooException.class);
     }
 
     @Test

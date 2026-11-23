@@ -1,6 +1,8 @@
 package com.otboo.team03.notification.service;
 
 import com.otboo.team03.global.dto.CursorResponse;
+import com.otboo.team03.global.exception.ErrorCode;
+import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.notification.dto.response.NotificationDto;
 import com.otboo.team03.notification.entity.Notification;
 import com.otboo.team03.notification.exception.NotificationNotFoundException;
@@ -31,6 +33,7 @@ public class NotificationService {
             int limit
     ) {
         validateLimit(limit);
+        validateCursor(cursor, idAfter);
 
         PageRequest pageRequest = PageRequest.of(0, limit + 1);
         List<Notification> notifications = cursor == null
@@ -97,6 +100,12 @@ public class NotificationService {
     private void validateLimit(int limit) {
         if (limit <= 0) {
             throw new IllegalArgumentException("limit은 1 이상이어야 합니다.");
+        }
+    }
+
+    private void validateCursor(Instant cursor, UUID idAfter) {
+        if ((cursor == null) != (idAfter == null)) {
+            throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
         }
     }
 }
