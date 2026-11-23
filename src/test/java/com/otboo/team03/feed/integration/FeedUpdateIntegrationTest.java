@@ -1,6 +1,11 @@
 package com.otboo.team03.feed.integration;
 
+import com.otboo.team03.clothes.entity.Clothes;
+import com.otboo.team03.clothes.entity.ClothesType;
+import com.otboo.team03.clothes.repository.ClothesRepository;
 import com.otboo.team03.feed.entity.Feed;
+import com.otboo.team03.feed.entity.FeedClothes;
+import com.otboo.team03.feed.repository.FeedClothesRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.security.jwt.JwtTokenProvider;
@@ -53,6 +58,12 @@ class FeedUpdateIntegrationTest extends PostgresTestSupport {
   @MockitoBean
   private JwtRegistry jwtRegistry;
 
+  @Autowired
+  private ClothesRepository clothesRepository;
+
+  @Autowired
+  private FeedClothesRepository feedClothesRepository;
+
   @Test
   void 작성자가_피드를_수정하면_DB에_반영된다() throws Exception {
     // given
@@ -68,21 +79,21 @@ class FeedUpdateIntegrationTest extends PostgresTestSupport {
     Timestamp now = Timestamp.from(Instant.now());
 
     jdbcTemplate.update("""
-        INSERT INTO weathers (
-            id, latitude, longitude,
-            forecasted_at, forecast_at,
-            sky_status, precipitation_type,
-            precipitation_amount, precipitation_probability,
-            temperature, humidity, wind_speed,
-            created_at, updated_at
-        ) VALUES (
-            ?, 35.2, 129.1,
-            ?, ?,
-            'CLEAR', 'NONE',
-            0, 0, 20, 50, 1,
-            ?, ?
-        )
-        """,
+      INSERT INTO weathers (
+          id, latitude, longitude,
+          forecasted_at, forecast_at,
+          sky_status, precipitation_type,
+          precipitation_amount, precipitation_probability,
+          temperature, humidity, wind_speed,
+          created_at, updated_at
+      ) VALUES (
+          ?, 35.2, 129.1,
+          ?, ?,
+          'CLEAR', 'NONE',
+          0, 0, 20, 50, 1,
+          ?, ?
+      )
+      """,
         weatherId, now, now, now, now
     );
 
@@ -92,6 +103,41 @@ class FeedUpdateIntegrationTest extends PostgresTestSupport {
             weatherId,
             "수정 전 내용"
         )
+    );
+
+    Clothes clothes = clothesRepository.saveAndFlush(
+        new Clothes(
+            "검정 재킷",
+            ClothesType.OUTER,
+            "/images/jacket.png",
+            author
+        )
+    );
+
+    feedClothesRepository.saveAndFlush(
+        new FeedClothes(feed, clothes)
+    );
+
+    UUID definitionId = UUID.randomUUID();
+
+    jdbcTemplate.update("""
+      INSERT INTO clothes_attribute_definitions (
+          id, name, selectable_values, created_at
+      ) VALUES (?, ?, ARRAY['검정', '흰색']::text[], ?)
+      """,
+        definitionId,
+        "색상",
+        now
+    );
+
+    jdbcTemplate.update("""
+      INSERT INTO clothes_attribute (
+          clothes_id, definition_id, value
+      ) VALUES (?, ?, ?)
+      """,
+        clothes.getId(),
+        definitionId,
+        "검정"
     );
 
     String accessToken =
@@ -107,10 +153,10 @@ class FeedUpdateIntegrationTest extends PostgresTestSupport {
             .header("Authorization", "Bearer " + accessToken)
             .contentType(MediaType.APPLICATION_JSON)
             .content("""
-                {
-                  "content": "수정 후 내용"
-                }
-                """)
+              {
+                "content": "수정 후 내용"
+              }
+              """)
     );
 
     entityManager.flush();
@@ -124,8 +170,31 @@ class FeedUpdateIntegrationTest extends PostgresTestSupport {
 
     // then
     result.andExpect(status().isOk())
-        .andExpect(jsonPath("$.id").value(feed.getId().toString()))
-        .andExpect(jsonPath("$.content").value("수정 후 내용"));
+        .andExpect(jsonPath("$.id")
+            .value(feed.getId().toString()))
+        .andExpect(jsonPath("$.content")
+            .value("수정 후 내용"))
+        .andExpect(jsonPath("$.author.userId")
+            .value(author.getId().toString()))
+        .andExpect(jsonPath("$.author.name")
+            .value("피드 작성자"))
+        .andExpect(jsonPath("$.weather.weatherId")
+            .value(weatherId.toString()))
+        .andExpect(jsonPath("$.weather.skyStatus")
+            .value("CLEAR"))
+        .andExpect(jsonPath("$.ootds[0].clothesId")
+            .value(clothes.getId().toString()))
+        .andExpect(jsonPath("$.ootds[0].name")
+            .value("검정 재킷"))
+        .andExpect(jsonPath("$.ootds[0].type")
+            .value("OUTER"))
+        .andExpect(jsonPath("$.ootds[0].attributes[0].definitionName")
+            .value("색상"))
+        .andExpect(jsonPath("$.ootds[0].attributes[0].value")
+            .value("검정"))
+        .andExpect(jsonPath("$.likeCount").value(0))
+        .andExpect(jsonPath("$.commentCount").value(0))
+        .andExpect(jsonPath("$.likedByMe").value(false));
 
     assertEquals("수정 후 내용", savedContent);
   }

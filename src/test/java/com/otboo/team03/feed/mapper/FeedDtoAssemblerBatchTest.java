@@ -11,8 +11,6 @@ import com.otboo.team03.feed.dto.response.WeatherSummaryDto;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.FeedComment;
 import com.otboo.team03.feed.repository.FeedBatchQueryRepository;
-import com.otboo.team03.feed.repository.FeedClothesRepository;
-import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
 import com.otboo.team03.global.storage.ImageStorage;
 import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.UserRepository;
