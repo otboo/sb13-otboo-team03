@@ -1,7 +1,6 @@
 package com.otboo.team03.feed.mapper;
 
 import com.otboo.team03.clothes.dto.response.ClothesAttributeWithDefDto;
-import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.feed.dto.response.CommentDto;
 import com.otboo.team03.feed.dto.response.WeatherSummaryDto;
 import com.otboo.team03.feed.entity.FeedComment;
@@ -12,15 +11,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import org.springframework.beans.factory.ObjectProvider;
 import com.otboo.team03.feed.dto.response.AuthorDto;
 import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.dto.response.OotdDto;
 import com.otboo.team03.feed.entity.Feed;
-import com.otboo.team03.feed.repository.FeedClothesRepository;
-import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
 import com.otboo.team03.user.exception.UserNotFoundException;
@@ -28,7 +24,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -148,51 +143,6 @@ public class FeedDtoAssembler {
             ? rs.getString("profile_image_url")
             : null,
         userId
-    );
-  }
-
-  private OotdDto toOotdDto(Clothes clothes) {
-    List<ClothesAttributeWithDefDto> attributes =
-        findClothesAttributes(clothes.getId());
-
-    return new OotdDto(
-        clothes.getId(),
-        clothes.getName(),
-        clothes.getImageKey() == null ? clothes.getImageUrl()
-            : imageStorageProvider.getObject().getAccessUrl(clothes.getImageKey()),
-        clothes.getType(),
-        attributes
-    );
-  }
-
-  private List<ClothesAttributeWithDefDto> findClothesAttributes(
-      UUID clothesId
-  ) {
-    return jdbcTemplate.query("""
-                SELECT
-                    ca.definition_id,
-                    cad.name AS definition_name,
-                    cad.selectable_values,
-                    ca.value
-                FROM clothes_attribute ca
-                JOIN clothes_attribute_definitions cad
-                    ON ca.definition_id = cad.id
-                WHERE ca.clothes_id = ?
-                ORDER BY ca.definition_id
-                """,
-        (rs, rowNum) -> {
-          String[] values = (String[]) rs
-              .getArray("selectable_values")
-              .getArray();
-
-          return new ClothesAttributeWithDefDto(
-              rs.getObject("definition_id", UUID.class),
-              rs.getString("definition_name"),
-              Arrays.asList(values),
-              rs.getString("value")
-          );
-        },
-        clothesId
     );
   }
 
