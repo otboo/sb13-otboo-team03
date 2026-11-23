@@ -13,6 +13,8 @@ import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -350,5 +352,58 @@ class FollowDtoAssemblerTest {
         profileRepository,
         imageStorage
     );
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"/images/profile.png", ""})
+  void 프로필_이미지가_상대경로나_빈문자열이면_S3_URL_변환을_하지_않는다(
+      String rawImageUrl
+  ) {
+    // given
+    UUID followId = UUID.randomUUID();
+    UUID followerId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+
+    Follow follow = mock(Follow.class);
+
+    when(follow.getId()).thenReturn(followId);
+    when(follow.getFollowerId()).thenReturn(followerId);
+    when(follow.getFolloweeId()).thenReturn(followeeId);
+
+    User follower = mock(User.class);
+    User followee = mock(User.class);
+
+    when(follower.getId()).thenReturn(followerId);
+    when(follower.getName()).thenReturn("팔로워");
+
+    when(followee.getId()).thenReturn(followeeId);
+    when(followee.getName()).thenReturn("팔로우 대상");
+
+    Profile followeeProfile = mock(Profile.class);
+
+    when(followeeProfile.getUserId()).thenReturn(followeeId);
+    when(followeeProfile.getProfileImageUrl())
+        .thenReturn(rawImageUrl);
+
+    Set<UUID> userIds = Set.of(followerId, followeeId);
+
+    when(userRepository.findAllById(userIds))
+        .thenReturn(List.of(follower, followee));
+
+    when(profileRepository.findAllById(userIds))
+        .thenReturn(List.of(followeeProfile));
+
+    // when
+    List<FollowDto> result =
+        followDtoAssembler.toDtos(List.of(follow));
+
+    // then
+    assertEquals(1, result.size());
+    assertEquals(
+        rawImageUrl,
+        result.get(0).followee().profileImageUrl()
+    );
+
+    verifyNoInteractions(imageStorage);
   }
 }
