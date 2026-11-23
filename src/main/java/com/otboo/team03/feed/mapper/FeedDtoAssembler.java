@@ -36,8 +36,6 @@ import java.util.UUID;
 public class FeedDtoAssembler {
 
   private final UserRepository userRepository;
-  private final FeedClothesRepository feedClothesRepository;
-  private final FeedWeatherLookupRepository weatherRepository;
   private final JdbcTemplate jdbcTemplate;
   private final ObjectProvider<ImageStorage> imageStorageProvider;
   private final FeedBatchQueryRepository batchQueryRepository;

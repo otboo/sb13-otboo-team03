@@ -42,12 +42,6 @@ class FeedDtoAssemblerBatchTest {
   private UserRepository userRepository;
 
   @Mock
-  private FeedClothesRepository feedClothesRepository;
-
-  @Mock
-  private FeedWeatherLookupRepository weatherRepository;
-
-  @Mock
   private JdbcTemplate jdbcTemplate;
 
   @Mock
