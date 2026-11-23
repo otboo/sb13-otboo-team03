@@ -50,7 +50,7 @@ class OutboxEventRelayServiceTest {
     void 대기중인_이벤트를_발행하고_PUBLISHED로_변경한다() throws Exception {
         OutboxEvent event = newEvent();
         when(outboxEventRepository
-                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAsc(
+                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAscEventIdAsc(
                         eq(OutboxEventStatus.PENDING),
                         any(Instant.class),
                         any(Pageable.class)
@@ -69,7 +69,7 @@ class OutboxEventRelayServiceTest {
     @Test
     void 배치_크기_기본값으로_대기중인_이벤트를_조회한다() {
         when(outboxEventRepository
-                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAsc(
+                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAscEventIdAsc(
                         eq(OutboxEventStatus.PENDING),
                         any(Instant.class),
                         any(Pageable.class)
@@ -78,7 +78,7 @@ class OutboxEventRelayServiceTest {
         int processedCount = relayService.relayPendingEvents();
 
         assertThat(processedCount).isZero();
-        verify(outboxEventRepository).findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAsc(
+        verify(outboxEventRepository).findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAscEventIdAsc(
                 eq(OutboxEventStatus.PENDING),
                 any(Instant.class),
                 org.mockito.ArgumentMatchers.argThat(pageable ->
@@ -91,7 +91,7 @@ class OutboxEventRelayServiceTest {
     void 발행에_실패하면_재시도할_수_있는_PENDING_상태로_변경한다() throws Exception {
         OutboxEvent event = newEvent();
         when(outboxEventRepository
-                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAsc(
+                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAscEventIdAsc(
                         eq(OutboxEventStatus.PENDING),
                         any(Instant.class),
                         any(Pageable.class)
@@ -112,7 +112,7 @@ class OutboxEventRelayServiceTest {
     void 발행_예외_메시지가_null이면_예외_클래스명을_저장한다() throws Exception {
         OutboxEvent event = newEvent();
         when(outboxEventRepository
-                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAsc(
+                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAscEventIdAsc(
                         eq(OutboxEventStatus.PENDING),
                         any(Instant.class),
                         any(Pageable.class)
@@ -130,7 +130,7 @@ class OutboxEventRelayServiceTest {
         OutboxEvent failedEvent = newEvent();
         OutboxEvent successfulEvent = newEvent();
         when(outboxEventRepository
-                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAsc(
+                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAscEventIdAsc(
                         eq(OutboxEventStatus.PENDING),
                         any(Instant.class),
                         any(Pageable.class)
@@ -166,7 +166,7 @@ class OutboxEventRelayServiceTest {
                 OutboxEventRelayService.RETRY_DELAY
         );
         when(outboxEventRepository
-                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAsc(
+                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAscEventIdAsc(
                         eq(OutboxEventStatus.PENDING),
                         any(Instant.class),
                         any(Pageable.class)
