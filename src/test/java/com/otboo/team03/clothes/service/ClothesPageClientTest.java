@@ -11,16 +11,8 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ClothesPageClientTest {
-    private final ClothesPageClient client = new ClothesPageClient();
+    private final ClothesPageClient client = new ClothesPageClient(new PurchaseUrlValidator());
     private final String url = "https://www.musinsa.com/products/1";
-
-    @ParameterizedTest
-    @ValueSource(strings = {"https://product.29cm.co.kr/catalog/2238612?source=brand",
-            "https://www.musinsa.com/products/123", "https://store.musinsa.com/app/goods/123",
-            "https://www.wconcept.co.kr/Product/123", "https://www.musinsa.com:443/products/123"})
-    void acceptsActualProductUrlFormats(String input) {
-        assertThat(client.validate(input).toString()).isEqualTo(input);
-    }
 
     @ParameterizedTest
     @ValueSource(strings = {"https://www.musinsa.com", "https://www.musinsa.com/login",
@@ -58,7 +50,9 @@ class ClothesPageClientTest {
             jsoup.when(() -> Jsoup.connect(url)).thenReturn(connection);
             when(connection.execute()).thenReturn(response);
             when(response.statusCode()).thenReturn(status);
-            assertThatThrownBy(() -> client.fetch(url)).isInstanceOf(OtbooException.class);
+            ErrorCode expected = status == 403 ? ErrorCode.MUSINSA_ACCESS_RESTRICTED : ErrorCode.CLOTHES_EXTRACTION_FAILED;
+            assertThatThrownBy(() -> client.fetch(url)).isInstanceOfSatisfying(OtbooException.class,
+                    e -> assertThat(e.getErrorCode()).isEqualTo(expected));
             verify(connection).followRedirects(false);
         }
     }
@@ -77,10 +71,25 @@ class ClothesPageClientTest {
             when(response.bodyAsBytes()).thenReturn(new byte["oversize".equals(contentType) ? 2 * 1024 * 1024 + 1 : 10]);
             when(response.body()).thenReturn("<html></html>");
             if (contentType != null && contentType.startsWith("text/html")) {
-                assertThat(client.fetch(url)).isEqualTo("<html></html>");
+                jsoup.when(() -> Jsoup.parse("<html></html>", url)).thenCallRealMethod();
+                assertThat(client.fetch(url).location()).isEqualTo(url);
             } else {
                 assertThatThrownBy(() -> client.fetch(url)).isInstanceOf(OtbooException.class);
             }
+        }
+    }
+
+    @Test
+    void 다른_쇼핑몰의_403에는_무신사_안내를_반환하지_않는다() throws Exception {
+        String shopUrl = "https://www.29cm.co.kr/products/123";
+        try (var jsoup = mockStatic(Jsoup.class)) {
+            Connection connection = mock(Connection.class, RETURNS_SELF);
+            Connection.Response response = mock(Connection.Response.class);
+            jsoup.when(() -> Jsoup.connect(shopUrl)).thenReturn(connection);
+            when(connection.execute()).thenReturn(response);
+            when(response.statusCode()).thenReturn(403);
+            assertThatThrownBy(() -> client.fetch(shopUrl)).isInstanceOfSatisfying(OtbooException.class,
+                    e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.CLOTHES_EXTRACTION_FAILED));
         }
     }
 

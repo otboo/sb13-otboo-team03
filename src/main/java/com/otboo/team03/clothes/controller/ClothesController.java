@@ -8,7 +8,13 @@ import com.otboo.team03.clothes.service.ClothesExtractionService;
 import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.global.dto.CursorResponse;
 import com.otboo.team03.global.exception.ErrorCode;
+import com.otboo.team03.global.exception.ErrorResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.global.security.AuthenticatedUserIdExtractor;
 import com.otboo.team03.global.security.OtbooUserDetails;
 import org.springframework.security.core.Authentication;
 import jakarta.validation.Valid;
@@ -110,17 +116,20 @@ public class ClothesController {
         return ResponseEntity.noContent().build();
     }
 
-    //구매링크로 불러오기
+    @Operation(summary = "구매 링크로 옷 정보 불러오기", responses = {
+            @ApiResponse(responseCode = "200", description = "구매 링크로 옷 정보 불러오기 성공",
+                    content = @Content(schema = @Schema(implementation = ClothesDto.class))),
+            @ApiResponse(responseCode = "400", description = "구매 링크로 옷 정보 불러오기 실패",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "401", description = "인증 필요",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     @GetMapping("/extractions")
     public ResponseEntity<ClothesDto> extractByUrl(
             @RequestParam("url") String url,
-            Authentication authentication){
-        if(authentication == null || !authentication.isAuthenticated()
-        || !(authentication.getPrincipal() instanceof OtbooUserDetails userDetails)){
-            throw new OtbooException(ErrorCode.AUTHENTICATION_REQUIRED);
-        }
-
-        return ResponseEntity.ok(extractionService.extract(url, userDetails.getUserDto().id()));
+            Authentication authentication
+    ) {
+        UUID ownerId = AuthenticatedUserIdExtractor.extract(authentication);
+        return ResponseEntity.ok(extractionService.extract(url, ownerId));
     }
-
 }
