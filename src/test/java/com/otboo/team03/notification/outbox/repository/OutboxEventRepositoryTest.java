@@ -79,7 +79,7 @@ class OutboxEventRepositoryTest {
         outboxEventRepository.flush();
 
         List<OutboxEvent> pending = outboxEventRepository
-                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAsc(
+                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAscEventIdAsc(
                         OutboxEventStatus.PENDING,
                         availableAt.plusSeconds(2),
                         PageRequest.of(0, 10)
