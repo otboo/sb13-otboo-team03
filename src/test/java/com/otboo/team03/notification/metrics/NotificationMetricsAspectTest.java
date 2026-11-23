@@ -39,6 +39,13 @@ class NotificationMetricsAspectTest {
     }
 
     @Test
+    void 알림_생성_결과가_Optional이_아니면_생성_메트릭을_기록하지_않는다() {
+        aspect.recordNotificationCreated("notification");
+
+        verifyNoInteractions(metrics);
+    }
+
+    @Test
     void Redis_발행_성공과_실패_메트릭을_기록한다() {
         aspect.recordNotificationDelivered();
         aspect.recordRealtimeDeliveryFailure();

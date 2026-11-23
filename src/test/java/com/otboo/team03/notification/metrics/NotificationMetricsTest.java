@@ -34,6 +34,7 @@ class NotificationMetricsTest {
         assertThat(registry.get("active_websocket_sessions").gauge().value()).isEqualTo(1);
 
         metrics.sseDisconnected();
+        metrics.sseDisconnected();
         metrics.webSocketDisconnected();
         metrics.webSocketDisconnected();
         assertThat(registry.get("active_sse_connections").gauge().value()).isZero();
