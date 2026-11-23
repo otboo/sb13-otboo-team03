@@ -6,14 +6,14 @@ import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesAttribute;
 import com.otboo.team03.clothes.entity.ClothesAttributeDefinition;
 import com.otboo.team03.clothes.entity.ClothesType;
-import com.otboo.team03.clothes.repository.ClothesRepository;
 import com.otboo.team03.clothes.repository.ClothesAttributeRepository;
+import com.otboo.team03.clothes.repository.ClothesRepository;
 import com.otboo.team03.clothes.service.ClothesService;
 import com.otboo.team03.profile.dto.ProfileDto;
 import com.otboo.team03.profile.exception.ProfileNotFoundException;
 import com.otboo.team03.profile.service.ProfileService;
-import com.otboo.team03.recommendation.algorithm.BasicOutfitAlgorithm;
 import com.otboo.team03.recommendation.algorithm.AttributeSemanticAnalyzer;
+import com.otboo.team03.recommendation.algorithm.BasicOutfitAlgorithm;
 import com.otboo.team03.recommendation.algorithm.ClothesAttributeEstimator;
 import com.otboo.team03.recommendation.algorithm.ClothesSuitabilityScorer;
 import com.otboo.team03.recommendation.algorithm.SleeveLengthAnalyzer;
@@ -23,27 +23,26 @@ import com.otboo.team03.recommendation.repository.RedisRecommendationHistoryRepo
 import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.exception.WeatherNotFoundException;
 import com.otboo.team03.weather.repository.WeatherRepository;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.Spy;
-import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.util.List;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.Mock;
+import org.mockito.Spy;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+import static com.otboo.team03.recommendation.entity.ThicknessLevel.*;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
-import static com.otboo.team03.recommendation.entity.ThicknessLevel.*;
 
 @ExtendWith(MockitoExtension.class)
 class RecommendationServiceTest {
@@ -58,7 +57,20 @@ class RecommendationServiceTest {
     @Spy private AttributeSemanticAnalyzer attributeAnalyzer = new AttributeSemanticAnalyzer();
     @Spy private ClothesAttributeEstimator attributeEstimator = new ClothesAttributeEstimator();
     @Spy private SleeveLengthAnalyzer sleeveAnalyzer = new SleeveLengthAnalyzer();
-    @InjectMocks private RecommendationService service;
+    @Mock private LlmOutfitRecommender llmRecommender;
+    private RecommendationService service;
+
+    @BeforeEach
+    void createService() {
+        service = connectedService(algorithm);
+    }
+
+    private RecommendationService connectedService(BasicOutfitAlgorithm implementation) {
+        RecommendationInputReader reader = new RecommendationInputReader(
+                clothesRepository, clothesAttributeRepository, weatherRepository, profileService,
+                attributeAnalyzer, attributeEstimator, sleeveAnalyzer);
+        return new RecommendationService(reader, implementation, llmRecommender, clothesService, historyRepository);
+    }
 
     private final UUID userId = UUID.randomUUID();
     private final UUID weatherId = UUID.randomUUID();
@@ -107,10 +119,7 @@ class RecommendationServiceTest {
     @Test
     void 같은_사용자와_날씨로_다시_요청하면_직전_추천을_전달해_다른_원피스를_추천한다() {
         BasicOutfitAlgorithm connectedAlgorithm = spy(new BasicOutfitAlgorithm(new ClothesSuitabilityScorer()));
-        RecommendationService connectedService = new RecommendationService(
-                clothesRepository, clothesAttributeRepository, weatherRepository,
-                profileService, clothesService, connectedAlgorithm,
-                new AttributeSemanticAnalyzer(), new ClothesAttributeEstimator(), new SleeveLengthAnalyzer(), historyRepository);
+        RecommendationService connectedService = connectedService(connectedAlgorithm);
         givenTemperature(28.0);
         when(profileService.getProfile(userId)).thenReturn(profile(3));
         Clothes firstDress = candidate(ClothesType.DRESS);
@@ -380,11 +389,7 @@ class RecommendationServiceTest {
     @CsvSource({"28.0, 3, LIGHT", "17.0, 1, HEAVY"})
     void 실제_알고리즘을_연결하여_속성과_날씨에_맞는_최종_추천을_반환한다(
             double temperature, int sensitivity, ThicknessLevel preferred) {
-        RecommendationService connectedService = new RecommendationService(
-                clothesRepository, clothesAttributeRepository, weatherRepository,
-                profileService, clothesService,
-                new BasicOutfitAlgorithm(new ClothesSuitabilityScorer()),
-                new AttributeSemanticAnalyzer(), new ClothesAttributeEstimator(), new SleeveLengthAnalyzer(), historyRepository);
+        RecommendationService connectedService = connectedService(new BasicOutfitAlgorithm(new ClothesSuitabilityScorer()));
         givenTemperature(temperature);
         when(profileService.getProfile(userId)).thenReturn(profile(sensitivity));
 
@@ -464,11 +469,7 @@ class RecommendationServiceTest {
     void 선호_두께가_없으면_실제_알고리즘으로_차선_의상을_응답한다(
             double temperature, Integer sensitivity,
             ThicknessLevel lowerPriority, ThicknessLevel higherPriority) {
-        RecommendationService connectedService = new RecommendationService(
-                clothesRepository, clothesAttributeRepository, weatherRepository,
-                profileService, clothesService,
-                new BasicOutfitAlgorithm(new ClothesSuitabilityScorer()),
-                new AttributeSemanticAnalyzer(), new ClothesAttributeEstimator(), new SleeveLengthAnalyzer(), historyRepository);
+        RecommendationService connectedService = connectedService(new BasicOutfitAlgorithm(new ClothesSuitabilityScorer()));
         givenTemperature(temperature);
         when(profileService.getProfile(userId)).thenReturn(profile(sensitivity));
         Clothes first = candidate(ClothesType.TOP);
