@@ -138,6 +138,8 @@ Spring AI 추가 의존성 없이 프로젝트의 Spring RestClient와 Jackson�
 
 자동 테스트는 실제 Groq를 호출하지 않는다. 실제 연결은 키를 설정하고 서버를 실행한 뒤 추천 API로 확인한다. 모델의 추천 품질·속도·무료 계정 한도는 모의 테스트로 확인할 수 없으며, 추천 품질은 여러 옷장·날씨 사례로 별도로 평가해야 한다.
 
+기존 추천과 LLM 추천을 비교한 방법, 결과, 다시 확인하는 순서는 [추천 성능 검증 정리](recommendation-quality-evaluation.md)를 참고한다. 상세 입력과 24회 평가 기록도 함께 보관한다.
+
 ## 참고
 
 - [기본 추천 정책](recommendation-design.md)
