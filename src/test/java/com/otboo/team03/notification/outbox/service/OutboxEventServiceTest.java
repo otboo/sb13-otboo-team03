@@ -81,6 +81,40 @@ class OutboxEventServiceTest {
     }
 
     @Test
+    void 시스템_날씨_알림은_actorId가_null인_상태로_Outbox에_저장된다() {
+        UUID eventId = UUID.randomUUID();
+        UUID aggregateId = UUID.randomUUID();
+        UUID receiverId = UUID.randomUUID();
+        UUID relatedId = UUID.randomUUID();
+        NotificationEvent event = new NotificationEvent(
+                eventId,
+                NotificationEventType.WEATHER_ALERT,
+                NotificationEvent.CURRENT_SCHEMA_VERSION,
+                Instant.parse("2026-11-23T00:00:00.123456789Z"),
+                aggregateId,
+                receiverId,
+                null,
+                relatedId,
+                "날씨 알림",
+                "비가 예상됩니다.",
+                NotificationLevel.INFO
+        );
+
+        outboxEventService.publish(event, "WEATHER", receiverId.toString());
+
+        ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
+        verify(outboxEventRepository).save(captor.capture());
+        OutboxEvent saved = captor.getValue();
+
+        assertThat(saved.getEventType()).isEqualTo(NotificationEventType.WEATHER_ALERT.name());
+        assertThat(saved.getAggregateType()).isEqualTo("WEATHER");
+        assertThat(saved.getPartitionKey()).isEqualTo(receiverId.toString());
+        assertThat(saved.getPayload().get("eventType").asText())
+                .isEqualTo(NotificationEventType.WEATHER_ALERT.name());
+        assertThat(saved.getPayload().get("actorId").isNull()).isTrue();
+    }
+
+    @Test
     void aggregateType이_비어_있으면_저장하지_않는다() {
         NotificationEvent event = event();
 

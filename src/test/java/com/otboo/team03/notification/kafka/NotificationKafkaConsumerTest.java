@@ -64,6 +64,38 @@ class NotificationKafkaConsumerTest {
     }
 
     @Test
+    void WEATHER_ALERT는_actorId가_null이어도_처리한다() throws Exception {
+        NotificationEvent event = new NotificationEvent(
+                UUID.randomUUID(),
+                NotificationEventType.WEATHER_ALERT,
+                NotificationEvent.CURRENT_SCHEMA_VERSION,
+                Instant.parse("2026-11-23T00:00:00Z"),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                null,
+                UUID.randomUUID(),
+                "날씨 알림",
+                "비가 예상됩니다.",
+                NotificationLevel.INFO
+        );
+        JsonNode payload = mock(JsonNode.class);
+        OutboxKafkaMessage envelope = new OutboxKafkaMessage(
+                event.eventId(),
+                event.eventType().name(),
+                (short) event.schemaVersion(),
+                event.occurredAt(),
+                event.aggregateId(),
+                payload
+        );
+        when(objectMapper.readValue(MESSAGE, OutboxKafkaMessage.class)).thenReturn(envelope);
+        when(objectMapper.treeToValue(payload, NotificationEvent.class)).thenReturn(event);
+
+        consumer.consume(MESSAGE);
+
+        verify(consumerService).process(event);
+    }
+
+    @Test
     void envelope과_payload의_eventId가_다르면_처리하지_않는다() throws Exception {
         NotificationEvent event = event();
         JsonNode payload = mock(JsonNode.class);
