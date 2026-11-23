@@ -17,6 +17,7 @@ import com.otboo.team03.feed.repository.FeedCommentRepository;
 import com.otboo.team03.feed.repository.FeedLikeRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedSearchQueryRepository;
+import com.otboo.team03.feed.repository.FeedSearchQueryRepository.FeedSearchResult;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
 import com.otboo.team03.follow.repository.FollowRepository;
 import com.otboo.team03.global.dto.CursorResponse;
@@ -306,7 +307,7 @@ public class FeedService {
 
     validateFeedListQuery(query);
 
-    List<Feed> feeds = findFeeds(query);
+    List<FeedSearchResult> feeds = findFeeds(query);
 
     return createCursorResponse(query, feeds);
   }
@@ -338,11 +339,13 @@ public class FeedService {
     }
   }
 
-  private List<Feed> findFeeds(FeedListQuery query) {
+  private List<FeedSearchResult> findFeeds(FeedListQuery query) {
     return findFeedsByFilters(query);
   }
 
-  private List<Feed> findFeedsByFilters(FeedListQuery query) {
+  private List<FeedSearchResult> findFeedsByFilters(
+      FeedListQuery query
+  ) {
     Instant createdAtCursor = null;
     Long likeCountCursor = null;
 
@@ -394,27 +397,33 @@ public class FeedService {
 
   private CursorResponse<FeedDto> createCursorResponse(
       FeedListQuery query,
-      List<Feed> fetched
+      List<FeedSearchResult> fetched
   ) {
     boolean hasNext = fetched.size() > query.limit();
 
-    List<Feed> page = hasNext
+    List<FeedSearchResult> page = hasNext
         ? fetched.subList(0, query.limit())
         : fetched;
 
-    List<FeedDto> data = page.isEmpty()
+    List<Feed> feeds = page.stream()
+        .map(FeedSearchResult::feed)
+        .toList();
+
+    List<FeedDto> data = feeds.isEmpty()
         ? List.of()
-        : feedDtoAssembler.toDtos(page, query.viewerId());
+        : feedDtoAssembler.toDtos(feeds, query.viewerId());
 
     String nextCursor = null;
     UUID nextIdAfter = null;
 
     if (hasNext) {
-      Feed lastFeed = page.get(page.size() - 1);
+      FeedSearchResult lastResult = page.get(page.size() - 1);
+      Feed lastFeed = lastResult.feed();
+
       nextIdAfter = lastFeed.getId();
 
       nextCursor = query.isLikeCountSort()
-          ? Long.toString(data.get(data.size() - 1).likeCount())
+          ? Long.toString(lastResult.sortLikeCount())
           : lastFeed.getCreatedAt().toString();
     }
 

@@ -22,6 +22,7 @@ import com.otboo.team03.feed.repository.FeedCommentRepository;
 import com.otboo.team03.feed.repository.FeedLikeRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedSearchQueryRepository;
+import com.otboo.team03.feed.repository.FeedSearchQueryRepository.FeedSearchResult;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
 import com.otboo.team03.follow.repository.FollowRepository;
 import com.otboo.team03.global.dto.CursorResponse;
@@ -1395,7 +1396,11 @@ class FeedServiceTest {
         null,
         null,
         3
-    )).thenReturn(List.of(first, second, extra));
+    )).thenReturn(List.of(
+        new FeedSearchResult(first, null),
+        new FeedSearchResult(second, null),
+        new FeedSearchResult(extra, null)
+    ));
 
     when(feedSearchQueryRepository.countByFilters(
         null, null, null, null

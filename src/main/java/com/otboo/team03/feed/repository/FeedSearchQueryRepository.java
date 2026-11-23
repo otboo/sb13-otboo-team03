@@ -6,6 +6,7 @@ import com.otboo.team03.feed.entity.QFeedLike;
 import com.otboo.team03.feed.entity.QFeedWeatherFilter;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.NumberExpression;
+import com.querydsl.core.Tuple;
 import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
@@ -20,11 +21,17 @@ public class FeedSearchQueryRepository {
 
   private final JPAQueryFactory queryFactory;
 
+  public record FeedSearchResult(
+      Feed feed,
+      Long sortLikeCount
+  ) {
+  }
+
   public FeedSearchQueryRepository(EntityManager entityManager) {
     this.queryFactory = new JPAQueryFactory(entityManager);
   }
 
-  public List<Feed> findByFilters(
+  public List<FeedSearchResult> findByFilters(
       String keywordLike,
       UUID authorIdEqual,
       String skyStatusEqual,
@@ -39,24 +46,28 @@ public class FeedSearchQueryRepository {
     QFeed feed = QFeed.feed;
     boolean ascending = "ASCENDING".equals(sortDirection);
 
-    JPAQuery<Feed> query = queryFactory
-        .selectFrom(feed)
-        .where(
-            keywordCondition(feed, keywordLike),
-            authorCondition(feed, authorIdEqual),
-            weatherCondition(
-                feed,
-                skyStatusEqual,
-                precipitationTypeEqual
-            )
-        );
+    BooleanExpression keywordFilter =
+        keywordCondition(feed, keywordLike);
+
+    BooleanExpression authorFilter =
+        authorCondition(feed, authorIdEqual);
+
+    BooleanExpression weatherFilter = weatherCondition(
+        feed,
+        skyStatusEqual,
+        precipitationTypeEqual
+    );
 
     if ("likeCount".equals(sortBy)) {
       QFeedLike feedLike = QFeedLike.feedLike;
       NumberExpression<Long> likeCount = feedLike.id.count();
 
-      query.leftJoin(feedLike)
+      JPAQuery<Tuple> query = queryFactory
+          .select(feed, likeCount)
+          .from(feed)
+          .leftJoin(feedLike)
           .on(feedLike.feedId.eq(feed.id))
+          .where(keywordFilter, authorFilter, weatherFilter)
           .groupBy(feed.id);
 
       if (likeCountCursor != null) {
@@ -79,30 +90,47 @@ public class FeedSearchQueryRepository {
           ascending ? likeCount.asc() : likeCount.desc(),
           ascending ? feed.id.asc() : feed.id.desc()
       );
-    } else {
-      if (createdAtCursor != null) {
-        query.where(
-            ascending
-                ? feed.createdAt.gt(createdAtCursor)
-                .or(
-                    feed.createdAt.eq(createdAtCursor)
-                        .and(feed.id.gt(idAfter))
-                )
-                : feed.createdAt.lt(createdAtCursor)
-                    .or(
-                        feed.createdAt.eq(createdAtCursor)
-                            .and(feed.id.lt(idAfter))
-                    )
-        );
-      }
 
-      query.orderBy(
-          ascending ? feed.createdAt.asc() : feed.createdAt.desc(),
-          ascending ? feed.id.asc() : feed.id.desc()
+      return query.limit(pageSize)
+          .fetch()
+          .stream()
+          .map(row -> new FeedSearchResult(
+              row.get(feed),
+              row.get(likeCount)
+          ))
+          .toList();
+    }
+
+    JPAQuery<Feed> query = queryFactory
+        .selectFrom(feed)
+        .where(keywordFilter, authorFilter, weatherFilter);
+
+    if (createdAtCursor != null) {
+      query.where(
+          ascending
+              ? feed.createdAt.gt(createdAtCursor)
+              .or(
+                  feed.createdAt.eq(createdAtCursor)
+                      .and(feed.id.gt(idAfter))
+              )
+              : feed.createdAt.lt(createdAtCursor)
+                  .or(
+                      feed.createdAt.eq(createdAtCursor)
+                          .and(feed.id.lt(idAfter))
+                  )
       );
     }
 
-    return query.limit(pageSize).fetch();
+    query.orderBy(
+        ascending ? feed.createdAt.asc() : feed.createdAt.desc(),
+        ascending ? feed.id.asc() : feed.id.desc()
+    );
+
+    return query.limit(pageSize)
+        .fetch()
+        .stream()
+        .map(result -> new FeedSearchResult(result, null))
+        .toList();
   }
 
   public long countByFilters(
