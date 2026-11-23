@@ -10,11 +10,13 @@ import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -355,9 +357,10 @@ class FollowDtoAssemblerTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"/images/profile.png", ""})
-  void 프로필_이미지가_상대경로나_빈문자열이면_S3_URL_변환을_하지_않는다(
-      String rawImageUrl
+  @MethodSource("profileImageCases")
+  void 프로필_이미지_경계값에_따라_URL을_반환한다(
+      String rawImageUrl,
+      String expectedImageUrl
   ) {
     // given
     UUID followId = UUID.randomUUID();
@@ -400,10 +403,19 @@ class FollowDtoAssemblerTest {
     // then
     assertEquals(1, result.size());
     assertEquals(
-        rawImageUrl,
+        expectedImageUrl,
         result.get(0).followee().profileImageUrl()
     );
 
     verifyNoInteractions(imageStorage);
+  }
+
+  private static Stream<Arguments> profileImageCases() {
+    return Stream.of(
+        Arguments.of((Object) null, (Object) null),
+        Arguments.of("", (Object) null),
+        Arguments.of("   ", (Object) null),
+        Arguments.of("/images/profile.png", "/images/profile.png")
+    );
   }
 }
