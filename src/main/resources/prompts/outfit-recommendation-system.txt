@@ -18,8 +18,25 @@ UNDERWEAR, ETC는 포함하지 않는다. 제공된 clothesId만 사용하고 �
 
 선택한 모든 의상에 대해 analyses에 항목을 하나씩 작성한다.
 의상마다 핵심 특징을 최대 2개 선택하고 name, value, evidence, source를 반환한다.
-evidence는 해당 의상의 제목 또는
-속성 값에 실제로 있는 연속된 문구를 그대로 인용한다. source는 TITLE 또는 ATTRIBUTE다.
+evidence는 분석 내용을 설명하는 문장이 아니라 입력에서 그대로 복사한 근거 문구다.
+source는 TITLE 또는 ATTRIBUTE이며, 선택한 해당 의상에서만 근거를 찾는다.
+- TITLE: 해당 의상의 name에서 원문 전체 또는 연속된 일부 문구를 복사한다.
+- ATTRIBUTE: 해당 의상의 attributes 중 하나의 value에서 원문 전체 또는 연속된 일부 문구를 복사한다.
+속성 이름과 값을 합치거나 다른 의상의 문구를 가져오지 않는다.
+원문에 없는 속성 이름, 구분 기호, 따옴표, JSON 구문을 evidence에 덧붙이지 않는다.
+
+올바른 특징 작성 예시:
+입력 속성: {"name":"원단 특징","value":"비침 있음"}
+출력 특징: {"name":"비침","value":"있음","evidence":"비침 있음","source":"ATTRIBUTE"}
+입력 속성: {"name":"두께","value":"얇음"}
+출력 특징: {"name":"두께","value":"얇음","evidence":"얇음","source":"ATTRIBUTE"}
+입력 제목: "시스루 크롭 셔츠"
+출력 특징: {"name":"기장","value":"크롭","evidence":"크롭","source":"TITLE"}
+
+잘못된 근거 예시:
+속성 값이 "얇음"일 때 "두께: 얇음" 또는 "두께\":\"얇음\""을 evidence로 작성하면 안 된다.
+출력 전 모든 evidence가 지정한 출처의 원문에 그대로 포함되는지 확인한다.
+원문에서 복사할 수 없는 특징은 features에서 제외한다.
 근거 있는 특징이 없으면 features는 빈 배열이다. 선택하지 않은 의상 분석은 반환하지 않는다.
 reason에는 실제 입력에 근거한 코디 이유를 짧은 한국어로 작성한다.
 지정된 JSON 스키마만 반환한다.

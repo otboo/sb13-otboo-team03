@@ -38,9 +38,15 @@ public class GroqOutfitRequestFactory {
 
     private Map<String, Object> schema(LlmRecommendationInput input) {
         Map<String, Object> text = Map.of("type", "string");
+        Map<String, Object> evidence = Map.of(
+                "type", "string",
+                "description", "선택한 해당 의상의 원문에서 그대로 복사한 연속된 문구. "
+                        + "source가 TITLE이면 의상의 name, ATTRIBUTE이면 attributes[].value 중 하나에서 인용한다. "
+                        + "원문에 없는 속성 이름이나 구분 기호, JSON 구문을 덧붙이지 않는다. "
+                        + "예: 속성이 {name: 두께, value: 얇음}이면 evidence는 얇음이며 두께: 얇음이 아니다.");
         Map<String, Object> clothesId = Map.of("type", "string", "enum", input.wardrobe().stream()
                 .map(item -> item.clothesId().toString()).toList());
-        Map<String, Object> feature = object(Map.of("name", text, "value", text, "evidence", text,
+        Map<String, Object> feature = object(Map.of("name", text, "value", text, "evidence", evidence,
                 "source", Map.of("type", "string", "enum", Arrays.stream(LlmOutfitDecision.Source.values()).map(Enum::name).toList())),
                 List.of("name", "value", "evidence", "source"));
         Map<String, Object> analysis = object(Map.of("clothesId", clothesId,

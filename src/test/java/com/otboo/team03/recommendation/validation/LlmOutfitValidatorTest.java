@@ -66,6 +66,10 @@ class LlmOutfitValidatorTest {
                 .isFalse(); // 검정은 다른 의상의 속성이므로 근거로 사용할 수 없다.
         assertThat(validFeature(new LlmOutfitDecision.Feature("비침", "있음", "비침 있음", LlmOutfitDecision.Source.TITLE)))
                 .isFalse(); // 문구가 실제 있는 출처도 맞아야 한다.
+        assertThat(validFeature(new LlmOutfitDecision.Feature("비침", "있음", "원단 특징: 비침 있음", LlmOutfitDecision.Source.ATTRIBUTE)))
+                .isFalse(); // 속성 이름과 구분 기호를 덧붙인 근거는 값 자체에 포함되지 않는다.
+        assertThat(validFeature(new LlmOutfitDecision.Feature("비침", "있음", "원단 특징\":\"비침 있음\"", LlmOutfitDecision.Source.ATTRIBUTE)))
+                .isFalse(); // JSON 구문을 인용한 응답도 그대로 거부한다.
     }
 
     @Test
