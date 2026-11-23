@@ -58,6 +58,7 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     List<Notification> findByReceiverIdAfterEvent(
             @Param("receiverId") UUID receiverId,
             @Param("createdAt") Instant createdAt,
-            @Param("lastEventId") UUID lastEventId
+            @Param("lastEventId") UUID lastEventId,
+            Pageable pageable
     );
 }

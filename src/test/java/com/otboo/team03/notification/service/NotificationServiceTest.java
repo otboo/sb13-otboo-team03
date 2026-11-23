@@ -9,6 +9,7 @@ import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -223,16 +224,18 @@ class NotificationServiceTest {
         when(notificationRepository.findByIdAndReceiver_Id(lastEventId, receiverId))
                 .thenReturn(Optional.of(lastEvent));
         when(notificationRepository.findByReceiverIdAfterEvent(
-                receiverId, lastEventCreatedAt, lastEventId
+                eq(receiverId), eq(lastEventCreatedAt), eq(lastEventId), any(Pageable.class)
         )).thenReturn(List.of(missedNotification));
 
         List<NotificationDto> result = notificationService.getNotificationsAfterEvent(receiverId, lastEventId);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).title()).isEqualTo("새 알림");
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
         verify(notificationRepository).findByReceiverIdAfterEvent(
-                receiverId, lastEventCreatedAt, lastEventId
+                eq(receiverId), eq(lastEventCreatedAt), eq(lastEventId), pageableCaptor.capture()
         );
+        assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(100);
     }
 
     @Test

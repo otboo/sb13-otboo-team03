@@ -9,6 +9,7 @@ import com.otboo.team03.notification.exception.NotificationNotFoundException;
 import com.otboo.team03.notification.repository.NotificationRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +25,9 @@ public class NotificationService {
     private static final String SORT_DIRECTION_DESCENDING = "DESCENDING";
 
     private final NotificationRepository notificationRepository;
+
+    @Value("${otboo.sse.replay-limit:100}")
+    private int sseReplayLimit = 100;
 
     @Transactional(readOnly = true)
     public CursorResponse<NotificationDto> getNotifications(
@@ -89,7 +93,8 @@ public class NotificationService {
                 .map(lastEvent -> notificationRepository.findByReceiverIdAfterEvent(
                         receiverId,
                         lastEvent.getCreatedAt(),
-                        lastEvent.getId()
+                        lastEvent.getId(),
+                        PageRequest.of(0, sseReplayLimit)
                 ))
                 .orElseGet(List::of)
                 .stream()
