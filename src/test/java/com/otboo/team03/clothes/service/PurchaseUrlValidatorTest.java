@@ -13,8 +13,8 @@ class PurchaseUrlValidatorTest {
             "https://store.musinsa.com/app/goods/123, https://www.musinsa.com/products/123",
             "https://m.store.musinsa.com/app/goods/123/0, https://www.musinsa.com/products/123",
             "HTTPS://WWW.MUSINSA.COM:443/products/123?source=app, https://www.musinsa.com/products/123",
-            "https://www.29cm.co.kr/products/123/, https://product.29cm.co.kr/catalog/123",
-            "https://product.29cm.co.kr/catalog/123?source=brand, https://product.29cm.co.kr/catalog/123",
+            "https://www.29cm.co.kr/products/123/, https://www.29cm.co.kr/products/123",
+            "https://product.29cm.co.kr/catalog/123?source=brand, https://www.29cm.co.kr/products/123",
             "https://zigzag.kr/catalog/products/123, https://zigzag.kr/catalog/products/123",
             "https://www.wconcept.co.kr/Product/123, https://www.wconcept.co.kr/Product/123"
     })

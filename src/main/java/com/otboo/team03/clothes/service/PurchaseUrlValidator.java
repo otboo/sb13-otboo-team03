@@ -47,7 +47,7 @@ public class PurchaseUrlValidator {
             return URI.create("https://www.musinsa.com/products/" + match.group(1));
         }
         if (path == CM29) {
-            return URI.create("https://product.29cm.co.kr/catalog/" + match.group(1));
+            return URI.create("https://www.29cm.co.kr/products/" + match.group(1));
         }
         return uri;
     }

@@ -3,7 +3,11 @@ package com.otboo.team03.clothes.service;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.springframework.stereotype.Component;
@@ -11,6 +15,7 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
+@Slf4j
 @Component
 public class ClothesHtmlParser {
     private static final JsonMapper JSON = JsonMapper.builder().build();
@@ -18,9 +23,13 @@ public class ClothesHtmlParser {
             "Product", "https://schema.org/Product", "http://schema.org/Product");
 
     public ExtractedClothes parse(Document document) {
-        JsonNode product = structuredProduct(document);
+        List<JsonNode> products = new ArrayList<>();
+        JsonNode product = structuredProduct(document, products);
         String type = meta(document, "og:type");
-        if (product == null && !"product".equalsIgnoreCase(type) && !"og:product".equalsIgnoreCase(type)) {
+        if (products.isEmpty() && !"product".equalsIgnoreCase(type) && !"og:product".equalsIgnoreCase(type)) {
+            ExtractedClothes detail = shopDetail(document);
+            if (detail != null) return detail;
+            log.warn("Purchase page has no matching product: host={}", URI.create(document.location()).getHost());
             throw new OtbooException(ErrorCode.CLOTHES_EXTRACTION_FAILED);
         }
         String name = meta(document, "og:title");
@@ -37,7 +46,40 @@ public class ClothesHtmlParser {
         if (image == null && product != null) {
             image = structuredImage(document.location(), product.path("image"));
         }
+        if (image == null) {
+            ExtractedClothes detail = shopDetail(document);
+            if (detail != null) image = detail.imageUrl();
+        }
         return new ExtractedClothes(name, image);
+    }
+
+    private ExtractedClothes shopDetail(Document document) {
+        URI page = URI.create(document.location());
+        if (!page.getPath().matches("/products/[0-9]+")) return null;
+        String id = page.getPath().substring("/products/".length());
+        String title = document.title();
+        if ("www.musinsa.com".equals(page.getHost())) {
+            for (Element image : document.select("img[src][alt]")) {
+                String src = imageUrl(document.location(), image.attr("src"));
+                if (src == null) continue;
+                URI uri = URI.create(src);
+                String name = image.attr("alt").strip();
+                if ("image.msscdn.net".equals(uri.getHost()) && uri.getPath().contains("/goods_img/")
+                        && uri.getPath().contains("/" + id + "/") && !name.isBlank()
+                        && name.length() <= 255 && title.contains(name)) {
+                    return new ExtractedClothes(name, src);
+                }
+            }
+        }
+        if ("www.29cm.co.kr".equals(page.getHost()) && document.body().text()
+                .matches("(?s).*상품번호[\\s\\p{Z}]*[:：]?[\\s\\p{Z}]*" + id + "(?![0-9]).*")) {
+            String name = title.split(" - 모든 취향 곁에, 29CM", 2)[0].strip();
+            if (!name.isBlank() && name.length() <= 255 && document.select("h1, h2").stream()
+                    .anyMatch(heading -> heading.text().endsWith(name))) {
+                return new ExtractedClothes(name, imageUrl(document.location(), meta(document, "og:image")));
+            }
+        }
+        return null;
     }
 
     private String meta(Document document, String property) {
@@ -45,35 +87,75 @@ public class ClothesHtmlParser {
         return element == null ? "" : element.attr("content").strip();
     }
 
-    private JsonNode structuredProduct(Document document) {
+    private JsonNode structuredProduct(Document document, List<JsonNode> products) {
+        Set<JsonNode> primary = new LinkedHashSet<>();
+        Set<String> references = new LinkedHashSet<>();
+        String base = document.location();
         for (Element script : document.select("script[type=application/ld+json]")) {
             try {
-                JsonNode product = findProduct(JSON.readTree(script.data()));
-                if (product != null) return product;
+                collect(JSON.readTree(script.data()), base, products, primary, references, false);
             } catch (JacksonException ignored) {
-                // 독립된 다음 JSON-LD 블록을 검사한다.
+                // 독립된 다음 JSON-LD 블록은 계속 검사한다.
             }
         }
-        return null;
+        Set<JsonNode> matchingPage = new LinkedHashSet<>();
+        for (JsonNode product : products) {
+            String id = product.path("@id").asString("");
+            if (references.contains(imageUrl(base, id))) primary.add(product);
+            String url = imageUrl(base, product.path("url").asString(""));
+            if (samePage(base, url) || (!id.contains("#") && samePage(base, imageUrl(base, id)))) matchingPage.add(product);
+        }
+        if (primary.size() == 1) return primary.iterator().next();
+        if (!primary.isEmpty()) matchingPage.retainAll(primary);
+        if (matchingPage.size() == 1) return matchingPage.iterator().next();
+        return products.size() == 1 && references.isEmpty() ? products.get(0) : null;
     }
 
-    private JsonNode findProduct(JsonNode node) {
-        if (node == null) return null;
+    private void collect(JsonNode node, String base, List<JsonNode> products,
+                         Set<JsonNode> primary, Set<String> references, boolean mainEntity) {
+        if (node == null) return;
         if (node.isArray()) {
-            for (JsonNode item : node) {
-                JsonNode product = findProduct(item);
-                if (product != null) return product;
-            }
+            for (JsonNode entry : node) collect(entry, base, products, primary, references, mainEntity);
+            return;
         }
-        if (!node.isObject()) return null;
+        if (mainEntity) {
+            String id = node.isString() ? node.asString() : node.path("@id").asString("");
+            String ref = imageUrl(base, id);
+            if (ref != null) references.add(ref);
+        }
+        if (!node.isObject()) return;
+        if (isProduct(node)) {
+            JsonNode urlNode = node.path("url");
+            String url = urlNode.isObject() ? urlNode.path("@id").asString("") : urlNode.asString("");
+            if (!url.isBlank() && !samePage(base, imageUrl(base, url))) return;
+            products.add(node);
+            if (mainEntity) primary.add(node);
+            return;
+        }
+        collect(node.get("mainEntity"), base, products, primary, references, true);
+        collect(node.get("@graph"), base, products, primary, references, false);
+    }
+
+    private boolean isProduct(JsonNode node) {
         JsonNode type = node.path("@type");
-        if (PRODUCT_TYPES.contains(type.asString(""))) return node;
+        if (PRODUCT_TYPES.contains(type.asString(""))) return true;
         for (JsonNode entry : type) {
-            if (PRODUCT_TYPES.contains(entry.asString(""))) return node;
+            if (PRODUCT_TYPES.contains(entry.asString(""))) return true;
         }
-        // 추천 목록의 Product는 현재 페이지의 상품이 아니다.
-        JsonNode main = findProduct(node.get("mainEntity"));
-        return main != null ? main : findProduct(node.get("@graph"));
+        return false;
+    }
+
+    private boolean samePage(String base, String url) {
+        if (url == null) return false;
+        URI candidate = URI.create(url);
+        URI page = URI.create(base);
+        return page.getHost().equalsIgnoreCase(candidate.getHost())
+                && page.getScheme().equalsIgnoreCase(candidate.getScheme()) && httpsPort(page) == httpsPort(candidate)
+                && page.getPath().replaceFirst("/$", "").equals(candidate.getPath().replaceFirst("/$", ""));
+    }
+
+    private int httpsPort(URI uri) {
+        return uri.getPort() == -1 ? 443 : uri.getPort();
     }
 
     private String structuredImage(String base, JsonNode node) {

@@ -6,11 +6,13 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Component;
 
 /** 허용한 쇼핑몰만 요청하며 리다이렉트는 따라가지 않는다. */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class ClothesPageClient {
@@ -28,10 +30,16 @@ public class ClothesPageClient {
                     || response.contentType() == null
                     || !response.contentType().toLowerCase(Locale.ROOT).split(";", 2)[0].strip().equals("text/html")
                     || response.bodyAsBytes().length > MAX_BYTES) {
+                log.warn("Purchase page rejected: host={}, status={}, type={}",
+                        uri.getHost(), response.statusCode(), response.contentType());
+                if (response.statusCode() == 403 && "www.musinsa.com".equals(uri.getHost())) {
+                    throw new OtbooException(ErrorCode.MUSINSA_ACCESS_RESTRICTED);
+                }
                 throw new OtbooException(ErrorCode.CLOTHES_EXTRACTION_FAILED);
             }
             return Jsoup.parse(response.body(), uri.toString());
         } catch (IOException e) {
+            log.warn("Purchase page request failed: host={}, reason={}", uri.getHost(), e.getClass().getSimpleName());
             throw new OtbooException(ErrorCode.CLOTHES_EXTRACTION_FAILED, e);
         }
     }

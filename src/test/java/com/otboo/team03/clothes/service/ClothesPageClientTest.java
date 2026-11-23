@@ -50,7 +50,9 @@ class ClothesPageClientTest {
             jsoup.when(() -> Jsoup.connect(url)).thenReturn(connection);
             when(connection.execute()).thenReturn(response);
             when(response.statusCode()).thenReturn(status);
-            assertThatThrownBy(() -> client.fetch(url)).isInstanceOf(OtbooException.class);
+            ErrorCode expected = status == 403 ? ErrorCode.MUSINSA_ACCESS_RESTRICTED : ErrorCode.CLOTHES_EXTRACTION_FAILED;
+            assertThatThrownBy(() -> client.fetch(url)).isInstanceOfSatisfying(OtbooException.class,
+                    e -> assertThat(e.getErrorCode()).isEqualTo(expected));
             verify(connection).followRedirects(false);
         }
     }
