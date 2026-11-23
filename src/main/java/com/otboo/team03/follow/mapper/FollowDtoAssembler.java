@@ -108,12 +108,11 @@ public class FollowDtoAssembler {
   }
 
   private String resolveImageUrl(String raw) {
-    if (raw == null) {
-      return null;
-    }
-
-    if (raw.startsWith("http://")
-        || raw.startsWith("https://")) {
+    if (raw == null
+        || raw.isBlank()
+        || raw.startsWith("http://")
+        || raw.startsWith("https://")
+        || raw.startsWith("/")) {
       return raw;
     }
 
