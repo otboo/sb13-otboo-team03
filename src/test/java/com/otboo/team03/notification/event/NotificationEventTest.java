@@ -55,7 +55,8 @@ class NotificationEventTest {
                         NotificationEventType.FEED_COMMENTED,
                         NotificationEventType.FOLLOWING_USER_FEED_CREATED,
                         NotificationEventType.USER_FOLLOWED,
-                        NotificationEventType.DIRECT_MESSAGE_RECEIVED
+                        NotificationEventType.DIRECT_MESSAGE_RECEIVED,
+                        NotificationEventType.WEATHER_ALERT
                 );
     }
 }
