@@ -61,7 +61,8 @@ public class NotificationKafkaConsumer {
         if (!envelope.eventId().equals(event.eventId())
                 || !envelope.eventType().equals(event.eventType().name())
                 || envelope.schemaVersion() != event.schemaVersion()
-                || !envelope.occurredAt().equals(event.occurredAt())) {
+                || !envelope.occurredAt().equals(event.occurredAt())
+                || !envelope.aggregateId().equals(event.aggregateId())) {
             throw new IllegalArgumentException("Kafka 이벤트 envelope과 payload 정보가 일치하지 않습니다.");
         }
 

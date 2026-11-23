@@ -298,6 +298,28 @@ class NotificationKafkaConsumerTest {
     }
 
     @Test
+    void envelope과_payload의_aggregateId가_다르면_처리하지_않는다() throws Exception {
+        NotificationEvent event = event();
+        JsonNode payload = mock(JsonNode.class);
+        OutboxKafkaMessage envelope = new OutboxKafkaMessage(
+                event.eventId(),
+                event.eventType().name(),
+                (short) event.schemaVersion(),
+                event.occurredAt(),
+                UUID.randomUUID(),
+                payload
+        );
+        when(objectMapper.readValue(MESSAGE, OutboxKafkaMessage.class)).thenReturn(envelope);
+        when(objectMapper.treeToValue(payload, NotificationEvent.class)).thenReturn(event);
+
+        assertThatThrownBy(() -> consumer.consume(MESSAGE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Kafka 알림 이벤트 처리에 실패했습니다.");
+
+        verifyNoInteractions(consumerService);
+    }
+
+    @Test
     void envelope과_payload의_occurredAt이_다르면_처리하지_않는다() throws Exception {
         NotificationEvent event = event();
         JsonNode payload = mock(JsonNode.class);
