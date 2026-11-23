@@ -177,6 +177,21 @@ class SseConnectionManagerTest {
     }
 
     @Test
+    void 사용자별_모든_SSE_연결을_종료한다() {
+        UUID receiverId = UUID.randomUUID();
+        SseEmitter firstEmitter = mock(SseEmitter.class);
+        SseEmitter secondEmitter = mock(SseEmitter.class);
+        connectionManager.register(receiverId, firstEmitter);
+        connectionManager.register(receiverId, secondEmitter);
+
+        connectionManager.disconnectAll(receiverId);
+
+        verify(firstEmitter).complete();
+        verify(secondEmitter).complete();
+        assertThat(connectionManager.connectionCount(receiverId)).isZero();
+    }
+
+    @Test
     void 연결_추가와_삭제가_동시에_발생해도_연결_목록의_정합성을_유지한다() throws Exception {
         UUID receiverId = UUID.randomUUID();
         int operationCount = 20;
