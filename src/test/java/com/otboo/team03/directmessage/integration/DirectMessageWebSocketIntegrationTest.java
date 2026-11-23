@@ -9,6 +9,8 @@ import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.global.security.OtbooUserDetailsService;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.security.jwt.JwtTokenProvider;
+import com.otboo.team03.realtime.websocket.WebSocketSessionRegistry;
+import com.otboo.team03.realtime.websocket.WebSocketSessionTrackingHandlerDecoratorFactory;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.UserRole;
 import org.junit.jupiter.api.BeforeEach;
@@ -143,7 +145,9 @@ class DirectMessageWebSocketIntegrationTest {
             DirectMessageWebSocketController.class,
             DirectMessageWebSocketInterceptor.class,
             DirectMessageDestinationValidator.class,
-            com.otboo.team03.directmessage.config.DirectMessageWebSocketConfig.class
+            com.otboo.team03.directmessage.config.DirectMessageWebSocketConfig.class,
+            WebSocketSessionRegistry.class,
+            WebSocketSessionTrackingHandlerDecoratorFactory.class
     })
     static class Application {
 
