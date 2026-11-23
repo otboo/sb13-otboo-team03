@@ -16,6 +16,7 @@ import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
 import com.otboo.team03.global.storage.ImageStorage;
 import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.UserRepository;
+import com.otboo.team03.weather.exception.WeatherNotFoundException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -464,5 +465,39 @@ class FeedDtoAssemblerBatchTest {
         .findAuthors(Set.of(authorId));
 
     verifyNoInteractions(imageStorageProvider, imageStorage);
+  }
+
+  @Test
+  void 피드_날씨가_없으면_단건과_목록에서_동일한_도메인_예외가_발생한다() {
+    // given
+    UUID authorId = UUID.randomUUID();
+    UUID feedId = UUID.randomUUID();
+    UUID weatherId = UUID.randomUUID();
+
+    Feed feed = mock(Feed.class);
+    when(feed.getId()).thenReturn(feedId);
+    when(feed.getAuthorId()).thenReturn(authorId);
+    when(feed.getWeatherId()).thenReturn(weatherId);
+
+    when(batchQueryRepository.findAuthors(Set.of(authorId)))
+        .thenReturn(Map.of(
+            authorId,
+            new AuthorDto(authorId, "작성자", null)
+        ));
+
+    // when
+    WeatherNotFoundException singleException = assertThrows(
+        WeatherNotFoundException.class,
+        () -> assembler.toDto(feed, null)
+    );
+
+    WeatherNotFoundException batchException = assertThrows(
+        WeatherNotFoundException.class,
+        () -> assembler.toDtos(List.of(feed), null)
+    );
+
+    // then
+    assertNotNull(singleException);
+    assertNotNull(batchException);
   }
 }
