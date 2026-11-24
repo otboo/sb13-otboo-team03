@@ -218,6 +218,7 @@ class RedisJwtRegistryTest {
             given(redisTemplate.opsForList()).willReturn(listOperations);
             given(listOperations.range(userKey, 0, -1))
                     .willReturn(List.of(information));
+            given(redisTemplate.delete(anyString())).willReturn(true);
 
             // when
             jwtRegistry.invalidateJwtInformationByUserId(userId);
@@ -260,7 +261,13 @@ class RedisJwtRegistryTest {
             given(redisLockProvider.acquireLock(userId.toString())).willReturn(LOCK_VALUE);
             given(redisTemplate.opsForList()).willReturn(listOperations);
             given(listOperations.range(userKey, 0, -1)).willReturn(List.of());
-            given(redisTemplate.delete(userKey)).willThrow(new IllegalStateException("Redis 삭제 실패"));
+            given(redisTemplate.delete(anyString())).willAnswer(invocation -> {
+                String key = invocation.getArgument(0);
+                if (userKey.equals(key)) {
+                    throw new IllegalStateException("Redis 삭제 실패");
+                }
+                return true;
+            });
 
             // when & then
             assertThatThrownBy(() -> jwtRegistry.invalidateJwtInformationByUserId(userId))
@@ -294,6 +301,7 @@ class RedisJwtRegistryTest {
                     .willReturn(LOCK_VALUE);
 
             given(listOperations.size(userKey)).willReturn(0L);
+            given(listOperations.remove(userKey, 1, information)).willReturn(1L);
 
             // when
             jwtRegistry.invalidateJwtInformationByRefreshToken(REFRESH_TOKEN);

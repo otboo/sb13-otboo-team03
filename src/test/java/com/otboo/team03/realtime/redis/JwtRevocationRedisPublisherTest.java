@@ -1,4 +1,3 @@
-
 package com.otboo.team03.realtime.redis;
 
 import org.junit.jupiter.api.DisplayName;

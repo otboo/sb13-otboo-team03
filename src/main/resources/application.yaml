@@ -83,6 +83,7 @@ otboo:
   redis:
     notification-channel: ${REDIS_NOTIFICATION_CHANNEL:otboo:notifications}
     direct-message-channel: ${REDIS_DIRECT_MESSAGE_CHANNEL:otboo:direct-messages}
+    jwt-revocation-channel: otboo:jwt-revocations
 
   outbox:
     relay:

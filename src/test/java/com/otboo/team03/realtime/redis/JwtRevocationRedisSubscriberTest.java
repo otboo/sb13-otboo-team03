@@ -1,4 +1,3 @@
-
 package com.otboo.team03.realtime.redis;
 
 import com.otboo.team03.realtime.RealtimeConnectionTerminationService;
