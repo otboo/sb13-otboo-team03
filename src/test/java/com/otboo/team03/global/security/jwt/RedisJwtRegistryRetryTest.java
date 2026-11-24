@@ -4,6 +4,7 @@ package com.otboo.team03.global.security.jwt;
 import com.otboo.team03.global.config.RetryConfig;
 import com.otboo.team03.global.redis.RedisLockProvider;
 import com.otboo.team03.global.redis.RedisLockProvider.RedisLockAcquisitionException;
+import com.otboo.team03.realtime.redis.JwtRevocationRedisPublisher;
 import com.otboo.team03.user.dto.response.UserDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -191,12 +192,18 @@ class RedisJwtRegistryRetryTest {
         }
 
         @Bean
+        JwtRevocationRedisPublisher jwtRevocationRedisPublisher() {
+            return mock(JwtRevocationRedisPublisher.class);
+        }
+
+        @Bean
         RedisJwtRegistry redisJwtRegistry(
                 JwtTokenProvider jwtTokenProvider,
                 RedisTemplate<String, Object> redisTemplate,
-                RedisLockProvider redisLockProvider
+                RedisLockProvider redisLockProvider,
+                JwtRevocationRedisPublisher revocationPublisher
         ) {
-            return new RedisJwtRegistry(jwtTokenProvider, redisTemplate, redisLockProvider);
+            return new RedisJwtRegistry(jwtTokenProvider, redisTemplate, redisLockProvider, revocationPublisher);
         }
     }
 }

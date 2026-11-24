@@ -1,9 +1,9 @@
-
 package com.otboo.team03.global.security.jwt;
 
 import com.otboo.team03.global.exception.jwt.InvalidJwtException;
 import com.otboo.team03.global.redis.RedisLockProvider;
 import com.otboo.team03.global.redis.RedisLockProvider.RedisLockAcquisitionException;
+import com.otboo.team03.realtime.redis.JwtRevocationRedisPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,6 +41,7 @@ public class RedisJwtRegistry implements JwtRegistry {
     private final JwtTokenProvider jwtTokenProvider;
     private final RedisTemplate<String, Object> redisTemplate;
     private final RedisLockProvider redisLockProvider;
+    private final JwtRevocationRedisPublisher revocationPublisher;
 
     // JWT 등록: 기존 로그인 정보 제거 후 신규 등록
     @Retryable(
@@ -55,7 +56,9 @@ public class RedisJwtRegistry implements JwtRegistry {
         String lockKey = userId.toString();
 
         String lockValue = redisLockProvider.acquireLock(lockKey);
+        boolean replacedActiveSession = false;
 
+        // 기존 로그인 세션을 교체하고 새 JWT 등록에 성공하면 무효화 이벤트 발행
         try {
             Long currentSize = redisTemplate.opsForList().size(userKey);
 
@@ -67,6 +70,7 @@ public class RedisJwtRegistry implements JwtRegistry {
                             oldestToken.getAccessToken(),
                             oldestToken.getRefreshToken()
                     );
+                    replacedActiveSession = true;
                 }
 
                 currentSize = redisTemplate.opsForList().size(userKey);
@@ -83,6 +87,10 @@ public class RedisJwtRegistry implements JwtRegistry {
         } finally {
             redisLockProvider.releaseLock(lockKey, lockValue);
         }
+
+        if (replacedActiveSession) {
+            publishRevocation(userId);
+        }
     }
 
     // 사용자 ID 기준 JWT 무효화
@@ -93,7 +101,9 @@ public class RedisJwtRegistry implements JwtRegistry {
         String lockKey = userId.toString();
 
         String lockValue = redisLockProvider.acquireLock(lockKey);
+        boolean hadActiveSession = false;
 
+        // 사용자 JWT를 무효화하고 실제 세션 삭제 성공 여부 확인
         try {
             List<Object> tokens = redisTemplate.opsForList().range(userKey, 0, -1);
 
@@ -104,14 +114,20 @@ public class RedisJwtRegistry implements JwtRegistry {
                                 jwtInfo.getAccessToken(),
                                 jwtInfo.getRefreshToken()
                         );
+                        hadActiveSession = true;
                     }
                 }
             }
 
-            redisTemplate.delete(userKey);
+            boolean deleted = Boolean.TRUE.equals(redisTemplate.delete(userKey));
+            hadActiveSession = hadActiveSession && deleted;
 
         } finally {
             redisLockProvider.releaseLock(lockKey, lockValue);
+        }
+
+        if (hadActiveSession) {
+            publishRevocation(userId);
         }
     }
 
@@ -147,42 +163,49 @@ public class RedisJwtRegistry implements JwtRegistry {
 
             String lockKey = userKey.substring(USER_JWT_KEY_PREFIX.length());
             String lockValue = redisLockProvider.acquireLock(lockKey);
+            boolean invalidated = false;
 
+            // Refresh Token을 제거하고 실제 무효화 성공 여부 확인
             try {
-                // 락 획득 후 다시 조회
                 List<Object> currentTokens = redisTemplate.opsForList()
                         .range(userKey, 0, -1);
 
-                if (currentTokens == null) {
-                    return;
-                }
+                if (currentTokens != null) {
+                    for (Object tokenObj : currentTokens) {
+                        if (tokenObj instanceof JwtInformation jwtInfo
+                                && jwtInfo.getRefreshToken().equals(refreshToken)) {
 
-                for (Object tokenObj : currentTokens) {
-                    if (tokenObj instanceof JwtInformation jwtInfo
-                            && jwtInfo.getRefreshToken().equals(refreshToken)) {
+                            Long removed = redisTemplate.opsForList().remove(userKey, 1, tokenObj);
+                            if (removed == null || removed == 0) {
+                                break;
+                            }
 
-                        redisTemplate.opsForList().remove(userKey, 1, tokenObj);
+                            removeTokenIndex(
+                                    jwtInfo.getAccessToken(),
+                                    jwtInfo.getRefreshToken()
+                            );
 
-                        removeTokenIndex(
-                                jwtInfo.getAccessToken(),
-                                jwtInfo.getRefreshToken()
-                        );
+                            Long remaining = redisTemplate.opsForList().size(userKey);
 
-                        Long remaining = redisTemplate.opsForList().size(userKey);
+                            if (remaining == null || remaining == 0) {
+                                redisTemplate.delete(userKey);
+                            }
 
-                        if (remaining == null || remaining == 0) {
-                            redisTemplate.delete(userKey);
+                            invalidated = true;
+                            break;
                         }
-
-                        return;
                     }
                 }
-
-                return;
 
             } finally {
                 redisLockProvider.releaseLock(lockKey, lockValue);
             }
+
+            if (invalidated) {
+                publishRevocation(UUID.fromString(lockKey));
+            }
+
+            return;
         }
     }
 
@@ -343,6 +366,15 @@ public class RedisJwtRegistry implements JwtRegistry {
 
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 알고리즘을 사용할 수 없습니다.", e);
+        }
+    }
+
+    // JWT 무효화 이벤트 발행 및 실패 시 예외 처리
+    private void publishRevocation(UUID userId) {
+        try {
+            revocationPublisher.publish(userId);
+        } catch (RuntimeException exception) {
+            log.error("JWT 무효화 이벤트 발행에 실패했습니다. userId={}", userId, exception);
         }
     }
 }
