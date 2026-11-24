@@ -32,9 +32,6 @@ public class ClothesPageClient {
                     || response.bodyAsBytes().length > MAX_BYTES) {
                 log.warn("Purchase page rejected: host={}, status={}, type={}",
                         uri.getHost(), response.statusCode(), response.contentType());
-                if (response.statusCode() == 403 && "www.musinsa.com".equals(uri.getHost())) {
-                    throw new OtbooException(ErrorCode.MUSINSA_ACCESS_RESTRICTED);
-                }
                 throw new OtbooException(ErrorCode.CLOTHES_EXTRACTION_FAILED);
             }
             return Jsoup.parse(response.body(), uri.toString());

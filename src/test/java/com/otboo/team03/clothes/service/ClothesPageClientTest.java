@@ -50,9 +50,8 @@ class ClothesPageClientTest {
             jsoup.when(() -> Jsoup.connect(url)).thenReturn(connection);
             when(connection.execute()).thenReturn(response);
             when(response.statusCode()).thenReturn(status);
-            ErrorCode expected = status == 403 ? ErrorCode.MUSINSA_ACCESS_RESTRICTED : ErrorCode.CLOTHES_EXTRACTION_FAILED;
             assertThatThrownBy(() -> client.fetch(url)).isInstanceOfSatisfying(OtbooException.class,
-                    e -> assertThat(e.getErrorCode()).isEqualTo(expected));
+                    e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.CLOTHES_EXTRACTION_FAILED));
             verify(connection).followRedirects(false);
         }
     }
@@ -79,15 +78,16 @@ class ClothesPageClientTest {
         }
     }
 
-    @Test
-    void 다른_쇼핑몰의_403에는_무신사_안내를_반환하지_않는다() throws Exception {
+    @ParameterizedTest
+    @ValueSource(ints = {403, 429})
+    void 다른_쇼핑몰의_접근_제한도_추출_실패로_처리한다(int status) throws Exception {
         String shopUrl = "https://www.29cm.co.kr/products/123";
         try (var jsoup = mockStatic(Jsoup.class)) {
             Connection connection = mock(Connection.class, RETURNS_SELF);
             Connection.Response response = mock(Connection.Response.class);
             jsoup.when(() -> Jsoup.connect(shopUrl)).thenReturn(connection);
             when(connection.execute()).thenReturn(response);
-            when(response.statusCode()).thenReturn(403);
+            when(response.statusCode()).thenReturn(status);
             assertThatThrownBy(() -> client.fetch(shopUrl)).isInstanceOfSatisfying(OtbooException.class,
                     e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.CLOTHES_EXTRACTION_FAILED));
         }
