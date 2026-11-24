@@ -41,13 +41,7 @@ public class WeatherInitializer implements ApplicationRunner {
       return;
     }
 
-    // 2. 과거 더미데이터만 방치되어 있는 경우 전체 삭제 후 새로 갱신
-    if (weatherRepository.count() > 0) {
-      log.info(">>>>> [WeatherInitializer] 과거 날씨 데이터가 감지되어 기존 데이터를 정리하고 최신 날씨로 갱신합니다.");
-      weatherRepository.deleteAll();
-    }
-
-    // 3. 현재 시각 기준으로 오늘/내일 3시간 간격 예보 8건(24시간 분량) 생성
+    // 2. 현재 시각 기준으로 오늘/내일 3시간 간격 예보 8건(24시간 분량) 생성
     List<Weather> mockWeathers = new ArrayList<>();
 
     for (int i = 0; i < 8; i++) {
@@ -70,7 +64,6 @@ public class WeatherInitializer implements ApplicationRunner {
       mockWeathers.add(weather);
     }
 
-    // 3. 일괄 저장
     weatherRepository.saveAll(mockWeathers);
     log.info(">>>>> [WeatherInitializer] 오늘 기준 24시간 더미 날씨 데이터 8건 초기화 완료");
   }

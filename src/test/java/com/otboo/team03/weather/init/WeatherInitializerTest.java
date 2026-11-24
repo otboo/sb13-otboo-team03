@@ -34,7 +34,6 @@ class WeatherInitializerTest {
   void initialize_whenEmpty_savesMockWeatherData() {
     // given
     given(weatherRepository.existsByForecastAtAfter(any())).willReturn(false);
-    given(weatherRepository.count()).willReturn(0L);
 
     // when
     weatherInitializer.initialize();
@@ -68,13 +67,12 @@ class WeatherInitializerTest {
   void initialize_whenOnlyPastDataExists_clearsAndSavesMockWeatherData() {
     // given
     given(weatherRepository.existsByForecastAtAfter(any())).willReturn(false);
-    given(weatherRepository.count()).willReturn(5L);
 
     // when
     weatherInitializer.initialize();
 
     // then
-    verify(weatherRepository).deleteAll();
+    verify(weatherRepository, never()).deleteAll();
     verify(weatherRepository).saveAll(any());
   }
 
