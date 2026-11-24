@@ -10,9 +10,13 @@ import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -349,6 +353,69 @@ class FollowDtoAssemblerTest {
         userRepository,
         profileRepository,
         imageStorage
+    );
+  }
+
+  @ParameterizedTest
+  @MethodSource("profileImageCases")
+  void 프로필_이미지_경계값에_따라_URL을_반환한다(
+      String rawImageUrl,
+      String expectedImageUrl
+  ) {
+    // given
+    UUID followId = UUID.randomUUID();
+    UUID followerId = UUID.randomUUID();
+    UUID followeeId = UUID.randomUUID();
+
+    Follow follow = mock(Follow.class);
+
+    when(follow.getId()).thenReturn(followId);
+    when(follow.getFollowerId()).thenReturn(followerId);
+    when(follow.getFolloweeId()).thenReturn(followeeId);
+
+    User follower = mock(User.class);
+    User followee = mock(User.class);
+
+    when(follower.getId()).thenReturn(followerId);
+    when(follower.getName()).thenReturn("팔로워");
+
+    when(followee.getId()).thenReturn(followeeId);
+    when(followee.getName()).thenReturn("팔로우 대상");
+
+    Profile followeeProfile = mock(Profile.class);
+
+    when(followeeProfile.getUserId()).thenReturn(followeeId);
+    when(followeeProfile.getProfileImageUrl())
+        .thenReturn(rawImageUrl);
+
+    Set<UUID> userIds = Set.of(followerId, followeeId);
+
+    when(userRepository.findAllById(userIds))
+        .thenReturn(List.of(follower, followee));
+
+    when(profileRepository.findAllById(userIds))
+        .thenReturn(List.of(followeeProfile));
+
+    // when
+    List<FollowDto> result =
+        followDtoAssembler.toDtos(List.of(follow));
+
+    // then
+    assertEquals(1, result.size());
+    assertEquals(
+        expectedImageUrl,
+        result.get(0).followee().profileImageUrl()
+    );
+
+    verifyNoInteractions(imageStorage);
+  }
+
+  private static Stream<Arguments> profileImageCases() {
+    return Stream.of(
+        Arguments.of((Object) null, (Object) null),
+        Arguments.of("", (Object) null),
+        Arguments.of("   ", (Object) null),
+        Arguments.of("/images/profile.png", "/images/profile.png")
     );
   }
 }
