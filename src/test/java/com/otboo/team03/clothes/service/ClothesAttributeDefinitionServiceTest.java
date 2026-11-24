@@ -4,7 +4,13 @@ import com.otboo.team03.clothes.dto.request.ClothesAttributeDefCreateRequest;
 import com.otboo.team03.clothes.entity.ClothesAttributeDefinition;
 import com.otboo.team03.clothes.repository.ClothesAttributeDefinitionRepository;
 import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.notification.event.NotificationEvent;
+import com.otboo.team03.notification.event.NotificationEventType;
+import com.otboo.team03.notification.outbox.service.OutboxEventPublisher;
+import com.otboo.team03.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.util.*;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -17,7 +23,33 @@ class ClothesAttributeDefinitionServiceTest {
     private final ClothesAttributeDefinitionRepository repository = mock(ClothesAttributeDefinitionRepository.class);
     private final com.otboo.team03.clothes.repository.ClothesAttributeRepository attributes =
             mock(com.otboo.team03.clothes.repository.ClothesAttributeRepository.class);
-    private final ClothesAttributeDefinitionService service = new ClothesAttributeDefinitionService(repository, attributes);
+    private final UserRepository users = mock(UserRepository.class);
+    private final OutboxEventPublisher outbox = mock(OutboxEventPublisher.class);
+    private final ClothesAttributeDefinitionService service =
+            new ClothesAttributeDefinitionService(repository, attributes, users, outbox);
+
+    @Test
+    void createsDistinctEventsForEachRecipient() {
+        var definition = new ClothesAttributeDefinition("계절", List.of("봄"));
+        UUID definitionId = UUID.randomUUID();
+        ReflectionTestUtils.setField(definition, "id", definitionId);
+        when(repository.save(any())).thenReturn(definition);
+        var receivers = List.of(UUID.randomUUID(), UUID.randomUUID());
+        when(users.findUnlockedUserIds()).thenReturn(receivers);
+
+        service.create(new ClothesAttributeDefCreateRequest("계절", List.of("봄")));
+
+        var events = ArgumentCaptor.forClass(NotificationEvent.class);
+        for (UUID receiver : receivers) {
+            verify(outbox).publish(events.capture(), eq("CLOTHES_ATTRIBUTE_DEFINITION"), eq(receiver.toString()));
+            var event = events.getValue();
+            assertThat(event.receiverId()).isEqualTo(receiver);
+            assertThat(event.aggregateId()).isEqualTo(definitionId);
+            assertThat(event.eventType()).isEqualTo(NotificationEventType.CLOTHES_ATTRIBUTE_CREATED);
+        }
+        assertThat(events.getAllValues()).extracting(NotificationEvent::eventId).doesNotHaveDuplicates();
+        verifyNoMoreInteractions(outbox);
+    }
 
     @Test
     void invalidUpdateRequestsPreserveDefinition() {

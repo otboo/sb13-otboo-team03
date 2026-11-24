@@ -200,6 +200,10 @@ class ClothesCreateIntegrationTest {
     @Test
     @DisplayName("관리자는 속성 정의를 등록하고 저장된 생성 시각을 받는다")
     void adminCreatesDefinition() throws Exception {
+        User secondOwner = users.saveAndFlush(new User(UUID.randomUUID() + "@example.com", "encoded", "두 번째 사용자"));
+        User locked = new User(UUID.randomUUID() + "@example.com", "encoded", "잠긴 사용자");
+        locked.changeLocked(true);
+        users.saveAndFlush(locked);
         long before = definitions.count();
         String response = mvc.perform(post("/api/clothes/attribute-defs").with(csrf()).with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("admin").roles("ADMIN"))
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
@@ -213,6 +217,11 @@ class ClothesCreateIntegrationTest {
         assertThat(saved.getSelectableValues()).containsExactly("면", "울");
         assertThat(saved.getCreatedAt()).isNotNull();
         assertThat(response).contains(saved.getId().toString());
+        List<UUID> receivers = jdbc.queryForList("""
+                SELECT (payload->>'receiverId')::uuid FROM outbox_events
+                WHERE aggregate_id = ? AND event_type = 'CLOTHES_ATTRIBUTE_CREATED'
+                """, UUID.class, saved.getId());
+        assertThat(receivers).containsOnlyOnce(owner.getId(), secondOwner.getId()).doesNotContain(locked.getId());
     }
 
     @Test
