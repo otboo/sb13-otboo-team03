@@ -275,6 +275,47 @@ class RedisJwtRegistryTest {
 
             then(revocationPublisher).shouldHaveNoInteractions();
         }
+
+        @Test
+        @DisplayName("사용자 JWT 키 삭제에 실패하면 연결 종료 이벤트를 발행하지 않는다")
+        void invalidateJwtInformationByUserId_deleteFailed_doesNotPublish() {
+            // given
+            JwtInformation information = createJwtInformation(ACCESS_TOKEN, REFRESH_TOKEN);
+
+            given(redisLockProvider.acquireLock(userId.toString())).willReturn(LOCK_VALUE);
+            given(redisTemplate.opsForList()).willReturn(listOperations);
+            given(listOperations.range(userKey, 0, -1)).willReturn(List.of(information));
+            given(redisTemplate.delete(anyString())).willReturn(false);
+
+            // when
+            jwtRegistry.invalidateJwtInformationByUserId(userId);
+
+            // then
+            then(revocationPublisher).shouldHaveNoInteractions();
+            then(redisLockProvider).should().releaseLock(userId.toString(), LOCK_VALUE);
+        }
+
+        @Test
+        @DisplayName("이벤트 발행에 실패해도 JWT 무효화 결과는 유지된다")
+        void invalidateJwtInformationByUserId_publishFailure_doesNotThrow() {
+            // given
+            JwtInformation information = createJwtInformation(ACCESS_TOKEN, REFRESH_TOKEN);
+
+            given(redisLockProvider.acquireLock(userId.toString())).willReturn(LOCK_VALUE);
+            given(redisTemplate.opsForList()).willReturn(listOperations);
+            given(listOperations.range(userKey, 0, -1)).willReturn(List.of(information));
+            given(redisTemplate.delete(anyString())).willReturn(true);
+            willThrow(new IllegalStateException("Redis Pub/Sub 발행 실패"))
+                    .given(revocationPublisher).publish(userId);
+
+            // when & then
+            assertThatCode(() -> jwtRegistry.invalidateJwtInformationByUserId(userId))
+                    .doesNotThrowAnyException();
+
+            then(redisTemplate).should().delete(userKey);
+            then(revocationPublisher).should().publish(userId);
+            then(redisLockProvider).should().releaseLock(userId.toString(), LOCK_VALUE);
+        }
     }
 
     @Nested
@@ -345,6 +386,27 @@ class RedisJwtRegistryTest {
             then(redisLockProvider).shouldHaveNoInteractions();
 
             then(revocationPublisher).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("Refresh Token이 실제로 삭제되지 않으면 연결 종료 이벤트를 발행하지 않는다")
+        void invalidateJwtInformationByRefreshToken_removeFailed_doesNotPublish() {
+            // given
+            JwtInformation information = createJwtInformation(ACCESS_TOKEN, REFRESH_TOKEN);
+
+            given(redisTemplate.keys("jwt:user:*")).willReturn(Set.of(userKey));
+            given(redisTemplate.opsForList()).willReturn(listOperations);
+            given(listOperations.range(userKey, 0, -1)).willReturn(List.of(information));
+            given(redisLockProvider.acquireLock(userId.toString())).willReturn(LOCK_VALUE);
+            given(listOperations.remove(userKey, 1, information)).willReturn(0L);
+
+            // when
+            jwtRegistry.invalidateJwtInformationByRefreshToken(REFRESH_TOKEN);
+
+            // then
+            then(revocationPublisher).shouldHaveNoInteractions();
+            then(redisTemplate).should(never()).delete(anyString());
+            then(redisLockProvider).should().releaseLock(userId.toString(), LOCK_VALUE);
         }
     }
 

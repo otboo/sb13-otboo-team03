@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 class JwtRevocationRedisSubscriberTest {
 
@@ -48,6 +49,37 @@ class JwtRevocationRedisSubscriberTest {
 
             // then
             verifyNoInteractions(terminationService);
+        }
+
+        @Test
+        @DisplayName("표준 UUID 형식이 아닌 메시지는 실시간 연결을 종료하지 않는다")
+        void onMessage_nonCanonicalUserId_doesNotDisconnect() {
+            // given
+            Message message = mock(Message.class);
+            when(message.getBody()).thenReturn("1-1-1-1-1".getBytes(StandardCharsets.UTF_8));
+
+            // when
+            subscriber.onMessage(message, null);
+
+            // then
+            verifyNoInteractions(terminationService);
+        }
+
+        @Test
+        @DisplayName("실시간 연결 종료에 실패해도 이벤트 처리 예외를 전파하지 않는다")
+        void onMessage_disconnectFailure_doesNotThrow() {
+            // given
+            UUID userId = UUID.randomUUID();
+            Message message = mock(Message.class);
+            when(message.getBody()).thenReturn(userId.toString().getBytes(StandardCharsets.UTF_8));
+            doThrow(new IllegalStateException("연결 종료 실패"))
+                    .when(terminationService).disconnectAll(userId);
+
+            // when & then
+            assertThatCode(() -> subscriber.onMessage(message, null))
+                    .doesNotThrowAnyException();
+
+            verify(terminationService).disconnectAll(userId);
         }
     }
 }
