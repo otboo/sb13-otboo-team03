@@ -1,10 +1,11 @@
-
 package com.otboo.team03.global.security.jwt;
 
 import com.otboo.team03.global.exception.jwt.InvalidJwtException;
 import com.otboo.team03.global.redis.RedisLockProvider;
+import com.otboo.team03.realtime.redis.JwtRevocationRedisPublisher;
 import com.otboo.team03.user.dto.response.UserDto;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,6 +27,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@DisplayName("Redis JWT 세션 관리")
 class RedisJwtRegistryTest {
 
     private static final Duration ACCESS_VALIDITY = Duration.ofMinutes(30);
@@ -53,6 +55,9 @@ class RedisJwtRegistryTest {
 
     @Mock
     private ValueOperations<String, Object> valueOperations;
+
+    @Mock
+    private JwtRevocationRedisPublisher revocationPublisher;
 
     @InjectMocks
     private RedisJwtRegistry jwtRegistry;
@@ -86,9 +91,11 @@ class RedisJwtRegistryTest {
     }
 
     @Nested
+    @DisplayName("JWT 등록 및 중복 로그인")
     class RegisterTest {
 
         @Test
+        @DisplayName("최초 로그인 시 JWT를 등록하고 연결 종료 이벤트는 발행하지 않는다")
         void registerJwtInformation_success() {
             // given
             JwtInformation information =
@@ -128,9 +135,12 @@ class RedisJwtRegistryTest {
 
             then(redisLockProvider).should()
                     .releaseLock(userId.toString(), LOCK_VALUE);
+
+            then(revocationPublisher).shouldHaveNoInteractions();
         }
 
         @Test
+        @DisplayName("중복 로그인 시 기존 JWT를 무효화하고 연결 종료 이벤트를 발행한다")
         void registerJwtInformation_existingLogin_removesOldTokens() {
             // given
             JwtInformation oldInformation =
@@ -186,13 +196,17 @@ class RedisJwtRegistryTest {
 
             then(redisLockProvider).should()
                     .releaseLock(userId.toString(), LOCK_VALUE);
+
+            then(revocationPublisher).should().publish(userId);
         }
     }
 
     @Nested
-    class InvalidateTest {
+    @DisplayName("사용자 ID 기준 JWT 무효화")
+    class InvalidateByUserIdTest {
 
         @Test
+        @DisplayName("활성 JWT를 무효화하면 연결 종료 이벤트를 발행한다")
         void invalidateJwtInformationByUserId_success() {
             // given
             JwtInformation information =
@@ -220,9 +234,48 @@ class RedisJwtRegistryTest {
 
             then(redisLockProvider).should()
                     .releaseLock(userId.toString(), LOCK_VALUE);
+
+            then(revocationPublisher).should().publish(userId);
         }
 
         @Test
+        @DisplayName("활성 JWT가 없으면 연결 종료 이벤트를 발행하지 않는다")
+        void invalidateJwtInformationByUserId_noActiveSession_doesNotPublish() {
+            // given
+            given(redisLockProvider.acquireLock(userId.toString())).willReturn(LOCK_VALUE);
+            given(redisTemplate.opsForList()).willReturn(listOperations);
+            given(listOperations.range(userKey, 0, -1)).willReturn(List.of());
+
+            // when
+            jwtRegistry.invalidateJwtInformationByUserId(userId);
+
+            // then
+            then(revocationPublisher).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("Redis 무효화에 실패하면 연결 종료 이벤트를 발행하지 않는다")
+        void invalidateJwtInformationByUserId_redisFailure_doesNotPublish() {
+            // given
+            given(redisLockProvider.acquireLock(userId.toString())).willReturn(LOCK_VALUE);
+            given(redisTemplate.opsForList()).willReturn(listOperations);
+            given(listOperations.range(userKey, 0, -1)).willReturn(List.of());
+            given(redisTemplate.delete(userKey)).willThrow(new IllegalStateException("Redis 삭제 실패"));
+
+            // when & then
+            assertThatThrownBy(() -> jwtRegistry.invalidateJwtInformationByUserId(userId))
+                    .isInstanceOf(IllegalStateException.class);
+
+            then(revocationPublisher).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
+    @DisplayName("Refresh Token 기준 JWT 무효화")
+    class InvalidateByRefreshTokenTest {
+
+        @Test
+        @DisplayName("로그아웃으로 JWT를 무효화하면 연결 종료 이벤트를 발행한다")
         void invalidateJwtInformationByRefreshToken_success() {
             // given
             JwtInformation information =
@@ -263,9 +316,12 @@ class RedisJwtRegistryTest {
 
             then(redisLockProvider).should()
                     .releaseLock(userId.toString(), LOCK_VALUE);
+
+            then(revocationPublisher).should().publish(userId);
         }
 
         @Test
+        @DisplayName("Refresh Token이 존재하지 않으면 연결 종료 이벤트를 발행하지 않는다")
         void invalidateJwtInformationByRefreshToken_notFound() {
             // given
             given(redisTemplate.keys("jwt:user:*"))
@@ -279,13 +335,17 @@ class RedisJwtRegistryTest {
                     .delete(anyString());
 
             then(redisLockProvider).shouldHaveNoInteractions();
+
+            then(revocationPublisher).shouldHaveNoInteractions();
         }
     }
 
     @Nested
+    @DisplayName("활성 JWT 조회")
     class ActiveTokenTest {
 
         @Test
+        @DisplayName("사용자의 활성 JWT가 있으면 true를 반환한다")
         void hasActiveJwtInformationByUserId_success() {
             // given
             given(redisTemplate.opsForList()).willReturn(listOperations);
@@ -300,6 +360,7 @@ class RedisJwtRegistryTest {
         }
 
         @Test
+        @DisplayName("사용자의 활성 JWT가 없으면 false를 반환한다")
         void hasActiveJwtInformationByUserId_notFound() {
             // given
             given(redisTemplate.opsForList()).willReturn(listOperations);
@@ -314,6 +375,7 @@ class RedisJwtRegistryTest {
         }
 
         @Test
+        @DisplayName("활성 Access Token을 조회할 수 있다")
         void hasActiveJwtInformationByAccessToken_success() {
             // given
             given(redisTemplate.hasKey(startsWith("jwt:access:")))
@@ -330,6 +392,7 @@ class RedisJwtRegistryTest {
         }
 
         @Test
+        @DisplayName("활성 Refresh Token을 조회할 수 있다")
         void hasActiveJwtInformationByRefreshToken_success() {
             // given
             given(redisTemplate.hasKey(startsWith("jwt:refresh:")))
@@ -347,9 +410,11 @@ class RedisJwtRegistryTest {
     }
 
     @Nested
+    @DisplayName("JWT 갱신")
     class RotateTest {
 
         @Test
+        @DisplayName("JWT 갱신 시 기존 토큰을 교체하고 연결 종료 이벤트는 발행하지 않는다")
         void rotateJwtInformation_success() {
             // given
             JwtInformation oldInformation =
@@ -411,9 +476,12 @@ class RedisJwtRegistryTest {
 
             then(redisLockProvider).should()
                     .releaseLock(userId.toString(), LOCK_VALUE);
+
+            then(revocationPublisher).shouldHaveNoInteractions();
         }
 
         @Test
+        @DisplayName("유효하지 않은 Refresh Token으로 갱신하면 예외를 던지고 이벤트는 발행하지 않는다")
         void rotateJwtInformation_invalidRefreshToken_throwsException() {
             // given
             JwtInformation newInformation =
@@ -440,13 +508,17 @@ class RedisJwtRegistryTest {
 
             then(redisTemplate).should(never())
                     .delete(anyString());
+
+            then(revocationPublisher).shouldHaveNoInteractions();
         }
     }
 
     @Nested
+    @DisplayName("만료된 JWT 정리")
     class CleanupTest {
 
         @Test
+        @DisplayName("만료된 JWT와 인덱스를 삭제한다")
         void clearExpiredJwtInformation_removesExpiredTokens() {
             // given
             JwtInformation expiredInformation =
