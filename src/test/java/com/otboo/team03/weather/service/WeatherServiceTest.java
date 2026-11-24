@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 
 import com.otboo.team03.profile.dto.WeatherAPILocation;
+import com.otboo.team03.weather.client.OpenWeatherClient;
 import com.otboo.team03.weather.dto.WeatherDto;
 import com.otboo.team03.weather.entity.PrecipitationType;
 import com.otboo.team03.weather.entity.SkyStatus;
@@ -42,6 +43,9 @@ class WeatherServiceTest {
   @Mock
   private TemperatureCalculator temperatureCalculator;
 
+  @Mock
+  private OpenWeatherClient openWeatherClient;
+
   @InjectMocks
   private WeatherServiceImpl weatherService;
 
@@ -74,8 +78,8 @@ class WeatherServiceTest {
   }
 
   @Test
-  @DisplayName("해당 좌표에 조회 가능한 예보 데이터가 없으면 WeatherNotFoundException이 발생한다")
-  void getWeathers_notFound() {
+  @DisplayName("DB에도 없고 외부 실시간 수집도 실패하면 WeatherNotFoundException이 발생한다")
+  void getWeathers_whenBothDbAndExternalFail_throwsNotFound() {
     // given
     Double latitude = 37.4979;
     Double longitude = 127.0276;
@@ -87,6 +91,7 @@ class WeatherServiceTest {
     given(weatherRepository.findAllByLatitudeAndLongitudeAndForecastAtBetweenOrderByForecastAtAsc(
         eq(latitude), eq(longitude), any(), any()
     )).willReturn(Collections.emptyList());
+    given(openWeatherClient.fetchForecast(latitude, longitude)).willReturn(Collections.emptyList());
 
     // when & then
     assertThatThrownBy(() -> weatherService.getWeathers(longitude, latitude))
