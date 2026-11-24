@@ -4,7 +4,7 @@ import com.otboo.team03.notification.entity.NotificationLevel;
 import com.otboo.team03.notification.event.NotificationEvent;
 import com.otboo.team03.notification.event.NotificationEventType;
 import com.otboo.team03.notification.outbox.entity.OutboxEvent;
-import com.otboo.team03.notification.outbox.repository.OutboxEventRepository;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,7 +29,7 @@ import static org.mockito.Mockito.when;
 class OutboxEventServiceTest {
 
     @Mock
-    private OutboxEventRepository outboxEventRepository;
+    private EntityManager entityManager;
 
     private OutboxEventService outboxEventService;
 
@@ -37,7 +37,7 @@ class OutboxEventServiceTest {
 
     @BeforeEach
     void setUp() {
-        outboxEventService = new OutboxEventService(outboxEventRepository, objectMapper);
+        outboxEventService = new OutboxEventService(entityManager, objectMapper);
     }
 
     @Test
@@ -62,7 +62,7 @@ class OutboxEventServiceTest {
         outboxEventService.publish(event, "USER", receiverId.toString());
 
         ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
-        verify(outboxEventRepository).save(captor.capture());
+        verify(entityManager).persist(captor.capture());
         OutboxEvent saved = captor.getValue();
 
         assertThat(saved.getEventId()).isEqualTo(eventId);
@@ -103,7 +103,7 @@ class OutboxEventServiceTest {
         outboxEventService.publish(event, "WEATHER", receiverId.toString());
 
         ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
-        verify(outboxEventRepository).save(captor.capture());
+        verify(entityManager).persist(captor.capture());
         OutboxEvent saved = captor.getValue();
 
         assertThat(saved.getEventType()).isEqualTo(NotificationEventType.WEATHER_ALERT.name());
@@ -122,7 +122,7 @@ class OutboxEventServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("aggregateType은 필수입니다.");
 
-        verify(outboxEventRepository, never()).save(org.mockito.ArgumentMatchers.any());
+        verify(entityManager, never()).persist(org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -133,7 +133,7 @@ class OutboxEventServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("aggregateType은 필수입니다.");
 
-        verify(outboxEventRepository, never()).save(org.mockito.ArgumentMatchers.any());
+        verify(entityManager, never()).persist(org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -144,7 +144,7 @@ class OutboxEventServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("partitionKey은 필수입니다.");
 
-        verify(outboxEventRepository, never()).save(org.mockito.ArgumentMatchers.any());
+        verify(entityManager, never()).persist(org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -155,7 +155,7 @@ class OutboxEventServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("partitionKey은 필수입니다.");
 
-        verify(outboxEventRepository, never()).save(org.mockito.ArgumentMatchers.any());
+        verify(entityManager, never()).persist(org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -178,7 +178,7 @@ class OutboxEventServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("schemaVersion은 0 이상 32767 이하여야 합니다.");
 
-        verify(outboxEventRepository, never()).save(org.mockito.ArgumentMatchers.any());
+        verify(entityManager, never()).persist(org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -201,7 +201,7 @@ class OutboxEventServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("schemaVersion은 0 이상 32767 이하여야 합니다.");
 
-        verify(outboxEventRepository, never()).save(org.mockito.ArgumentMatchers.any());
+        verify(entityManager, never()).persist(org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -209,13 +209,13 @@ class OutboxEventServiceTest {
         ObjectMapper failingObjectMapper = mock(ObjectMapper.class);
         when(failingObjectMapper.writeValueAsString(any(NotificationEvent.class)))
                 .thenThrow(new IllegalStateException("serialize failed"));
-        OutboxEventService service = new OutboxEventService(outboxEventRepository, failingObjectMapper);
+        OutboxEventService service = new OutboxEventService(entityManager, failingObjectMapper);
 
         assertThatThrownBy(() -> service.publish(event(), "USER", "partition-key"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("알림 이벤트 payload 변환에 실패했습니다.");
 
-        verify(outboxEventRepository, never()).save(org.mockito.ArgumentMatchers.any());
+        verify(entityManager, never()).persist(org.mockito.ArgumentMatchers.any());
     }
 
     private NotificationEvent event() {
