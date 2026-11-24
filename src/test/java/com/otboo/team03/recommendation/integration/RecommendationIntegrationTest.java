@@ -17,7 +17,9 @@ import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.security.jwt.JwtTokenProvider;
 import com.otboo.team03.global.storage.ImageStorage;
 import com.otboo.team03.profile.entity.Profile;
+import com.otboo.team03.profile.exception.ProfileNotFoundException;
 import com.otboo.team03.profile.repository.ProfileRepository;
+import com.otboo.team03.recommendation.service.RecommendationInputReader;
 import com.otboo.team03.recommendation.repository.RedisRecommendationHistoryRepository;
 import com.otboo.team03.support.PostgresTestSupport;
 import com.otboo.team03.user.entity.User;
@@ -55,9 +57,11 @@ import java.util.UUID;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.nullValue;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -90,8 +94,49 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
     @Autowired private ClothesService clothesService;
     @Autowired private ClothesAttributeDefinitionService definitionService;
     @Autowired private RedisRecommendationHistoryRepository historyRepository;
+    @Autowired private RecommendationInputReader inputReader;
     @MockitoBean private JwtRegistry jwtRegistry;
     @MockitoBean private ImageStorage imageStorage;
+
+    @ParameterizedTest
+    @CsvSource(value = {"NULL, 3", "1, 1", "5, 5"}, nullValues = "NULL")
+    void 프로필_이미지가_있어도_민감도만_조회하고_미설정이면_중립값을_사용한다(
+            Integer sensitivity, int expectedSensitivity) {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "민감도 조회 사용자"));
+        profiles.save(new Profile(owner, "profiles/test-image.png", null, null, null, null, sensitivity, List.of()));
+        UUID userId = owner.getId();
+        UUID weatherId = saveWeather(22.0).getId();
+        entityManager.flush();
+        entityManager.clear();
+
+        Statistics statistics = entityManager.getEntityManagerFactory()
+                .unwrap(SessionFactory.class).getStatistics();
+        boolean previousEnabled = statistics.isStatisticsEnabled();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+        try {
+            var snapshot = inputReader.read(weatherId, userId);
+
+            assertThat(snapshot.sensitivity()).isEqualTo(expectedSensitivity);
+            assertThat(statistics.getEntityStatistics(Profile.class.getName()).getLoadCount()).isZero();
+            verifyNoInteractions(imageStorage);
+        } finally {
+            statistics.setStatisticsEnabled(previousEnabled);
+        }
+    }
+
+    @Test
+    void 민감도_전용_조회에서도_프로필이_없으면_예외를_유지한다() {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "프로필 없는 사용자"));
+        UUID userId = owner.getId();
+        UUID weatherId = saveWeather(22.0).getId();
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThatThrownBy(() -> inputReader.read(weatherId, userId))
+                .isInstanceOf(ProfileNotFoundException.class);
+        verifyNoInteractions(imageStorage);
+    }
 
     @Test
     void 같은_요청은_직전_추천을_교체하고_빈_결과가_나오면_기록을_삭제한다() throws Exception {

@@ -3,6 +3,7 @@ package com.otboo.team03.profile.service;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.global.storage.ImageStorage;
 import com.otboo.team03.profile.dto.ProfileDto;
+import com.otboo.team03.profile.dto.ProfileTemperatureSensitivityDto;
 import com.otboo.team03.profile.dto.Gender;
 import com.otboo.team03.profile.dto.ProfileUpdateRequest;
 import com.otboo.team03.profile.dto.WeatherAPILocation;
@@ -16,6 +17,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -33,6 +37,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class ProfileServiceTest {
@@ -60,6 +66,31 @@ class ProfileServiceTest {
   @AfterEach
   void tearDown() {
     TransactionSynchronizationManager.clearSynchronization();
+  }
+
+  @ParameterizedTest
+  @NullSource
+  @ValueSource(ints = {1, 5})
+  void getTemperatureSensitivity_withoutProfileAssembly(Integer sensitivity) {
+    UUID userId = UUID.randomUUID();
+    given(profileRepository.findTemperatureSensitivityByUserId(userId))
+        .willReturn(Optional.of(new ProfileTemperatureSensitivityDto(sensitivity)));
+
+    assertThat(profileService.getTemperatureSensitivity(userId)).isEqualTo(sensitivity);
+
+    verify(profileRepository).findTemperatureSensitivityByUserId(userId);
+    verifyNoMoreInteractions(profileRepository);
+    verifyNoInteractions(profileDtoAssembler, imageStorage);
+  }
+
+  @Test
+  void getTemperatureSensitivity_notFound() {
+    UUID userId = UUID.randomUUID();
+    given(profileRepository.findTemperatureSensitivityByUserId(userId)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> profileService.getTemperatureSensitivity(userId))
+        .isInstanceOf(ProfileNotFoundException.class);
+    verifyNoInteractions(profileDtoAssembler, imageStorage);
   }
 
   @Test
