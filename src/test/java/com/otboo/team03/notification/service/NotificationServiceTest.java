@@ -5,9 +5,11 @@ import com.otboo.team03.notification.entity.Notification;
 import com.otboo.team03.notification.entity.NotificationLevel;
 import com.otboo.team03.notification.exception.NotificationNotFoundException;
 import com.otboo.team03.notification.repository.NotificationRepository;
+import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.entity.User;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -151,6 +153,17 @@ class NotificationServiceTest {
     }
 
     @Test
+    void 커서와_ID가_짝지어_전달되지_않으면_거부한다() {
+        assertThatThrownBy(() -> notificationService.getNotifications(
+                UUID.randomUUID(), Instant.now(), null, 20
+        )).isInstanceOf(OtbooException.class);
+
+        assertThatThrownBy(() -> notificationService.getNotifications(
+                UUID.randomUUID(), null, UUID.randomUUID(), 20
+        )).isInstanceOf(OtbooException.class);
+    }
+
+    @Test
     void 수신자_본인의_알림을_읽음_처리한다() {
         UUID receiverId = UUID.randomUUID();
         UUID notificationId = UUID.randomUUID();
@@ -211,16 +224,18 @@ class NotificationServiceTest {
         when(notificationRepository.findByIdAndReceiver_Id(lastEventId, receiverId))
                 .thenReturn(Optional.of(lastEvent));
         when(notificationRepository.findByReceiverIdAfterEvent(
-                receiverId, lastEventCreatedAt, lastEventId
+                eq(receiverId), eq(lastEventCreatedAt), eq(lastEventId), any(Pageable.class)
         )).thenReturn(List.of(missedNotification));
 
         List<NotificationDto> result = notificationService.getNotificationsAfterEvent(receiverId, lastEventId);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).title()).isEqualTo("새 알림");
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
         verify(notificationRepository).findByReceiverIdAfterEvent(
-                receiverId, lastEventCreatedAt, lastEventId
+                eq(receiverId), eq(lastEventCreatedAt), eq(lastEventId), pageableCaptor.capture()
         );
+        assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(100);
     }
 
     @Test
