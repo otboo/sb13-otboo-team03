@@ -4,6 +4,7 @@ import com.otboo.team03.global.exception.InvalidLlmResponseException;
 import com.otboo.team03.recommendation.client.GroqOutfitClient;
 import com.otboo.team03.recommendation.config.RecommendationLlmProperties;
 import com.otboo.team03.recommendation.client.dto.LlmOutfitDecision;
+import com.otboo.team03.recommendation.client.dto.LlmRecommendationInput;
 import com.otboo.team03.recommendation.validation.LlmOutfitValidator;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,15 @@ class LlmOutfitRecommenderTest {
     @Test
     void 비활성화하면_외부_API를_호출하지_않는다() {
         assertThat(recommender(properties(false)).recommend(input())).isEmpty();
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void 빈_옷장이면_외부_API를_호출하지_않는다() {
+        var emptyWardrobe = new LlmRecommendationInput(input().weather(), 3,
+                input().previousOutfitIds(), List.of());
+
+        assertThat(recommender(properties(true)).recommend(emptyWardrobe)).isEmpty();
         verifyNoInteractions(client);
     }
 

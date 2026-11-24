@@ -43,7 +43,7 @@ public class RecommendationInputReader {
         var weatherContext = new LlmRecommendationInput.WeatherContext(weather.getTemperature(),
                 weather.getSkyStatus(), weather.getPrecipitationType(), weather.getPrecipitationProbability(),
                 weather.getHumidity(), weather.getWindSpeed());
-        Integer sensitivity = profileService.getProfile(userId).temperatureSensitivity();
+        Integer sensitivity = profileService.getTemperatureSensitivity(userId);
         int effectiveSensitivity = sensitivity != null ? sensitivity : 3;
         List<Clothes> clothes = clothesRepository.findAllByOwner_Id(userId);
         List<UUID> clothesIds = clothes.stream().map(Clothes::getId).toList();

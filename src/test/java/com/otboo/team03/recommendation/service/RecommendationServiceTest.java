@@ -9,7 +9,6 @@ import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.clothes.repository.ClothesAttributeRepository;
 import com.otboo.team03.clothes.repository.ClothesRepository;
 import com.otboo.team03.clothes.service.ClothesService;
-import com.otboo.team03.profile.dto.ProfileDto;
 import com.otboo.team03.profile.exception.ProfileNotFoundException;
 import com.otboo.team03.profile.service.ProfileService;
 import com.otboo.team03.recommendation.algorithm.AttributeSemanticAnalyzer;
@@ -85,7 +84,7 @@ class RecommendationServiceTest {
         var dto = new ClothesDto(clothesId, userId, "원피스", "https://example.com/image",
                 ClothesType.DRESS, List.of(attribute));
         List<Clothes> clothes = List.of(dress);
-        when(profileService.getProfile(userId)).thenReturn(profile(1));
+        when(profileService.getTemperatureSensitivity(userId)).thenReturn(1);
         when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(clothes);
         when(algorithm.recommend(clothes, Map.of(clothesId, UNKNOWN),
                 Map.of(clothesId, SleeveLength.UNKNOWN), 10.0, 1, Set.of())).thenReturn(clothes);
@@ -108,6 +107,8 @@ class RecommendationServiceTest {
             assertThat(ootd.attributes()).containsExactly(attribute);
         });
         verify(weatherRepository).findById(weatherId);
+        verify(profileService).getTemperatureSensitivity(userId);
+        verify(profileService, never()).getProfile(any());
         verify(algorithm).recommend(clothes, Map.of(clothesId, UNKNOWN),
                 Map.of(clothesId, SleeveLength.UNKNOWN), 10.0, 1, Set.of());
         verify(clothesAttributeRepository).findAllByClothes_IdIn(List.of(clothesId));
@@ -121,7 +122,7 @@ class RecommendationServiceTest {
         BasicOutfitAlgorithm connectedAlgorithm = spy(new BasicOutfitAlgorithm(new ClothesSuitabilityScorer()));
         RecommendationService connectedService = connectedService(connectedAlgorithm);
         givenTemperature(28.0);
-        when(profileService.getProfile(userId)).thenReturn(profile(3));
+        when(profileService.getTemperatureSensitivity(userId)).thenReturn(3);
         Clothes firstDress = candidate(ClothesType.DRESS);
         Clothes alternativeDress = candidate(ClothesType.DRESS);
         List<Clothes> clothes = List.of(firstDress, alternativeDress);
@@ -155,7 +156,7 @@ class RecommendationServiceTest {
     @Test
     void 민감도가_없으면_3을_사용하고_빈_추천은_속성_조회_없이_직전_기록을_삭제한다() {
         givenTemperature(22.0);
-        when(profileService.getProfile(userId)).thenReturn(profile(null));
+        when(profileService.getTemperatureSensitivity(userId)).thenReturn(null);
         when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(List.of());
         Set<UUID> previousIds = Set.of(UUID.randomUUID());
         when(historyRepository.find(userId, weatherId)).thenReturn(previousIds);
@@ -174,7 +175,7 @@ class RecommendationServiceTest {
     @Test
     void 응답_생성에_실패하면_직전_추천_기록을_변경하지_않는다() {
         givenTemperature(28.0);
-        when(profileService.getProfile(userId)).thenReturn(profile(3));
+        when(profileService.getTemperatureSensitivity(userId)).thenReturn(3);
         Clothes dress = mock(Clothes.class);
         UUID clothesId = UUID.randomUUID();
         when(dress.getId()).thenReturn(clothesId);
@@ -195,7 +196,7 @@ class RecommendationServiceTest {
     @Test
     void 프로필이_없으면_예외를_전달하고_추천을_진행하지_않는다() {
         givenTemperature(10.0);
-        when(profileService.getProfile(userId)).thenThrow(new ProfileNotFoundException());
+        when(profileService.getTemperatureSensitivity(userId)).thenThrow(new ProfileNotFoundException());
 
         assertThatThrownBy(() -> service.recommend(weatherId, userId))
                 .isInstanceOf(ProfileNotFoundException.class);
@@ -222,7 +223,7 @@ class RecommendationServiceTest {
     @Test
     void 의상별_속성을_일괄조회하고_해석한_두께를_알고리즘에_전달한다() {
         givenTemperature(28.0);
-        when(profileService.getProfile(userId)).thenReturn(profile(3));
+        when(profileService.getTemperatureSensitivity(userId)).thenReturn(3);
         Clothes light = mock(Clothes.class);
         Clothes heavy = mock(Clothes.class);
         Clothes conflicting = mock(Clothes.class);
@@ -263,7 +264,7 @@ class RecommendationServiceTest {
     @Test
     void 속성이_없는_의상도_UNKNOWN으로_전달하고_민감도_기본값을_유지한다() {
         givenTemperature(20.0);
-        when(profileService.getProfile(userId)).thenReturn(profile(null));
+        when(profileService.getTemperatureSensitivity(userId)).thenReturn(null);
         Clothes dress = mock(Clothes.class);
         UUID clothesId = UUID.randomUUID();
         when(dress.getId()).thenReturn(clothesId);
@@ -277,14 +278,10 @@ class RecommendationServiceTest {
                 Map.of(clothesId, SleeveLength.UNKNOWN), 20.0, 3, Set.of());
     }
 
-    private ProfileDto profile(Integer sensitivity) {
-        return new ProfileDto(userId, "사용자", null, null, null, sensitivity, null);
-    }
-
     @Test
     void 같은_속성_조회_결과에서_두께와_소매를_독립적으로_종합해_전달한다() {
         givenTemperature(17.0);
-        when(profileService.getProfile(userId)).thenReturn(profile(1));
+        when(profileService.getTemperatureSensitivity(userId)).thenReturn(1);
         Clothes shortSleeve = mock(Clothes.class);
         Clothes longSleeve = mock(Clothes.class);
         Clothes sleeveConflict = mock(Clothes.class);
@@ -335,7 +332,7 @@ class RecommendationServiceTest {
     @Test
     void 조회된_속성이_없으면_두께와_소매를_모두_UNKNOWN으로_전달한다() {
         givenTemperature(20.0);
-        when(profileService.getProfile(userId)).thenReturn(profile(null));
+        when(profileService.getTemperatureSensitivity(userId)).thenReturn(null);
         Clothes dress = mock(Clothes.class);
         UUID clothesId = UUID.randomUUID();
         when(dress.getId()).thenReturn(clothesId);
@@ -355,7 +352,7 @@ class RecommendationServiceTest {
     @ValueSource(strings = {"선택값 변경", "속성명 변경"})
     void 속성_수정_후_다음_추천에서_최신_소매를_다시_분석한다(String change) {
         givenTemperature(28.0);
-        when(profileService.getProfile(userId)).thenReturn(profile(3));
+        when(profileService.getTemperatureSensitivity(userId)).thenReturn(3);
         Clothes dress = mock(Clothes.class);
         UUID clothesId = UUID.randomUUID();
         when(dress.getId()).thenReturn(clothesId);
@@ -391,7 +388,7 @@ class RecommendationServiceTest {
             double temperature, int sensitivity, ThicknessLevel preferred) {
         RecommendationService connectedService = connectedService(new BasicOutfitAlgorithm(new ClothesSuitabilityScorer()));
         givenTemperature(temperature);
-        when(profileService.getProfile(userId)).thenReturn(profile(sensitivity));
+        when(profileService.getTemperatureSensitivity(userId)).thenReturn(sensitivity);
 
         Clothes light = candidate(ClothesType.TOP);
         Clothes heavy = candidate(ClothesType.TOP);
@@ -471,7 +468,7 @@ class RecommendationServiceTest {
             ThicknessLevel lowerPriority, ThicknessLevel higherPriority) {
         RecommendationService connectedService = connectedService(new BasicOutfitAlgorithm(new ClothesSuitabilityScorer()));
         givenTemperature(temperature);
-        when(profileService.getProfile(userId)).thenReturn(profile(sensitivity));
+        when(profileService.getTemperatureSensitivity(userId)).thenReturn(sensitivity);
         Clothes first = candidate(ClothesType.TOP);
         Clothes alternative = candidate(ClothesType.TOP);
         Clothes bottom = candidate(ClothesType.BOTTOM);
@@ -508,7 +505,7 @@ class RecommendationServiceTest {
     @ValueSource(strings = {"선택값 변경", "속성명 변경"})
     void 속성_수정_후_다음_추천에서_최신_두께를_다시_분석한다(String change) {
         givenTemperature(28.0);
-        when(profileService.getProfile(userId)).thenReturn(profile(3));
+        when(profileService.getTemperatureSensitivity(userId)).thenReturn(3);
         Clothes dress = mock(Clothes.class);
         UUID clothesId = UUID.randomUUID();
         when(dress.getId()).thenReturn(clothesId);

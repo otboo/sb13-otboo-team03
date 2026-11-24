@@ -40,6 +40,16 @@ class GroqClientTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"", "   "})
+    void 빈_거부_문구는_정상_응답으로_처리한다(String refusal) {
+        server.expect(anything()).andRespond(withSuccess(
+                completion("답변", "stop", refusal), MediaType.APPLICATION_JSON));
+
+        assertThat(client.complete(request())).isEqualTo("답변");
+        server.verify();
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"length", "content_filter", "tool_calls"})
     void 완료되지_않은_응답은_추천으로_사용하지_않는다(String finishReason) {
         server.expect(anything()).andRespond(withSuccess(
@@ -57,11 +67,19 @@ class GroqClientTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"{}", "{\"choices\":[]}", "{\"choices\":[null]}"})
+    @ValueSource(strings = {
+            "", "null", "{}", "{\"choices\":[]}", "{\"choices\":[null]}",
+            "{\"choices\":[{},{}]}",
+            "{\"choices\":[{\"finish_reason\":\"stop\"}]}",
+            "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{}}]}",
+            "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"\"}}]}",
+            "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"   \"}}]}"
+    })
     void 응답_필수_값이_없으면_기본_추천으로_복구할_예외를_던진다(String response) {
         server.expect(anything()).andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
         assertThatThrownBy(() -> client.complete(request()))
                 .isInstanceOf(InvalidLlmResponseException.class);
+        server.verify();
     }
 
     private Map<String, Object> request() {

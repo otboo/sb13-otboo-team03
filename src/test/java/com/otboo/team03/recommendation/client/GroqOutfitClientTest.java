@@ -60,10 +60,16 @@ class GroqOutfitClientTest {
                     assertThat(schema.get("strict").asBoolean()).isTrue();
                     assertThat(schema.get("schema").get("properties").get("clothesIds")
                             .get("items").get("enum").size()).isEqualTo(3);
-                    var featureName = schema.get("schema").get("properties").get("analyses").get("items")
-                            .get("properties").get("features").get("items").get("properties").get("name");
-                    assertThat(featureName.get("type").asText()).isEqualTo("string");
-                    assertThat(featureName.has("enum")).isFalse();
+                    var featureProperties = schema.get("schema").get("properties").get("analyses").get("items")
+                            .get("properties").get("features").get("items").get("properties");
+                    for (String field : List.of("name", "value")) {
+                        assertThat(featureProperties.get(field).get("type").asText()).isEqualTo("string");
+                        assertThat(featureProperties.get(field).has("enum")).isFalse();
+                    }
+                    var evidence = featureProperties.get("evidence");
+                    assertThat(evidence.get("type").asText()).isEqualTo("string");
+                    assertThat(evidence.get("description").asText())
+                            .contains("TITLE", "ATTRIBUTE", "attributes[].value");
                 }).andRespond(withSuccess(completion(mapper.writeValueAsString(decision()), "stop", null),
                         MediaType.APPLICATION_JSON));
 
