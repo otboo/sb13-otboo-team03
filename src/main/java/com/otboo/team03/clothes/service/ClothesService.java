@@ -71,36 +71,7 @@ public class ClothesService {
         // 존재 여부만 확인하는 대신 실제 User를 조회해 의상의 소유자로 연결한다.
         User owner = userRepository.findById(request.ownerId())
                 .orElseThrow(UserNotFoundException::new);
-        Set<UUID> definitionIds = new HashSet<>();
-        // 검증한 정의를 ID별로 보관해 저장 단계에서 같은 정의를 다시 조회하지 않는다.
-        Map<UUID, ClothesAttributeDefinition> definitions = new HashMap<>();
-
-        for(ClothesAttributeDto attribute : request.attributes()){
-            // [null] 또는 필수 값이 빠진 항목을 내부 호출로 전달해도 저장하지 않는다.
-            if (attribute == null || attribute.definitionId() == null
-                    || attribute.value() == null || attribute.value().isBlank()
-                    || attribute.value().length() > 255) {
-                throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
-            }
-            // 이미 확인한 정의 ID이면 DB를 다시 조회하지 않고 중복 예외를 발생시킨다.
-            if (!definitionIds.add(attribute.definitionId())) {
-                throw new DuplicateAttributeException();
-            }
-
-            // 공유 잠금을 유지한 채 선택값을 검증한다. 관리자 변경은 의상 저장 커밋 후에 진행된다.
-            Optional<ClothesAttributeDefinition> definition =
-                    clothesAttributeDefinitionRepository.findForUsage(attribute.definitionId());
-
-            if(definition.isEmpty()){
-                throw new ClothesAttributeDefinitionNotFoundException();
-            }
-            ClothesAttributeDefinition attributeDefinition = definition.get();
-            if (!attributeDefinition.getSelectableValues().contains(attribute.value())) {
-                // 정의 존재 여부와 별개로, 선택한 값이 그 정의의 허용 목록에 있어야 한다.
-                throw new InvalidClothesAttributeValueException();
-            }
-            definitions.put(attribute.definitionId(), attributeDefinition);
-        }
+        var definitions = validateAttributes(request.attributes());
         // 모든 속성 검증이 끝나기 전에는 의상이나 속성을 저장하지 않는다.
         // 검증이 끝난 뒤 업로드한다. 신규 파일은 DB 롤백 시 정리한다.
         Clothes clothes = new Clothes(request.name(),request.type(),null,owner);
@@ -357,7 +328,7 @@ public class ClothesService {
     private Map<UUID, ClothesAttributeDefinition> validateAttributes(
             List<ClothesAttributeDto> attributes
     ) {
-        Map<UUID, ClothesAttributeDefinition> definitions = new HashMap<>();
+        Set<UUID> definitionIds = new HashSet<>();
 
         for (ClothesAttributeDto attribute : attributes) {
             if (attribute == null
@@ -371,22 +342,27 @@ public class ClothesService {
             UUID definitionId = attribute.definitionId();
 
             // 한 의상에 같은 정의를 두 번 지정할 수 없다.
-            if (definitions.containsKey(definitionId)) {
+            if (!definitionIds.add(definitionId)) {
                 throw new DuplicateAttributeException();
             }
+        }
 
-            ClothesAttributeDefinition definition =
-                    clothesAttributeDefinitionRepository.findForUsage(definitionId)
-                            .orElseThrow(
-                                    ClothesAttributeDefinitionNotFoundException::new
-                            );
-
+        if (definitionIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, ClothesAttributeDefinition> definitions = new HashMap<>();
+        for (var definition : clothesAttributeDefinitionRepository.findForUsage(definitionIds)) {
+            definitions.put(definition.getId(), definition);
+        }
+        for (var attribute : attributes) {
+            var definition = definitions.get(attribute.definitionId());
+            if (definition == null) {
+                throw new ClothesAttributeDefinitionNotFoundException();
+            }
             // 정의가 존재하더라도 허용된 선택값인지 별도로 확인한다.
             if (!definition.getSelectableValues().contains(attribute.value())) {
                 throw new InvalidClothesAttributeValueException();
             }
-
-            definitions.put(definitionId, definition);
         }
 
         return definitions;

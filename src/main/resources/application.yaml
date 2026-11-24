@@ -9,6 +9,8 @@ spring:
     name: sb13-otboo-team03
   jpa:
     open-in-view: false
+    properties:
+      hibernate.jdbc.batch_size: 50
     hibernate:
       ddl-auto: validate
   flyway:

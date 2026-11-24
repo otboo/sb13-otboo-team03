@@ -2,7 +2,7 @@ package com.otboo.team03.notification.outbox.service;
 
 import com.otboo.team03.notification.event.NotificationEvent;
 import com.otboo.team03.notification.outbox.entity.OutboxEvent;
-import com.otboo.team03.notification.outbox.repository.OutboxEventRepository;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,7 +17,7 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class OutboxEventService implements OutboxEventPublisher {
 
-    private final OutboxEventRepository outboxEventRepository;
+    private final EntityManager entityManager;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -42,7 +42,7 @@ public class OutboxEventService implements OutboxEventPublisher {
                 event.level()
         );
 
-        outboxEventRepository.save(new OutboxEvent(
+        entityManager.persist(new OutboxEvent(
                 normalizedEvent.eventId(),
                 normalizedEvent.eventType().name(),
                 toSchemaVersion(normalizedEvent.schemaVersion()),

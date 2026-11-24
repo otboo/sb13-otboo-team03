@@ -9,6 +9,12 @@ import com.otboo.team03.clothes.repository.ClothesAttributeRepository;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.clothes.repository.ClothesAttributeDefinitionRepository;
+import com.otboo.team03.notification.entity.NotificationLevel;
+import com.otboo.team03.notification.event.NotificationEvent;
+import com.otboo.team03.notification.event.NotificationEventType;
+import com.otboo.team03.notification.outbox.service.OutboxEventPublisher;
+import com.otboo.team03.user.repository.UserRepository;
+import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,7 +37,10 @@ public class ClothesAttributeDefinitionService {
     private final ClothesAttributeDefinitionRepository repository;
     private final ClothesAttributeRepository clothesAttributeRepository;
 
-    /** 정의만 저장한다. 의상 및 의상별 선택값은 생성하지 않는다. */
+    private final UserRepository users;
+    private final OutboxEventPublisher outbox;
+
+    /** 공유 속성 정의와 수신자별 알림 이벤트를 같은 트랜잭션에 저장한다. */
     @Transactional
     public ClothesAttributeDefDto create(ClothesAttributeDefCreateRequest request) {
         // HTTP 검증을 거치지 않는 내부 호출에서도 DB와 의상 속성값의 길이 제한을 보장한다.
@@ -44,7 +53,15 @@ public class ClothesAttributeDefinitionService {
         }
         var definition = new ClothesAttributeDefinition(request.name(), request.selectableValues());
         // ID와 createdAt은 JPA 저장 과정에서 설정되며, 저장 결과를 응답으로 변환한다.
-        return ClothesAttributeDefDto.from(repository.save(definition));
+        var saved = repository.save(definition);
+        Instant occurredAt = Instant.now();
+        for (UUID receiverId : users.findUnlockedUserIds()) {
+            var event = new NotificationEvent(UUID.randomUUID(), NotificationEventType.CLOTHES_ATTRIBUTE_CREATED,
+                    NotificationEvent.CURRENT_SCHEMA_VERSION, occurredAt, saved.getId(), receiverId, null,
+                    saved.getId(), "새 의상 속성", "의상 속성 ‘" + saved.getName() + "’이 추가되었습니다.", NotificationLevel.INFO);
+            outbox.publish(event, "CLOTHES_ATTRIBUTE_DEFINITION", receiverId.toString());
+        }
+        return ClothesAttributeDefDto.from(saved);
     }
 
     /** 이름 부분 일치 검색과 명세의 정렬 조건을 DB 조회에 적용한다. */

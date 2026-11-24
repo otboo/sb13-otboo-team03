@@ -25,6 +25,10 @@ public class PurchaseUrlValidator {
         } catch (IllegalArgumentException ex) {
             throw new OtbooException(ErrorCode.INVALID_PURCHASE_URL);
         }
+        return canonicalProductUri(uri);
+    }
+
+    static URI canonicalProductUri(URI uri) {
         if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null
                 || uri.getRawUserInfo() != null || (uri.getPort() != -1 && uri.getPort() != 443)
                 || uri.getRawFragment() != null) {

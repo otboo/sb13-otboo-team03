@@ -27,6 +27,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
@@ -150,7 +151,7 @@ class ClothesServiceTest {
         when(clothesRepository.save(any(Clothes.class))).thenReturn(saved);
         ClothesAttributeDefinition definition = new ClothesAttributeDefinition("색상", List.of("파랑", "빨강"));
         ReflectionTestUtils.setField(definition, "id", definitionId);
-        when(clothesAttributeDefinitionRepository.findForUsage(definitionId)).thenReturn(Optional.of(definition));
+        when(clothesAttributeDefinitionRepository.findForUsage(Set.of(definitionId))).thenReturn(List.of(definition));
 
         // when: 실제 Service의 생성 메서드를 실행한다.
         ClothesDto result = clothesService.create(request);
@@ -322,7 +323,7 @@ class ClothesServiceTest {
         UUID owner = UUID.randomUUID();
         UUID definition = UUID.randomUUID();
         when(userRepository.findById(owner)).thenReturn(Optional.of(owner(owner)));
-        when(clothesAttributeDefinitionRepository.findForUsage(definition)).thenReturn(Optional.empty());
+        when(clothesAttributeDefinitionRepository.findForUsage(Set.of(definition))).thenReturn(List.of());
         assertThatThrownBy(() -> clothesService.create(new ClothesCreateRequest(owner, "반팔", ClothesType.TOP,
                 List.of(new ClothesAttributeDto(definition, "파랑")))))
                 .isInstanceOfSatisfying(OtbooException.class,
@@ -336,8 +337,9 @@ class ClothesServiceTest {
         UUID owner = UUID.randomUUID();
         UUID id = UUID.randomUUID();
         when(userRepository.findById(owner)).thenReturn(Optional.of(owner(owner)));
-        when(clothesAttributeDefinitionRepository.findForUsage(id)).thenReturn(Optional.of(
-                new ClothesAttributeDefinition("색상", List.of("파랑"))));
+        var definition = new ClothesAttributeDefinition("색상", List.of("파랑"));
+        ReflectionTestUtils.setField(definition, "id", id);
+        when(clothesAttributeDefinitionRepository.findForUsage(Set.of(id))).thenReturn(List.of(definition));
         assertThatThrownBy(() -> clothesService.create(new ClothesCreateRequest(owner, "반팔", ClothesType.TOP,
                 List.of(new ClothesAttributeDto(id, "철")))))
                 .isInstanceOfSatisfying(OtbooException.class,
@@ -351,14 +353,12 @@ class ClothesServiceTest {
         UUID owner = UUID.randomUUID();
         UUID id = UUID.randomUUID();
         when(userRepository.findById(owner)).thenReturn(Optional.of(owner(owner)));
-        when(clothesAttributeDefinitionRepository.findForUsage(id)).thenReturn(Optional.of(
-                new ClothesAttributeDefinition("색상", List.of("파랑"))));
         ClothesAttributeDto attribute = new ClothesAttributeDto(id, "파랑");
         assertThatThrownBy(() -> clothesService.create(new ClothesCreateRequest(owner, "반팔", ClothesType.TOP,
                 List.of(attribute, attribute))))
                 .isInstanceOfSatisfying(OtbooException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.DUPLICATE_ATTRIBUTE));
-        verify(clothesAttributeDefinitionRepository, times(1)).findForUsage(id);
+        verifyNoInteractions(clothesAttributeDefinitionRepository);
         verifyNoInteractions(clothesRepository, clothesAttributeRepository);
     }
     @org.junit.jupiter.params.ParameterizedTest

@@ -35,8 +35,7 @@ public enum ErrorCode {
     //clothes
     INVALID_PURCHASE_URL(HttpStatus.BAD_REQUEST, "올바른 HTTPS 구매 링크를 입력해 주세요."),
     UNSUPPORTED_SHOPPING_SITE(HttpStatus.BAD_REQUEST, "지원하지 않는 쇼핑몰입니다."),
-    MUSINSA_ACCESS_RESTRICTED(HttpStatus.BAD_REQUEST, "무신사에서 상품 페이지 접근을 제한했어요. 상품 정보를 직접 입력해 주세요."),
-    CLOTHES_EXTRACTION_FAILED(HttpStatus.BAD_REQUEST, "상품 정보를 추출하지 못했습니다. 직접 입력해 주세요."),
+    CLOTHES_EXTRACTION_FAILED(HttpStatus.BAD_REQUEST, "이 사이트는 자동 불러오기가 안 돼요. 직접 입력해 주세요"),
     NOT_FOUND_CLOTHES(HttpStatus.NOT_FOUND,"의상이 존재하지 않습니다."),
 
     //attribute

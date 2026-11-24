@@ -228,7 +228,14 @@ For more information, see https://radix-ui.com/primitives/docs/components/alert-
         if(!item.imageUrl || file) Qe.success("URL에서 의상 정보를 불러왔습니다.");
         T(""); f("form");
     } catch(error) {
-        if(!active.signal.aborted) Qe.error(error?.errorData?.message || "URL에서 의상 정보를 불러올 수 없습니다.");
+        if(active.signal.aborted) return;
+        const failure = error?.errorData;
+        if(failure?.exceptionName === "CLOTHES_EXTRACTION_FAILED" || !failure) {
+            Qe.error("이 사이트는 자동 불러오기가 안 돼요. 직접 입력해 주세요");
+            f("form");
+        } else {
+            Qe.error(failure.message || "URL에서 의상 정보를 불러올 수 없습니다.");
+        }
     } finally {
         if(extraction.current===active){ extraction.current=null; p(false); }
     }

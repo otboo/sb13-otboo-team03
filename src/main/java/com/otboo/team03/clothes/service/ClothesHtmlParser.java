@@ -102,7 +102,7 @@ public class ClothesHtmlParser {
         for (JsonNode product : products) {
             String id = product.path("@id").asString("");
             if (references.contains(imageUrl(base, id))) primary.add(product);
-            String url = imageUrl(base, product.path("url").asString(""));
+            String url = imageUrl(base, productUrl(product));
             if (samePage(base, url) || (!id.contains("#") && samePage(base, imageUrl(base, id)))) matchingPage.add(product);
         }
         if (primary.size() == 1) return primary.iterator().next();
@@ -125,8 +125,7 @@ public class ClothesHtmlParser {
         }
         if (!node.isObject()) return;
         if (isProduct(node)) {
-            JsonNode urlNode = node.path("url");
-            String url = urlNode.isObject() ? urlNode.path("@id").asString("") : urlNode.asString("");
+            String url = productUrl(node);
             if (!url.isBlank() && !samePage(base, imageUrl(base, url))) return;
             products.add(node);
             if (mainEntity) primary.add(node);
@@ -145,17 +144,24 @@ public class ClothesHtmlParser {
         return false;
     }
 
-    private boolean samePage(String base, String url) {
-        if (url == null) return false;
-        URI candidate = URI.create(url);
-        URI page = URI.create(base);
-        return page.getHost().equalsIgnoreCase(candidate.getHost())
-                && page.getScheme().equalsIgnoreCase(candidate.getScheme()) && httpsPort(page) == httpsPort(candidate)
-                && page.getPath().replaceFirst("/$", "").equals(candidate.getPath().replaceFirst("/$", ""));
+    private String productUrl(JsonNode product) {
+        JsonNode url = product.path("url");
+        return url.isObject() ? url.path("@id").asString("") : url.asString("");
     }
 
-    private int httpsPort(URI uri) {
-        return uri.getPort() == -1 ? 443 : uri.getPort();
+    private boolean samePage(String base, String url) {
+        if (url == null) return false;
+        try {
+            URI page = PurchaseUrlValidator.canonicalProductUri(URI.create(base));
+            // JSON-LD 식별자의 fragment는 페이지 안의 항목을 가리킨다.
+            int fragment = url.indexOf('#');
+            URI candidate = PurchaseUrlValidator.canonicalProductUri(
+                    URI.create(fragment < 0 ? url : url.substring(0, fragment)));
+            return page.getHost().equalsIgnoreCase(candidate.getHost())
+                    && page.getRawPath().replaceFirst("/$", "").equals(candidate.getRawPath().replaceFirst("/$", ""));
+        } catch (OtbooException ignored) {
+            return false;
+        }
     }
 
     private String structuredImage(String base, JsonNode node) {
