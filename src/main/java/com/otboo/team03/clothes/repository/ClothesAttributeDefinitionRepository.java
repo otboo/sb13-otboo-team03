@@ -3,6 +3,7 @@ package com.otboo.team03.clothes.repository;
 import com.otboo.team03.clothes.entity.ClothesAttributeDefinition;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Set;
 import java.util.UUID;
 import java.util.Optional;
 import jakarta.persistence.LockModeType;
@@ -17,8 +18,8 @@ public interface ClothesAttributeDefinitionRepository extends JpaRepository<Clot
     List<ClothesAttributeDefinition> findByNameContainingIgnoreCase(String keyword, Sort sort);
     /** 의상 속성 검증부터 저장 완료까지 정의 변경을 막는다. 다른 의상 등록과는 공유 가능하다. */
     @Lock(LockModeType.PESSIMISTIC_READ)
-    @Query("select d from ClothesAttributeDefinition d where d.id = :id")
-    Optional<ClothesAttributeDefinition> findForUsage(@Param("id") UUID id);
+    @Query("select d from ClothesAttributeDefinition d where d.id in :ids order by d.id")
+    List<ClothesAttributeDefinition> findForUsage(@Param("ids") Set<UUID> ids);
 
     /** 관리자 수정·삭제는 사용 여부 검사 전에 배타 잠금을 잡고 커밋까지 유지한다. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
