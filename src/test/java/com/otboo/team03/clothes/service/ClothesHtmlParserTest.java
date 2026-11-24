@@ -223,6 +223,24 @@ class ClothesHtmlParserTest {
         assertThrows(OtbooException.class, () -> parser.parse(document));
     }
 
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "https://www.musinsa.com/products/123, https://m.store.musinsa.com/app/goods/123/0",
+            "https://www.29cm.co.kr/products/123, https://product.29cm.co.kr/catalog/123?from=share",
+            "https://www.musinsa.com/products/123, /app/goods/123/"
+    })
+    void 구형_상품_URL을_문자열과_객체_모두에서_같은_상품으로_판별한다(String page, String legacy) {
+        for (String url : new String[]{"\"" + legacy + "\"", "{\"@id\":\"" + legacy + "\"}"}) {
+            var document = Jsoup.parse("""
+                    <script type="application/ld+json">
+                    {"@graph":[{"@type":"Product","name":"후보"},
+                               {"@type":"Product","url":%s,"name":"현재 상품"}]}
+                    </script>
+                    """.formatted(url), page);
+            assertEquals("현재 상품", parser.parse(document).name());
+        }
+    }
+
     @Test
     void 여러_mainEntity_후보에서_페이지_URL이_일치하는_상품을_고른다() {
         var result = parseProduct("""
@@ -248,7 +266,8 @@ class ClothesHtmlParserTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"https://other.example/products/123", "http://www.musinsa.com/products/123",
-            "https://www.musinsa.com:8443/products/123"})
+            "https://www.musinsa.com:8443/products/123", "https://store.musinsa.com/app/goods/456",
+            "https://product.29cm.co.kr/catalog/123"})
     void 출처가_다른_JSON_LD_상품은_경로가_같아도_제외한다(String url) {
         var document = Jsoup.parse("""
                 <script type="application/ld+json">
