@@ -29,7 +29,10 @@ public class WeatherCollectionTasklet implements Tasklet {
   private record TargetLocation(String name, double lat, double lon) {}
   private static final List<TargetLocation> TARGETS = List.of(
       new TargetLocation("서울 강남구", 37.4979, 127.0276),
-      new TargetLocation("서울 중구", 37.5665, 126.9780)
+      new TargetLocation("서울 중구", 37.5665, 126.9780),
+      new TargetLocation("경기 수원시 팔달구", 37.2636, 127.0286),
+      new TargetLocation("경기 성남시 분당구", 37.3827, 127.1189),
+      new TargetLocation("부산 해운대구", 35.1631, 129.1636)
   );
 
   @Override

@@ -1,6 +1,7 @@
 package com.otboo.team03.weather.service;
 
 import com.otboo.team03.profile.dto.WeatherAPILocation;
+import com.otboo.team03.weather.client.OpenWeatherClient;
 import com.otboo.team03.weather.dto.WeatherDto;
 import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.exception.WeatherNotFoundException;
@@ -16,9 +17,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -27,8 +30,10 @@ public class WeatherServiceImpl implements WeatherService {
   private final LocationService locationService;
   private final WeatherRepository weatherRepository;
   private final TemperatureCalculator temperatureCalculator;
+  private final OpenWeatherClient openWeatherClient;
 
   @Override
+  @Transactional
   public List<WeatherDto> getWeathers(Double longitude, Double latitude) {
     WeatherAPILocation location = locationService.getLocation(latitude, longitude);
 
@@ -37,6 +42,11 @@ public class WeatherServiceImpl implements WeatherService {
 
     List<Weather> weathers = weatherRepository
         .findAllByLatitudeAndLongitudeAndForecastAtBetweenOrderByForecastAtAsc(latitude, longitude, now, end);
+
+    if (weathers.isEmpty()) {
+      log.info(">>>>> [WeatherService] 해당 좌표(lat={}, lon={})의 예보가 DB에 없어 실시간 외부 수집을 진행합니다.", latitude, longitude);
+      weathers = fetchAndSaveRealtimeForecast(latitude, longitude, now, end);
+    }
 
     if (weathers.isEmpty()) {
       throw new WeatherNotFoundException();
@@ -49,6 +59,7 @@ public class WeatherServiceImpl implements WeatherService {
             w -> w.getForecastAt().atZone(KST).toLocalDate(),
             Collectors.mapping(Weather::getTemperature, Collectors.toList())
         ));
+
     // 2. 날짜별 일 최저/최고 기온 각각 산출
     Map<LocalDate, Double> minTempByDate = new HashMap<>();
     Map<LocalDate, Double> maxTempByDate = new HashMap<>();
@@ -56,6 +67,7 @@ public class WeatherServiceImpl implements WeatherService {
       minTempByDate.put(date, temperatureCalculator.calculateMin(temps));
       maxTempByDate.put(date, temperatureCalculator.calculateMax(temps));
     });
+
     // 3. 어제 기온 조회 및 어제 대비 차이 계산 (어제 동시간대 기준 24시간 전)
     Instant yesterdayTime = now.minus(Duration.ofHours(24));
     Optional<Weather> yesterdayWeather = weatherRepository
@@ -63,6 +75,7 @@ public class WeatherServiceImpl implements WeatherService {
     Double currentTemp = weathers.get(0).getTemperature();
     Double yesterdayTemp = yesterdayWeather.map(Weather::getTemperature).orElse(null);
     Double tempDiff = temperatureCalculator.calculateDifference(currentTemp, yesterdayTemp);
+
     // 4. 각 예보의 날짜에 맞는 최저/최고 기온을 매핑하여 DTO 생성
     return weathers.stream()
         .map(weather -> {
@@ -73,4 +86,23 @@ public class WeatherServiceImpl implements WeatherService {
         })
         .toList();
   }
+
+  private List<Weather> fetchAndSaveRealtimeForecast(Double latitude, Double longitude, Instant now, Instant end) {
+    try {
+      List<Weather> fetched = openWeatherClient.fetchForecast(latitude, longitude);
+      if (fetched == null || fetched.isEmpty()) {
+        return List.of();
+      }
+
+      weatherRepository.saveAll(fetched);
+      return fetched.stream()
+          .filter(w -> !w.getForecastAt().isBefore(now) && !w.getForecastAt().isAfter(end))
+          .toList();
+    } catch (Exception e) {
+      log.error(">>>>> [WeatherService] 실시간 날씨 수집 실패 (lat={}, lon={}): {}", latitude, longitude, e.getMessage());
+      return List.of();
+    }
+  }
+
+
 }
