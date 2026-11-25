@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
 
@@ -51,6 +52,53 @@ class SseConnectionManagerMetricsTest {
         connectionManager.disconnect(receiverId, emitter);
 
         verify(metrics).sseDisconnected();
+    }
+
+    @Test
+    void 동일한_연결을_중복_해제해도_메트릭은_한번만_감소한다() {
+        UUID receiverId = UUID.randomUUID();
+        SseEmitter emitter = connectionManager.connect(receiverId);
+        clearInvocations(metrics);
+
+        connectionManager.disconnect(receiverId, emitter);
+        connectionManager.disconnect(receiverId, emitter);
+
+        verify(metrics, times(1)).sseDisconnected();
+        assertThat(connectionManager.connectionCount(receiverId)).isZero();
+    }
+
+    @Test
+    void 전체_해제_후_개별_연결을_다시_해제해도_사용자_연결과_메트릭을_중복_처리하지_않는다() {
+        UUID receiverId = UUID.randomUUID();
+        SseEmitter firstEmitter = connectionManager.connect(receiverId);
+        SseEmitter secondEmitter = connectionManager.connect(receiverId);
+        clearInvocations(metrics);
+
+        connectionManager.disconnectAll(receiverId);
+        connectionManager.disconnect(receiverId, firstEmitter);
+        connectionManager.disconnect(receiverId, secondEmitter);
+
+        verify(metrics, times(2)).sseDisconnected();
+        assertThat(connectionManager.connectionCount(receiverId)).isZero();
+    }
+
+    @Test
+    void 전체_해제는_다른_사용자의_SSE_연결과_메트릭을_유지한다() {
+        UUID firstReceiverId = UUID.randomUUID();
+        UUID secondReceiverId = UUID.randomUUID();
+        SseEmitter firstEmitter = org.mockito.Mockito.mock(SseEmitter.class);
+        SseEmitter secondEmitter = org.mockito.Mockito.mock(SseEmitter.class);
+        connectionManager.register(firstReceiverId, firstEmitter);
+        connectionManager.register(secondReceiverId, secondEmitter);
+        clearInvocations(metrics);
+
+        connectionManager.disconnectAll(firstReceiverId);
+
+        verify(metrics, times(1)).sseDisconnected();
+        assertThat(connectionManager.connectionCount(firstReceiverId)).isZero();
+        assertThat(connectionManager.connectionCount(secondReceiverId)).isOne();
+        verify(firstEmitter).complete();
+        verify(secondEmitter, never()).complete();
     }
 
     @Test
