@@ -1,6 +1,13 @@
 package com.otboo.team03.notification.outbox.repository;
 
 import tools.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
+import org.hibernate.Session;
+import org.hibernate.SessionEventListener;
+import com.otboo.team03.notification.entity.NotificationLevel;
+import com.otboo.team03.notification.event.NotificationEvent;
+import com.otboo.team03.notification.event.NotificationEventType;
+import com.otboo.team03.notification.outbox.service.OutboxEventService;
 import com.otboo.team03.global.config.JpaConfig;
 import com.otboo.team03.global.config.QuerydslConfig;
 import com.otboo.team03.notification.outbox.entity.OutboxEvent;
@@ -20,6 +27,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
 
 @DataJpaTest
 @Import({JpaConfig.class, QuerydslConfig.class})
@@ -33,7 +41,32 @@ class OutboxEventRepositoryTest {
     @Autowired
     private OutboxEventRepository outboxEventRepository;
 
+    @Autowired
+    private EntityManager entityManager;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Test
+    void 신규_이벤트_51건을_사전조회_없이_두_배치로_저장한다() {
+        var publisher = new OutboxEventService(entityManager, objectMapper);
+        var listener = mock(SessionEventListener.class);
+        entityManager.unwrap(Session.class).addEventListeners(listener);
+        UUID definitionId = UUID.randomUUID();
+        Instant now = Instant.now();
+        for (int i = 0; i < 51; i++) {
+            UUID receiver = UUID.randomUUID();
+            var event = new NotificationEvent(UUID.randomUUID(), NotificationEventType.CLOTHES_ATTRIBUTE_CREATED,
+                    NotificationEvent.CURRENT_SCHEMA_VERSION, now, definitionId, receiver, null,
+                    definitionId, "새 의상 속성", "소재", NotificationLevel.INFO);
+            publisher.publish(event, "CLOTHES_ATTRIBUTE_DEFINITION", receiver.toString());
+        }
+        entityManager.flush();
+
+        verify(listener, never()).jdbcExecuteStatementEnd();
+        verify(listener, times(2)).jdbcExecuteBatchEnd();
+        assertThat(entityManager.createQuery("select count(e) from OutboxEvent e where e.aggregateId = :id", Long.class)
+                .setParameter("id", definitionId).getSingleResult()).isEqualTo(51L);
+    }
 
     @Test
     void 아웃박스_이벤트를_JSON_payload와_함께_저장하고_조회한다() throws Exception {
@@ -79,7 +112,7 @@ class OutboxEventRepositoryTest {
         outboxEventRepository.flush();
 
         List<OutboxEvent> pending = outboxEventRepository
-                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAsc(
+                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAscEventIdAsc(
                         OutboxEventStatus.PENDING,
                         availableAt.plusSeconds(2),
                         PageRequest.of(0, 10)

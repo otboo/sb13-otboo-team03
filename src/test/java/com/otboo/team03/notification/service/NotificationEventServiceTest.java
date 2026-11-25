@@ -97,14 +97,14 @@ class NotificationEventServiceTest {
         UUID receiverId = UUID.randomUUID();
         User receiver = new User("receiver@otboo.io", "password", "수신자");
         NotificationEvent event = event(
-                NotificationEventType.USER_ROLE_CHANGED,
+                NotificationEventType.WEATHER_ALERT,
                 eventId,
                 receiverId,
                 null,
                 null
         );
         when(notificationRepository.existsByReceiver_IdAndNotificationTypeAndSourceEventId(
-                receiverId, NotificationEventType.USER_ROLE_CHANGED.name(), eventId
+                receiverId, NotificationEventType.WEATHER_ALERT.name(), eventId
         )).thenReturn(false);
         when(userRepository.findById(receiverId)).thenReturn(java.util.Optional.of(receiver));
         when(notificationRepository.save(any(Notification.class)))
@@ -112,7 +112,10 @@ class NotificationEventServiceTest {
 
         notificationEventService.handle(event);
 
-        verify(notificationRepository).save(any(Notification.class));
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+        assertThat(captor.getValue().getActor()).isNull();
+        verify(userRepository).findById(receiverId);
     }
 
     private NotificationEvent event(UUID eventId, UUID receiverId, UUID actorId, UUID relatedId) {

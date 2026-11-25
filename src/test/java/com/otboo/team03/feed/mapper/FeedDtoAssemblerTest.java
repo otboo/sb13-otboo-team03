@@ -11,12 +11,17 @@ import com.otboo.team03.feed.entity.FeedComment;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
 import com.otboo.team03.feed.repository.FeedCommentRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
+import com.otboo.team03.global.storage.ImageStorage;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -25,6 +30,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.mockingDetails;
 
 @SpringBootTest
 @Transactional
@@ -48,11 +55,14 @@ class FeedDtoAssemblerTest extends com.otboo.team03.support.PostgresTestSupport 
   @Autowired
   private FeedCommentRepository feedCommentRepository;
 
-  @Autowired
+  @MockitoSpyBean
   private JdbcTemplate jdbcTemplate;
 
-  @org.springframework.test.context.bean.override.mockito.MockitoBean
-  private com.otboo.team03.global.storage.ImageStorage imageStorage;
+  @MockitoSpyBean
+  private NamedParameterJdbcTemplate namedParameterJdbcTemplate;
+
+  @MockitoBean
+  private ImageStorage imageStorage;
 
   @Autowired
   private jakarta.persistence.EntityManager entityManager;
@@ -374,5 +384,101 @@ class FeedDtoAssemblerTest extends com.otboo.team03.support.PostgresTestSupport 
 
     org.mockito.Mockito.verify(imageStorage)
         .getAccessUrl("profiles/commenter.png");
+  }
+
+  @Test
+  void 단건_피드의_의상_수가_증가해도_속성_조회_횟수는_일정하다() {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "N+1 테스트 사용자"
+        )
+    );
+
+    Timestamp now = Timestamp.from(Instant.now());
+    UUID weatherId = UUID.randomUUID();
+
+    jdbcTemplate.update("""
+      INSERT INTO weathers (
+          id, latitude, longitude,
+          forecasted_at, forecast_at,
+          sky_status, precipitation_type,
+          precipitation_amount, precipitation_probability,
+          temperature, humidity, wind_speed,
+          created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      """,
+        weatherId, 35.2, 129.1,
+        now, now, "CLEAR", "NONE",
+        BigDecimal.ZERO, BigDecimal.ZERO,
+        BigDecimal.valueOf(20),
+        BigDecimal.valueOf(50), BigDecimal.ONE,
+        now, now
+    );
+
+    Feed feed = feedRepository.saveAndFlush(
+        new Feed(author.getId(), weatherId, "N+1 테스트 피드")
+    );
+
+    Clothes first = clothesRepository.saveAndFlush(
+        new Clothes("상의", ClothesType.TOP, null, author)
+    );
+    Clothes second = clothesRepository.saveAndFlush(
+        new Clothes("하의", ClothesType.BOTTOM, null, author)
+    );
+    Clothes third = clothesRepository.saveAndFlush(
+        new Clothes("아우터", ClothesType.OUTER, null, author)
+    );
+
+    feedClothesRepository.saveAndFlush(
+        new FeedClothes(feed, first)
+    );
+
+    entityManager.flush();
+    entityManager.clear();
+
+    // when
+    clearInvocations(jdbcTemplate, namedParameterJdbcTemplate);
+
+    FeedDto oneClothes = assembler.toDto(feed, null);
+    long oneClothesQueries = countAttributeQueries();
+
+    feedClothesRepository.saveAndFlush(
+        new FeedClothes(feed, second)
+    );
+    feedClothesRepository.saveAndFlush(
+        new FeedClothes(feed, third)
+    );
+
+    entityManager.flush();
+    entityManager.clear();
+
+    clearInvocations(jdbcTemplate, namedParameterJdbcTemplate);
+
+    FeedDto threeClothes = assembler.toDto(feed, null);
+    long threeClothesQueries = countAttributeQueries();
+
+    // then
+    assertEquals(1, oneClothes.ootds().size());
+    assertEquals(3, threeClothes.ootds().size());
+
+    assertTrue(oneClothesQueries > 0);
+    assertEquals(oneClothesQueries, threeClothesQueries);
+  }
+
+  private long countAttributeQueries() {
+    return Stream.concat(
+        mockingDetails(jdbcTemplate).getInvocations().stream(),
+        mockingDetails(namedParameterJdbcTemplate)
+            .getInvocations().stream()
+    ).filter(invocation -> {
+      Object[] arguments = invocation.getArguments();
+
+      return arguments.length > 0
+          && arguments[0] instanceof String sql
+          && sql.contains("FROM clothes_attribute ca");
+    }).count();
   }
 }

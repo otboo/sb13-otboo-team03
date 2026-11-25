@@ -5,6 +5,7 @@ import com.otboo.team03.global.config.RedisConfig;
 import com.otboo.team03.global.redis.RedisLockProvider;
 import com.otboo.team03.global.exception.jwt.InvalidJwtException;
 import com.otboo.team03.global.redis.RedisLockProvider.RedisLockAcquisitionException;
+import com.otboo.team03.realtime.redis.JwtRevocationRedisPublisher;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.UserRole;
 import org.junit.jupiter.api.AfterEach;
@@ -90,8 +91,19 @@ class RedisJwtRegistryIntegrationTest {
             RedisTemplate<String, Object> template,
             LettuceConnectionFactory connectionFactory
     ) {
-        RedisLockProvider lockProvider = new RedisLockProvider(new StringRedisTemplate(connectionFactory));
-        RedisJwtRegistry registry = new RedisJwtRegistry(mock(JwtTokenProvider.class), template, lockProvider);
+        StringRedisTemplate stringRedisTemplate = new StringRedisTemplate(connectionFactory);
+        RedisLockProvider lockProvider = new RedisLockProvider(stringRedisTemplate);
+        JwtRevocationRedisPublisher publisher = new JwtRevocationRedisPublisher(
+                stringRedisTemplate,
+                "otboo:jwt-revocations"
+        );
+
+        RedisJwtRegistry registry = new RedisJwtRegistry(
+                mock(JwtTokenProvider.class),
+                template,
+                lockProvider,
+                publisher
+        );
 
         ReflectionTestUtils.setField(registry, "accessTokenValidity", Duration.ofMinutes(30));
         ReflectionTestUtils.setField(registry, "refreshTokenValidity", Duration.ofDays(7));

@@ -10,4 +10,6 @@ public interface ProfileService {
 
   ProfileDto updateProfile(UUID userId, ProfileUpdateRequest request, MultipartFile image);
 
+  Integer getTemperatureSensitivity(UUID userId);
+
 }

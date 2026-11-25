@@ -7,11 +7,15 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 public interface UserRepository extends JpaRepository<User, UUID>, UserRepositoryCustom {
 
     long ADMIN_ADVISORY_LOCK_ID = 720072L;
+
+    @Query("select u.id from User u where u.locked = false")
+    List<UUID> findUnlockedUserIds();
 
     boolean existsByEmail(String email);
 

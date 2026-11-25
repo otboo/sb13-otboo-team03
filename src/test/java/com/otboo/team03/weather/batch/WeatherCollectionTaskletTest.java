@@ -74,7 +74,7 @@ class WeatherCollectionTaskletTest {
 
     // then
     assertThat(status).isEqualTo(RepeatStatus.FINISHED);
-    verify(weatherRepository, times(2)).saveAll(List.of(fetched));
+    verify(weatherRepository, times(5)).saveAll(List.of(fetched));
   }
 
   @Test

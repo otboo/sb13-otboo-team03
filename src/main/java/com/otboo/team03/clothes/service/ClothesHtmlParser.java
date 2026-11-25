@@ -2,86 +2,192 @@ package com.otboo.team03.clothes.service;
 
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
-import org.jsoup.Jsoup;
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
-import java.net.URI;
-
+@Slf4j
 @Component
 public class ClothesHtmlParser {
+    private static final JsonMapper JSON = JsonMapper.builder().build();
+    private static final List<String> PRODUCT_TYPES = List.of(
+            "Product", "https://schema.org/Product", "http://schema.org/Product");
 
-    /**
-     * 전달받은 HTML에서 상품명과 대표 이미지를 추출한다.
-     * pageUrl은 상대 이미지 경로를 절대 URL로 변환하는 기준이다.
-     */
-    public ExtractedClothes parse(String html, String pageUrl) {
-        Document document = Jsoup.parse(html, pageUrl);
-
-        // Open Graph 제목을 우선 사용하고, 없으면 HTML 제목을 사용한다.
-        String name = readMeta(document, "meta[property=og:title]");
-
-        if (name == null) {
+    public ExtractedClothes parse(Document document) {
+        List<JsonNode> products = new ArrayList<>();
+        JsonNode product = structuredProduct(document, products);
+        String type = meta(document, "og:type");
+        if (products.isEmpty() && !"product".equalsIgnoreCase(type) && !"og:product".equalsIgnoreCase(type)) {
+            ExtractedClothes detail = shopDetail(document);
+            if (detail != null) return detail;
+            log.warn("Purchase page has no matching product: host={}", URI.create(document.location()).getHost());
+            throw new OtbooException(ErrorCode.CLOTHES_EXTRACTION_FAILED);
+        }
+        String name = meta(document, "og:title");
+        if (name.isBlank() && product != null) {
+            name = product.path("name").asString("").strip();
+        }
+        if (name.isBlank()) {
             name = document.title().strip();
         }
-
-        // 이름조차 추출하지 못하면 초기 정보를 제공할 수 없다고 판단한다.
-        if (name == null || name.isBlank()) {
-            throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+        if (name.isBlank() || name.length() > 255) {
+            throw new OtbooException(ErrorCode.CLOTHES_EXTRACTION_FAILED);
         }
-
-        String imageUrl = readImageUrl(document);
-
-        return new ExtractedClothes(name, imageUrl);
+        String image = imageUrl(document.location(), meta(document, "og:image"));
+        if (image == null && product != null) {
+            image = structuredImage(document.location(), product.path("image"));
+        }
+        if (image == null) {
+            ExtractedClothes detail = shopDetail(document);
+            if (detail != null) image = detail.imageUrl();
+        }
+        return new ExtractedClothes(name, image);
     }
 
-    private String readMeta(Document document, String selector) {
-        Element element = document.selectFirst(selector);
-
-        if (element == null) {
-            return null;
-        }
-
-        String content = element.attr("content").strip();
-        return content.isBlank() ? null : content;
-    }
-
-    private String readImageUrl(Document document) {
-        Element element = document.selectFirst("meta[property=og:image]");
-
-        if (element == null) {
-            return null;
-        }
-
-        // 빈 값은 absUrl 변환 시 상품 페이지 주소가 될 수 있으므로 먼저 거부한다.
-        if (element.attr("content").isBlank()) {
-            return null;
-        }
-
-        // /images/item.jpg 같은 상대 경로도 절대 URL로 변환한다.
-        String absoluteUrl = element.absUrl("content");
-
-        try {
-            URI uri = URI.create(absoluteUrl);
-
-            // 이미지 URL은 HTTP/HTTPS 주소만 결과에 포함한다.
-            if (uri.getHost() == null
-                    || (!"https".equalsIgnoreCase(uri.getScheme())
-                    && !"http".equalsIgnoreCase(uri.getScheme()))) {
-                return null;
+    private ExtractedClothes shopDetail(Document document) {
+        URI page = URI.create(document.location());
+        if (!page.getPath().matches("/products/[0-9]+")) return null;
+        String id = page.getPath().substring("/products/".length());
+        String title = document.title();
+        if ("www.musinsa.com".equals(page.getHost())) {
+            for (Element image : document.select("img[src][alt]")) {
+                String src = imageUrl(document.location(), image.attr("src"));
+                if (src == null) continue;
+                URI uri = URI.create(src);
+                String name = image.attr("alt").strip();
+                if ("image.msscdn.net".equals(uri.getHost()) && uri.getPath().contains("/goods_img/")
+                        && uri.getPath().contains("/" + id + "/") && !name.isBlank()
+                        && name.length() <= 255 && title.contains(name)) {
+                    return new ExtractedClothes(name, src);
+                }
             }
+        }
+        if ("www.29cm.co.kr".equals(page.getHost()) && document.body().text()
+                .matches("(?s).*상품번호[\\s\\p{Z}]*[:：]?[\\s\\p{Z}]*" + id + "(?![0-9]).*")) {
+            String name = title.split(" - 모든 취향 곁에, 29CM", 2)[0].strip();
+            if (!name.isBlank() && name.length() <= 255 && document.select("h1, h2").stream()
+                    .anyMatch(heading -> heading.text().endsWith(name))) {
+                return new ExtractedClothes(name, imageUrl(document.location(), meta(document, "og:image")));
+            }
+        }
+        return null;
+    }
 
-            return uri.toString();
-        } catch (IllegalArgumentException e) {
-            return null;
+    private String meta(Document document, String property) {
+        Element element = document.selectFirst("meta[property=" + property + "]");
+        return element == null ? "" : element.attr("content").strip();
+    }
+
+    private JsonNode structuredProduct(Document document, List<JsonNode> products) {
+        Set<JsonNode> primary = new LinkedHashSet<>();
+        Set<String> references = new LinkedHashSet<>();
+        String base = document.location();
+        for (Element script : document.select("script[type=application/ld+json]")) {
+            try {
+                collect(JSON.readTree(script.data()), base, products, primary, references, false);
+            } catch (JacksonException ignored) {
+                // 독립된 다음 JSON-LD 블록은 계속 검사한다.
+            }
+        }
+        Set<JsonNode> matchingPage = new LinkedHashSet<>();
+        for (JsonNode product : products) {
+            String id = product.path("@id").asString("");
+            if (references.contains(imageUrl(base, id))) primary.add(product);
+            String url = imageUrl(base, productUrl(product));
+            if (samePage(base, url) || (!id.contains("#") && samePage(base, imageUrl(base, id)))) matchingPage.add(product);
+        }
+        if (primary.size() == 1) return primary.iterator().next();
+        if (!primary.isEmpty()) matchingPage.retainAll(primary);
+        if (matchingPage.size() == 1) return matchingPage.iterator().next();
+        return products.size() == 1 && references.isEmpty() ? products.get(0) : null;
+    }
+
+    private void collect(JsonNode node, String base, List<JsonNode> products,
+                         Set<JsonNode> primary, Set<String> references, boolean mainEntity) {
+        if (node == null) return;
+        if (node.isArray()) {
+            for (JsonNode entry : node) collect(entry, base, products, primary, references, mainEntity);
+            return;
+        }
+        if (mainEntity) {
+            String id = node.isString() ? node.asString() : node.path("@id").asString("");
+            String ref = imageUrl(base, id);
+            if (ref != null) references.add(ref);
+        }
+        if (!node.isObject()) return;
+        if (isProduct(node)) {
+            String url = productUrl(node);
+            if (!url.isBlank() && !samePage(base, imageUrl(base, url))) return;
+            products.add(node);
+            if (mainEntity) primary.add(node);
+            return;
+        }
+        collect(node.get("mainEntity"), base, products, primary, references, true);
+        collect(node.get("@graph"), base, products, primary, references, false);
+    }
+
+    private boolean isProduct(JsonNode node) {
+        JsonNode type = node.path("@type");
+        if (PRODUCT_TYPES.contains(type.asString(""))) return true;
+        for (JsonNode entry : type) {
+            if (PRODUCT_TYPES.contains(entry.asString(""))) return true;
+        }
+        return false;
+    }
+
+    private String productUrl(JsonNode product) {
+        JsonNode url = product.path("url");
+        return url.isObject() ? url.path("@id").asString("") : url.asString("");
+    }
+
+    private boolean samePage(String base, String url) {
+        if (url == null) return false;
+        try {
+            URI page = PurchaseUrlValidator.canonicalProductUri(URI.create(base));
+            // JSON-LD 식별자의 fragment는 페이지 안의 항목을 가리킨다.
+            int fragment = url.indexOf('#');
+            URI candidate = PurchaseUrlValidator.canonicalProductUri(
+                    URI.create(fragment < 0 ? url : url.substring(0, fragment)));
+            return page.getHost().equalsIgnoreCase(candidate.getHost())
+                    && page.getRawPath().replaceFirst("/$", "").equals(candidate.getRawPath().replaceFirst("/$", ""));
+        } catch (OtbooException ignored) {
+            return false;
         }
     }
 
-    // 저장 엔티티와 구분되는 추출 결과다.
-    public record ExtractedClothes(
-            String name,
-            String imageUrl
-    ) {
+    private String structuredImage(String base, JsonNode node) {
+        if (node.isArray()) {
+            for (JsonNode item : node) {
+                String image = structuredImage(base, item);
+                if (image != null) return image;
+            }
+            return null;
+        }
+        String value = node.isObject() ? node.path("url").asString(node.path("contentUrl").asString(""))
+                : node.asString("");
+        return imageUrl(base, value);
     }
+
+    private String imageUrl(String base, String value) {
+        if (value.isBlank()) return null;
+        try {
+            URI uri = URI.create(base).resolve(value.strip());
+            if (uri.getHost() != null && ("https".equalsIgnoreCase(uri.getScheme())
+                    || "http".equalsIgnoreCase(uri.getScheme()))) return uri.toString();
+        } catch (IllegalArgumentException ignored) {
+            // 이미지 URL 오류는 상품명 추출을 막지 않는다.
+        }
+        return null;
+    }
+
+    public record ExtractedClothes(String name, String imageUrl) {}
 }

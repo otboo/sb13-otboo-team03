@@ -96,4 +96,10 @@ public class ProfileServiceImpl implements ProfileService {
       return profileDtoAssembler.toDto(profile);
   }
 
+  @Override
+  public Integer getTemperatureSensitivity(UUID userId) {
+    return profileRepository.findTemperatureSensitivityByUserId(userId)
+            .orElseThrow(ProfileNotFoundException::new)
+            .temperatureSensitivity();
+  }
 }

@@ -1,7 +1,9 @@
 package com.otboo.team03.notification.sse;
 
 import com.otboo.team03.notification.dto.response.NotificationDto;
+import com.otboo.team03.notification.metrics.NotificationMetrics;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -20,6 +22,16 @@ public class SseConnectionManager {
     private static final String NOTIFICATION_EVENT_NAME = "notifications";
 
     private final ConcurrentHashMap<UUID, Set<SseEmitter>> emitters = new ConcurrentHashMap<>();
+    private final NotificationMetrics metrics;
+
+    public SseConnectionManager() {
+        this.metrics = null;
+    }
+
+    @Autowired
+    public SseConnectionManager(NotificationMetrics metrics) {
+        this.metrics = metrics;
+    }
 
     public SseEmitter connect(UUID receiverId) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT);
@@ -44,7 +56,9 @@ public class SseConnectionManager {
             Set<SseEmitter> updatedConnections = connections == null
                     ? ConcurrentHashMap.newKeySet()
                     : connections;
-            updatedConnections.add(emitter);
+            if (updatedConnections.add(emitter) && metrics != null) {
+                metrics.sseConnected();
+            }
             return updatedConnections;
         });
     }
@@ -115,7 +129,9 @@ public class SseConnectionManager {
 
     private void remove(UUID receiverId, SseEmitter emitter) {
         emitters.computeIfPresent(receiverId, (id, connections) -> {
-            connections.remove(emitter);
+            if (connections.remove(emitter) && metrics != null) {
+                metrics.sseDisconnected();
+            }
             return connections.isEmpty() ? null : connections;
         });
     }
@@ -123,6 +139,15 @@ public class SseConnectionManager {
     void disconnect(UUID receiverId, SseEmitter emitter) {
         remove(receiverId, emitter);
         emitter.complete();
+    }
+
+    public void disconnectAll(UUID receiverId) {
+        Set<SseEmitter> receiverEmitters = emitters.remove(receiverId);
+        if (receiverEmitters == null) {
+            return;
+        }
+
+        receiverEmitters.forEach(SseEmitter::complete);
     }
 
     int connectionCount(UUID receiverId) {

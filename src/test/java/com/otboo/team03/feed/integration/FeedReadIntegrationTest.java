@@ -6,6 +6,7 @@ import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.security.jwt.JwtTokenProvider;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -1946,5 +1947,104 @@ class FeedReadIntegrationTest {
     );
     verify(batchQueryRepository).findClothes(anySet());
     verify(batchQueryRepository).findClothesAttributes(anySet());
+  }
+
+  @Test
+  void 좋아요수_정렬값과_DTO_집계값이_달라도_정렬기준으로_커서를_생성한다()
+      throws Exception {
+    // given
+    User author = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "피드 작성자"
+        )
+    );
+
+    User liker1 = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "좋아요 사용자 1"
+        )
+    );
+
+    User liker2 = userRepository.saveAndFlush(
+        new User(
+            UUID.randomUUID() + "@example.com",
+            "encodedPassword",
+            "좋아요 사용자 2"
+        )
+    );
+
+    UUID weatherId = UUID.randomUUID();
+    insertWeather(weatherId);
+
+    Instant createdAt =
+        Instant.parse("2026-11-10T01:00:00Z");
+
+    UUID mostLikedFeedId = insertFeed(
+        author.getId(),
+        weatherId,
+        "좋아요 2개",
+        createdAt
+    );
+
+    UUID cursorFeedId = insertFeed(
+        author.getId(),
+        weatherId,
+        "좋아요 1개",
+        createdAt
+    );
+
+    UUID zeroLikedFeedId = insertFeed(
+        author.getId(),
+        weatherId,
+        "좋아요 0개",
+        createdAt
+    );
+
+    insertFeedLike(mostLikedFeedId, liker1.getId());
+    insertFeedLike(mostLikedFeedId, liker2.getId());
+    insertFeedLike(cursorFeedId, liker1.getId());
+
+    doReturn(Map.of(
+        mostLikedFeedId,
+        new FeedBatchQueryRepository.FeedCounts(2L, 0),
+        cursorFeedId,
+        new FeedBatchQueryRepository.FeedCounts(5L, 0),
+        zeroLikedFeedId,
+        new FeedBatchQueryRepository.FeedCounts(0L, 0)
+    )).when(batchQueryRepository).findCounts(anySet());
+
+    String accessToken =
+        jwtTokenProvider.createAccessToken(author.getId());
+
+    when(jwtRegistry.hasActiveJwtInformationByAccessToken(accessToken))
+        .thenReturn(true);
+
+    // when
+    var result = mockMvc.perform(
+        get("/api/feeds")
+            .header("Authorization", "Bearer " + accessToken)
+            .param("limit", "2")
+            .param("sortBy", "likeCount")
+            .param("sortDirection", "DESCENDING")
+            .accept(MediaType.APPLICATION_JSON)
+    );
+
+    // then
+    result
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.data[0].id")
+            .value(mostLikedFeedId.toString()))
+        .andExpect(jsonPath("$.data[1].id")
+            .value(cursorFeedId.toString()))
+        .andExpect(jsonPath("$.data[1].likeCount").value(5))
+        .andExpect(jsonPath("$.hasNext").value(true))
+        .andExpect(jsonPath("$.nextCursor").value("1"))
+        .andExpect(jsonPath("$.nextIdAfter")
+            .value(cursorFeedId.toString()));
   }
 }

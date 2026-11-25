@@ -37,4 +37,7 @@ public interface WeatherRepository extends JpaRepository<Weather, UUID> {
       Double latitude, Double longitude, List<Instant> forecastAts
   );
 
+  // 기준 시각(forecastAt) 이후의 유효 예보 데이터가 1건이라도 존재하는지 확인 (더미데이터 갱신 여부 판단용)
+  boolean existsByForecastAtAfter(Instant forecastAt);
+
 }

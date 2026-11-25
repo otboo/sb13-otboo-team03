@@ -17,6 +17,10 @@ spring:
             required: false
 
 otboo:
+  recommendation:
+    llm:
+      enabled: false
+
   admin:
     email: admin@test.example
     password: test-admin-password-123

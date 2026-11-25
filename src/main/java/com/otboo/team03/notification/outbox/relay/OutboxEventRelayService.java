@@ -31,7 +31,7 @@ public class OutboxEventRelayService {
 
         Instant now = Instant.now();
         List<OutboxEvent> pendingEvents = outboxEventRepository
-                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAsc(
+                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAscEventIdAsc(
                         OutboxEventStatus.PENDING,
                         now,
                         PageRequest.of(0, batchSize)

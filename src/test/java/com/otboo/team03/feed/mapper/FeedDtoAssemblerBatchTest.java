@@ -11,11 +11,10 @@ import com.otboo.team03.feed.dto.response.WeatherSummaryDto;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.FeedComment;
 import com.otboo.team03.feed.repository.FeedBatchQueryRepository;
-import com.otboo.team03.feed.repository.FeedClothesRepository;
-import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
 import com.otboo.team03.global.storage.ImageStorage;
 import com.otboo.team03.user.exception.UserNotFoundException;
 import com.otboo.team03.user.repository.UserRepository;
+import com.otboo.team03.weather.exception.WeatherNotFoundException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -40,12 +39,6 @@ class FeedDtoAssemblerBatchTest {
 
   @Mock
   private UserRepository userRepository;
-
-  @Mock
-  private FeedClothesRepository feedClothesRepository;
-
-  @Mock
-  private FeedWeatherLookupRepository weatherRepository;
 
   @Mock
   private JdbcTemplate jdbcTemplate;
@@ -290,13 +283,13 @@ class FeedDtoAssemblerBatchTest {
         .thenReturn(Map.of(authorId, new AuthorDto(authorId, "작성자", null)));
 
     // when
-    NullPointerException exception = assertThrows(
-        NullPointerException.class,
+    WeatherNotFoundException exception = assertThrows(
+        WeatherNotFoundException.class,
         () -> assembler.toDtos(List.of(feed), null)
     );
 
     // then
-    assertEquals("Weather not found", exception.getMessage());
+    assertNotNull(exception);
   }
 
   @Test
@@ -470,5 +463,39 @@ class FeedDtoAssemblerBatchTest {
         .findAuthors(Set.of(authorId));
 
     verifyNoInteractions(imageStorageProvider, imageStorage);
+  }
+
+  @Test
+  void 피드_날씨가_없으면_단건과_목록에서_동일한_도메인_예외가_발생한다() {
+    // given
+    UUID authorId = UUID.randomUUID();
+    UUID feedId = UUID.randomUUID();
+    UUID weatherId = UUID.randomUUID();
+
+    Feed feed = mock(Feed.class);
+    when(feed.getId()).thenReturn(feedId);
+    when(feed.getAuthorId()).thenReturn(authorId);
+    when(feed.getWeatherId()).thenReturn(weatherId);
+
+    when(batchQueryRepository.findAuthors(Set.of(authorId)))
+        .thenReturn(Map.of(
+            authorId,
+            new AuthorDto(authorId, "작성자", null)
+        ));
+
+    // when
+    WeatherNotFoundException singleException = assertThrows(
+        WeatherNotFoundException.class,
+        () -> assembler.toDto(feed, null)
+    );
+
+    WeatherNotFoundException batchException = assertThrows(
+        WeatherNotFoundException.class,
+        () -> assembler.toDtos(List.of(feed), null)
+    );
+
+    // then
+    assertNotNull(singleException);
+    assertNotNull(batchException);
   }
 }
