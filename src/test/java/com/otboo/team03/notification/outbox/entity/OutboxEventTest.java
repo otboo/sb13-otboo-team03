@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class OutboxEventTest {
@@ -37,6 +38,30 @@ class OutboxEventTest {
                 Duration.ofSeconds(-1)
         )).isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("재시도 정책이 올바르지 않습니다.");
+    }
+
+    @Test
+    void FAILED_이벤트를_재처리할_수_있도록_초기화한다() throws Exception {
+        OutboxEvent event = newEvent();
+        event.recordFailure(Instant.now(), "Kafka 실패", 1, Duration.ZERO);
+
+        Instant requeuedAt = Instant.now().plusSeconds(1);
+        event.requeue(requeuedAt);
+
+        assertThat(event.getStatus()).isEqualTo(OutboxEventStatus.PENDING);
+        assertThat(event.getAttemptCount()).isZero();
+        assertThat(event.getAvailableAt()).isEqualTo(requeuedAt);
+        assertThat(event.getPublishedAt()).isNull();
+        assertThat(event.getLastError()).isNull();
+    }
+
+    @Test
+    void FAILED가_아닌_이벤트는_재처리할_수_없다() throws Exception {
+        OutboxEvent event = newEvent();
+
+        assertThatThrownBy(() -> event.requeue(Instant.now()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("FAILED 상태의 이벤트만 재처리할 수 있습니다.");
     }
 
     private OutboxEvent newEvent() throws Exception {

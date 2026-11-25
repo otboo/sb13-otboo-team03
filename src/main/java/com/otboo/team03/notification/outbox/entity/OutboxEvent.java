@@ -127,4 +127,17 @@ public class OutboxEvent {
         this.status = OutboxEventStatus.PENDING;
         this.availableAt = failedAt.plus(retryDelay);
     }
+
+    public void requeue(Instant availableAt) {
+        Objects.requireNonNull(availableAt, "availableAt must not be null");
+        if (this.status != OutboxEventStatus.FAILED) {
+            throw new IllegalStateException("FAILED 상태의 이벤트만 재처리할 수 있습니다.");
+        }
+
+        this.status = OutboxEventStatus.PENDING;
+        this.attemptCount = 0;
+        this.availableAt = availableAt;
+        this.publishedAt = null;
+        this.lastError = null;
+    }
 }
