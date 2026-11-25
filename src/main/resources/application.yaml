@@ -25,16 +25,22 @@ spring:
     properties:
       security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
       sasl.mechanism: ${KAFKA_SASL_MECHANISM:PLAIN}
-      sasl.jaas.config: ${KAFKA_SASL_JAAS_CONFIG:}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
       properties:
         enable.idempotence: ${KAFKA_PRODUCER_IDEMPOTENCE:true}
+        delivery.timeout.ms: ${KAFKA_PRODUCER_DELIVERY_TIMEOUT_MS:30000}
+        request.timeout.ms: ${KAFKA_PRODUCER_REQUEST_TIMEOUT_MS:10000}
+        sasl.jaas.config: >-
+          ${KAFKA_PRODUCER_SASL_JAAS_CONFIG:org.apache.kafka.common.security.plain.PlainLoginModule required
+          username='${KAFKA_RELAY_API_KEY:}' password='${KAFKA_RELAY_API_SECRET:}';}
     consumer:
       group-id: ${KAFKA_CONSUMER_GROUP:otboo-notification}
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        sasl.jaas.config: ${KAFKA_CONSUMER_SASL_JAAS_CONFIG:${KAFKA_SASL_JAAS_CONFIG:}}
 
   mail:
     host: smtp.gmail.com
@@ -84,6 +90,9 @@ otboo:
 
   redis:
     notification-channel: ${REDIS_NOTIFICATION_CHANNEL:otboo:notifications}
+    notification-publish:
+      max-attempts: ${REDIS_NOTIFICATION_PUBLISH_MAX_ATTEMPTS:3}
+      backoff-ms: ${REDIS_NOTIFICATION_PUBLISH_BACKOFF_MS:200}
     direct-message-channel: ${REDIS_DIRECT_MESSAGE_CHANNEL:otboo:direct-messages}
     jwt-revocation-channel: otboo:jwt-revocations
 
@@ -97,6 +106,8 @@ otboo:
   kafka:
     notification-topic: ${KAFKA_NOTIFICATION_TOPIC:otboo.notification.events}
     notification-dlt-topic: ${KAFKA_NOTIFICATION_DLT_TOPIC:otboo.notification.events.DLT}
+    producer:
+      send-timeout: ${KAFKA_PRODUCER_SEND_TIMEOUT:PT30S}
     consumer:
       retry-backoff-ms: ${KAFKA_CONSUMER_RETRY_BACKOFF_MS:1000}
       retry-max-attempts: ${KAFKA_CONSUMER_RETRY_MAX_ATTEMPTS:2}

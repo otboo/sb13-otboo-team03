@@ -3,6 +3,10 @@ package com.otboo.team03.notification.redis;
 import com.otboo.team03.notification.dto.response.NotificationDto;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.RedisSystemException;
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
@@ -23,14 +27,21 @@ public class NotificationRedisPublisher {
         this.notificationChannel = notificationChannel;
     }
 
+    @Retryable(
+            retryFor = {RedisConnectionFailureException.class, RedisSystemException.class},
+            maxAttemptsExpression = "${otboo.redis.notification-publish.max-attempts:3}",
+            backoff = @Backoff(delayExpression = "${otboo.redis.notification-publish.backoff-ms:200}")
+    )
     public void publish(NotificationDto notification) {
+        String message;
         try {
-            String message = objectMapper.writeValueAsString(
+            message = objectMapper.writeValueAsString(
                     new NotificationRedisMessage(notification.receiverId(), notification)
             );
-            redisTemplate.convertAndSend(notificationChannel, message);
         } catch (Exception exception) {
             throw new IllegalStateException("Redis 알림 발행에 실패했습니다.", exception);
         }
+
+        redisTemplate.convertAndSend(notificationChannel, message);
     }
 }

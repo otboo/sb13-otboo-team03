@@ -11,6 +11,7 @@ import org.springframework.kafka.support.SendResult;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -81,7 +82,10 @@ class KafkaOutboxEventMessagePublisherTest {
         OutboxEvent event = newEvent();
         CompletableFuture<SendResult<String, String>> interruptedFuture =
                 org.mockito.Mockito.mock(CompletableFuture.class);
-        when(interruptedFuture.get()).thenThrow(new InterruptedException());
+        when(interruptedFuture.get(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.any(java.util.concurrent.TimeUnit.class)
+        )).thenThrow(new InterruptedException());
         when(kafkaTemplate.send(eq(TOPIC), eq(event.getPartitionKey()), org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn(interruptedFuture);
 
@@ -90,6 +94,27 @@ class KafkaOutboxEventMessagePublisherTest {
                 .hasMessage("Kafka 이벤트 발행이 중단되었습니다.");
         assertThat(Thread.currentThread().isInterrupted()).isTrue();
         Thread.interrupted();
+    }
+
+    @Test
+    void Kafka_발행이_제한시간을_초과하면_예외를_전파한다() throws Exception {
+        OutboxEvent event = newEvent();
+        CompletableFuture<SendResult<String, String>> pendingFuture =
+                org.mockito.Mockito.mock(CompletableFuture.class);
+        when(pendingFuture.get(eq(10L), eq(java.util.concurrent.TimeUnit.MILLISECONDS)))
+                .thenThrow(new java.util.concurrent.TimeoutException());
+        when(kafkaTemplate.send(eq(TOPIC), eq(event.getPartitionKey()), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(pendingFuture);
+        KafkaOutboxEventMessagePublisher timeoutPublisher = new KafkaOutboxEventMessagePublisher(
+                kafkaTemplate,
+                objectMapper,
+                TOPIC,
+                Duration.ofMillis(10)
+        );
+
+        assertThatThrownBy(() -> timeoutPublisher.publish(event))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Kafka 이벤트 발행 시간이 초과되었습니다.");
     }
 
     @Test
