@@ -74,6 +74,26 @@ class SseConnectionManagerTest {
     }
 
     @Test
+    void 누락된_알림_전송에_실패하면_남은_알림을_전송하지_않는다() throws IOException {
+        UUID receiverId = UUID.randomUUID();
+        SseEmitter emitter = mock(SseEmitter.class);
+        doThrow(new IOException("전송할 수 없는 연결입니다."))
+                .when(emitter)
+                .send(any(SseEmitter.SseEventBuilder.class));
+
+        connectionManager.register(receiverId, emitter);
+
+        connectionManager.sendMissedNotifications(
+                receiverId,
+                emitter,
+                List.of(notification(receiverId), notification(receiverId))
+        );
+
+        verify(emitter).send(any(SseEmitter.SseEventBuilder.class));
+        assertThat(connectionManager.connectionCount(receiverId)).isZero();
+    }
+
+    @Test
     void 연결된_모든_SSE에_heartbeat를_전송한다() throws Exception {
         UUID receiverId = UUID.randomUUID();
         SseEmitter emitter = mock(SseEmitter.class);

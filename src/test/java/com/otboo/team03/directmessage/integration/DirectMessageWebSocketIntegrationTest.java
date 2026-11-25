@@ -9,10 +9,15 @@ import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.global.security.OtbooUserDetailsService;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.security.jwt.JwtTokenProvider;
+import com.otboo.team03.notification.metrics.NotificationMetrics;
+import com.otboo.team03.notification.sse.SseConnectionManager;
+import com.otboo.team03.realtime.RealtimeConnectionTerminationService;
 import com.otboo.team03.realtime.websocket.WebSocketSessionRegistry;
 import com.otboo.team03.realtime.websocket.WebSocketSessionTrackingHandlerDecoratorFactory;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.UserRole;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,10 +39,17 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 
 import java.time.Instant;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -74,8 +86,18 @@ class DirectMessageWebSocketIntegrationTest {
     @Autowired
     private OtbooUserDetailsService userDetailsService;
 
+    @Autowired
+    private RealtimeConnectionTerminationService terminationService;
+
+    @Autowired
+    private SseConnectionManager sseConnectionManager;
+
+    @Autowired
+    private MeterRegistry applicationMeterRegistry;
+
     @BeforeEach
     void setUp() {
+        clearInvocations(directMessageService);
         doNothing().when(jwtTokenProvider).validateAccessToken(ACCESS_TOKEN);
         when(jwtRegistry.hasActiveJwtInformationByAccessToken(ACCESS_TOKEN)).thenReturn(true);
         when(jwtTokenProvider.getUserId(ACCESS_TOKEN)).thenReturn(SENDER_ID);
@@ -94,7 +116,7 @@ class DirectMessageWebSocketIntegrationTest {
             StompHeaders connectHeaders = new StompHeaders();
             connectHeaders.add("Authorization", "Bearer " + ACCESS_TOKEN);
             StompSession session = client.connectAsync(
-                    "ws://localhost:" + port + "/ws",
+                    "ws://localhost:" + port + "/ws/websocket",
                     new WebSocketHttpHeaders(),
                     connectHeaders,
                     new StompSessionHandlerAdapter() {}
@@ -109,8 +131,67 @@ class DirectMessageWebSocketIntegrationTest {
                     .send(SENDER_ID, RECEIVER_ID, "메시지");
             session.disconnect();
         } finally {
+            try {
+                terminationService.disconnectAll(SENDER_ID);
+            } finally {
+                client.stop();
+            }
+        }
+    }
+
+    @Test
+    void 실제_SSE와_WebSocket_연결을_사용자_ID로_모두_종료한다() throws Exception {
+        CountDownLatch webSocketClosed = new CountDownLatch(1);
+        sseConnectionManager.connect(SENDER_ID);
+        MeterRegistry meterRegistry = applicationMeterRegistry;
+        assertThat(meterRegistry.get("active_sse_connections").gauge().value())
+                .isEqualTo(1);
+
+        WebSocketStompClient client = new WebSocketStompClient(
+                new StandardWebSocketClient()
+        );
+        client.setMessageConverter(new JacksonJsonMessageConverter());
+
+        try {
+            StompHeaders connectHeaders = new StompHeaders();
+            connectHeaders.add("Authorization", "Bearer " + ACCESS_TOKEN);
+            StompSession session = client.connectAsync(
+                    "ws://localhost:" + port + "/ws/websocket",
+                    new WebSocketHttpHeaders(),
+                    connectHeaders,
+                    new StompSessionHandlerAdapter() {
+                        @Override
+                        public void handleTransportError(
+                                StompSession session,
+                                Throwable exception
+                        ) {
+                            webSocketClosed.countDown();
+                        }
+                    }
+            ).get(10, TimeUnit.SECONDS);
+
+            terminationService.disconnectAll(SENDER_ID);
+
+            assertThat(meterRegistry.get("active_sse_connections").gauge().value())
+                    .isZero();
+            assertThat(webSocketClosed.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(session.isConnected()).isFalse();
+        } finally {
             client.stop();
         }
+    }
+
+    @Test
+    void SockJS_info_엔드포인트를_제공한다() throws Exception {
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/ws/info"))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("\"websocket\":true");
     }
 
     private OtbooUserDetails userDetails(UUID userId) {
@@ -147,13 +228,21 @@ class DirectMessageWebSocketIntegrationTest {
             DirectMessageDestinationValidator.class,
             com.otboo.team03.directmessage.config.DirectMessageWebSocketConfig.class,
             WebSocketSessionRegistry.class,
-            WebSocketSessionTrackingHandlerDecoratorFactory.class
+            WebSocketSessionTrackingHandlerDecoratorFactory.class,
+            NotificationMetrics.class,
+            SseConnectionManager.class,
+            RealtimeConnectionTerminationService.class
     })
     static class Application {
 
         @Bean
         DirectMessageService directMessageService() {
             return mock(DirectMessageService.class);
+        }
+
+        @Bean
+        MeterRegistry meterRegistry() {
+            return new SimpleMeterRegistry();
         }
 
         @Bean

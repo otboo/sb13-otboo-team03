@@ -45,6 +45,25 @@ class WebSocketSessionRegistryTest {
         assertThat(registry.connectionCount(userId)).isZero();
     }
 
+    @Test
+    void 한_사용자의_전체_종료가_다른_사용자의_WebSocket_연결을_종료하지_않는다() throws IOException {
+        UUID firstUserId = UUID.randomUUID();
+        UUID secondUserId = UUID.randomUUID();
+        WebSocketSession firstSession = session("session-1");
+        WebSocketSession secondSession = session("session-2");
+        registry.register("session-1", firstSession);
+        registry.register("session-2", secondSession);
+        registry.bindUser("session-1", firstUserId);
+        registry.bindUser("session-2", secondUserId);
+
+        registry.disconnectAll(firstUserId);
+
+        verify(firstSession).close(CloseStatus.POLICY_VIOLATION);
+        verify(secondSession, org.mockito.Mockito.never()).close(CloseStatus.POLICY_VIOLATION);
+        assertThat(registry.connectionCount(firstUserId)).isZero();
+        assertThat(registry.connectionCount(secondUserId)).isOne();
+    }
+
     private WebSocketSession session(String sessionId) {
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.getId()).thenReturn(sessionId);
