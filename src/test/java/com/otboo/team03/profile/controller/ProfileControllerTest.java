@@ -132,20 +132,32 @@ class ProfileControllerTest {
   }
 
   @Test
-  @DisplayName("타인의 userId로 조회를 시도하면 HTTP 403 FORBIDDEN을 반환한다")
-  void getProfile_forbidden_differentUser() throws Exception {
+  @DisplayName("로그인한 사용자라면 타인의 userId로 프로필 조회 시 HTTP 200과 ProfileDto를 반환한다")
+  void getProfile_otherUser_success() throws Exception {
     // given
     UUID loggedInUserId = UUID.randomUUID();
     UUID otherUserId = UUID.randomUUID();
+
+    ProfileDto responseDto = new ProfileDto(
+        otherUserId,
+        "상대방",
+        Gender.FEMALE,
+        LocalDate.of(1998, 3, 15),
+        null,
+        2,
+        "https://cdn.otboo.io/profiles/other.png"
+    );
+
+    given(profileService.getProfile(otherUserId)).willReturn(responseDto);
 
     // when & then
     mockMvc.perform(get("/api/users/{userId}/profiles", otherUserId)
             .principal(createAuth(loggedInUserId))
             .contentType(MediaType.APPLICATION_JSON))
         .andDo(print())
-        .andExpect(status().isForbidden());
-
-    verifyNoInteractions(profileService);
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.userId").value(otherUserId.toString()))
+        .andExpect(jsonPath("$.name").value("상대방"));
   }
 
   @Test
