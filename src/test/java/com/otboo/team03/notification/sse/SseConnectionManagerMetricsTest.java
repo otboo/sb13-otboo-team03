@@ -104,4 +104,35 @@ class SseConnectionManagerMetricsTest {
 
         verify(metrics).sseDisconnected();
     }
+
+    @Test
+    void 사용자별_전체_SSE_연결을_종료하면_연결_수만큼_해제_메트릭을_기록한다() {
+        UUID receiverId = UUID.randomUUID();
+        connectionManager.connect(receiverId);
+        connectionManager.connect(receiverId);
+        clearInvocations(metrics);
+
+        connectionManager.disconnectAll(receiverId);
+
+        verify(metrics, times(2)).sseDisconnected();
+    }
+
+    @Test
+    void 실제_SSE_전체_연결_종료_후_활성_연결_메트릭이_0이_된다() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        SseConnectionManager actualManager = new SseConnectionManager(
+                new NotificationMetrics(registry)
+        );
+        UUID receiverId = UUID.randomUUID();
+        actualManager.connect(receiverId);
+        actualManager.connect(receiverId);
+
+        assertThat(registry.get("active_sse_connections").gauge().value())
+                .isEqualTo(2);
+
+        actualManager.disconnectAll(receiverId);
+
+        assertThat(registry.get("active_sse_connections").gauge().value())
+                .isZero();
+    }
 }

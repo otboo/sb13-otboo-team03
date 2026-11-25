@@ -147,6 +147,9 @@ public class SseConnectionManager {
             return;
         }
 
+        if (metrics != null) {
+            receiverEmitters.forEach(ignored -> metrics.sseDisconnected());
+        }
         receiverEmitters.forEach(SseEmitter::complete);
     }
 
