@@ -1,6 +1,7 @@
 package com.otboo.team03.recommendation.service;
 
-import com.otboo.team03.global.exception.InvalidLlmResponseException;
+import com.otboo.team03.global.exception.llm.GroqRequestException;
+import com.otboo.team03.global.exception.llm.InvalidLlmResponseException;
 import com.otboo.team03.recommendation.client.GroqOutfitClient;
 import com.otboo.team03.recommendation.config.RecommendationLlmProperties;
 import com.otboo.team03.recommendation.client.dto.LlmOutfitDecision;
@@ -42,6 +43,10 @@ public class LlmOutfitRecommender {
                 return Optional.empty();
             }
             return Optional.of(decision);
+        } catch (GroqRequestException exception) {
+            log.warn("LLM 추천 HTTP 호출 실패, 기본 추천 사용: status={}, providerType={}, providerCode={}",
+                    exception.getStatus(), exception.getErrorType(), exception.getErrorCode());
+            return Optional.empty();
         } catch (RestClientException | JacksonException | InvalidLlmResponseException exception) {
             // 예외 메시지·본문에는 API 키, 제목, 속성 또는 공급자 응답이 포함될 수 있으므로 기록하지 않는다.
             log.warn("LLM 추천 호출 실패, 기본 추천 사용: errorType={}", exception.getClass().getSimpleName());

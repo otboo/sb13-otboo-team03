@@ -40,8 +40,9 @@ public class GroqOutfitRequestFactory {
         Map<String, Object> text = Map.of("type", "string");
         Map<String, Object> evidence = Map.of(
                 "type", "string",
-                "description", "선택한 해당 의상의 원문에서 그대로 복사한 연속된 문구. "
+                "description", "먼저 이 분석의 clothesId와 같은 wardrobe 항목을 찾고, 그 의상의 원문에서만 그대로 복사한 연속된 문구. "
                         + "source가 TITLE이면 의상의 name, ATTRIBUTE이면 attributes[].value 중 하나에서 인용한다. "
+                        + "같은 코디의 다른 의상에 있는 문구도 가져오지 않는다. 아우터의 방수 속성은 다른 상의의 근거가 아니다. "
                         + "원문에 없는 속성 이름이나 구분 기호, JSON 구문을 덧붙이지 않는다. "
                         + "예: 속성이 {name: 두께, value: 얇음}이면 evidence는 얇음이며 두께: 얇음이 아니다.");
         Map<String, Object> clothesId = Map.of("type", "string", "enum", input.wardrobe().stream()

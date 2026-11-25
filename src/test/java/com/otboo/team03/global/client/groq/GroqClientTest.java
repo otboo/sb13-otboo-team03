@@ -1,13 +1,16 @@
 package com.otboo.team03.global.client.groq;
 
-import com.otboo.team03.global.exception.InvalidLlmResponseException;
+import com.otboo.team03.global.exception.llm.GroqRequestException;
+import com.otboo.team03.global.exception.llm.InvalidLlmResponseException;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -79,6 +82,86 @@ class GroqClientTest {
         server.expect(anything()).andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
         assertThatThrownBy(() -> client.complete(request()))
                 .isInstanceOf(InvalidLlmResponseException.class);
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {400, 401, 429, 500})
+    void HTTP_오류는_안전한_정보만_전달하고_원본_응답은_보관하지_않는다(int status) {
+        String response = """
+                {"error":{"type":"invalid_request_error","code":"json_validate_failed",
+                  "message":"Bearer gsk_test_secret 의상제목",
+                  "failed_generation":"의상제목과 개인 속성"}}
+                """;
+        server.expect(anything()).andRespond(withStatus(HttpStatusCode.valueOf(status))
+                .contentType(MediaType.APPLICATION_JSON).body(response));
+
+        assertThatThrownBy(() -> client.complete(request()))
+                .isInstanceOfSatisfying(GroqRequestException.class, exception -> {
+                    assertThat(exception.getStatus()).isEqualTo(status);
+                    assertThat(exception.getErrorType()).isEqualTo("invalid_request_error");
+                    assertThat(exception.getErrorCode()).isEqualTo("json_validate_failed");
+                    assertThat(exception.getMessage()).doesNotContain("gsk_test_secret", "의상제목");
+                    assertThat(exception.getCause()).isNull();
+                    assertThat(exception.getSuppressed()).isEmpty();
+                });
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "", "not json gsk_test_secret", "null", "{}", "{\"error\":null}",
+            "{\"error\":{\"type\":{},\"code\":123}}",
+            "{\"error\":{\"type\":\"gsk_test_secret\",\"code\":\"의상제목\"}}",
+            "{\"error\":{\"type\":\"future_error\",\"code\":\"future_code\"}}",
+            "{\"error\":{\"type\":\"invalid_request_error\\nBearer gsk_test_secret\",\"code\":\"json_validate_failed\\n의상제목\"}}"
+    })
+    void 오류_정보가_없거나_안전하지_않으면_상태만_보존한다(String response) {
+        server.expect(anything()).andRespond(withStatus(HttpStatusCode.valueOf(400))
+                .contentType(MediaType.APPLICATION_JSON).body(response));
+
+        assertThatThrownBy(() -> client.complete(request()))
+                .isInstanceOfSatisfying(GroqRequestException.class, exception -> {
+                    assertThat(exception.getStatus()).isEqualTo(400);
+                    assertThat(exception.getErrorType()).isEqualTo("unknown");
+                    assertThat(exception.getErrorCode()).isEqualTo("unknown");
+                    assertThat(exception.getCause()).isNull();
+                });
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "invalid_request_error, missing-code, invalid_request_error, unknown",
+            "missing-type, json_validate_failed, unknown, json_validate_failed",
+            "rate_limit_error, rate_limit_exceeded, rate_limit_error, rate_limit_exceeded"
+    })
+    void 오류_종류와_코드는_각각_검증한다(String type, String code, String expectedType, String expectedCode) {
+        String response = mapper.writeValueAsString(Map.of("error", Map.of("type", type, "code", code)));
+        server.expect(anything()).andRespond(withStatus(HttpStatusCode.valueOf(400))
+                .contentType(MediaType.APPLICATION_JSON).body(response));
+
+        assertThatThrownBy(() -> client.complete(request()))
+                .isInstanceOfSatisfying(GroqRequestException.class, exception -> {
+                    assertThat(exception.getErrorType()).isEqualTo(expectedType);
+                    assertThat(exception.getErrorCode()).isEqualTo(expectedCode);
+                });
+        server.verify();
+    }
+
+    @Test
+    void HTML_오류_페이지도_본문을_전달하지_않고_상태를_보존한다() {
+        server.expect(anything()).andRespond(withStatus(HttpStatusCode.valueOf(502))
+                .contentType(MediaType.TEXT_HTML).body("<html>gsk_test_secret 의상제목</html>"));
+
+        assertThatThrownBy(() -> client.complete(request()))
+                .isInstanceOfSatisfying(GroqRequestException.class, exception -> {
+                    assertThat(exception.getStatus()).isEqualTo(502);
+                    assertThat(exception.getErrorType()).isEqualTo("unknown");
+                    assertThat(exception.getErrorCode()).isEqualTo("unknown");
+                    assertThat(exception.getMessage()).doesNotContain("gsk_test_secret", "의상제목");
+                    assertThat(exception.getCause()).isNull();
+                });
         server.verify();
     }
 

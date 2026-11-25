@@ -1,6 +1,8 @@
 package com.otboo.team03.recommendation.client.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.otboo.team03.clothes.entity.ClothesType;
+import com.otboo.team03.recommendation.algorithm.TemperatureSensitivityPolicy;
 import com.otboo.team03.weather.entity.PrecipitationType;
 import com.otboo.team03.weather.entity.SkyStatus;
 import java.util.List;
@@ -17,6 +19,13 @@ public record LlmRecommendationInput(
     public LlmRecommendationInput {
         previousOutfitIds = Set.copyOf(previousOutfitIds);
         wardrobe = List.copyOf(wardrobe);
+    }
+
+    /** 실제 기온·민감도는 유지하고 LLM에 보낼 보정 온도를 공통 정책으로 계산한다. */
+    @JsonProperty("adjustedTemperature")
+    public Double adjustedTemperature() {
+        Double temperature = weather.temperature();
+        return temperature == null ? null : TemperatureSensitivityPolicy.adjust(temperature, temperatureSensitivity);
     }
 
     public record WeatherContext(Double temperature, SkyStatus skyStatus,
