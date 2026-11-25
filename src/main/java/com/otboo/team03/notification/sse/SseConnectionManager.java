@@ -47,8 +47,20 @@ public class SseConnectionManager {
 
     public SseEmitter connect(UUID receiverId, List<NotificationDto> missedNotifications) {
         SseEmitter emitter = connect(receiverId);
-        missedNotifications.forEach(notification -> send(receiverId, emitter, notification));
+        sendMissedNotifications(receiverId, emitter, missedNotifications);
         return emitter;
+    }
+
+    void sendMissedNotifications(
+            UUID receiverId,
+            SseEmitter emitter,
+            List<NotificationDto> missedNotifications
+    ) {
+        for (NotificationDto notification : missedNotifications) {
+            if (!send(receiverId, emitter, notification)) {
+                break;
+            }
+        }
     }
 
     void register(UUID receiverId, SseEmitter emitter) {
@@ -74,12 +86,13 @@ public class SseConnectionManager {
         }
     }
 
-    private void send(UUID receiverId, SseEmitter emitter, NotificationDto notification) {
+    private boolean send(UUID receiverId, SseEmitter emitter, NotificationDto notification) {
         try {
             emitter.send(SseEmitter.event()
                     .id(notification.id().toString())
                     .name(NOTIFICATION_EVENT_NAME)
                     .data(notification));
+            return true;
         } catch (IOException exception) {
             handleSendFailure(receiverId, emitter, exception,
                     "SSE 알림 전송에 실패했습니다.");
@@ -87,6 +100,7 @@ public class SseConnectionManager {
             handleSendFailure(receiverId, emitter, exception,
                     "SSE 연결이 종료된 상태입니다.");
         }
+        return false;
     }
 
     @Scheduled(fixedDelayString = "${scheduler.sse-heartbeat.fixed-delay:PT15S}")
