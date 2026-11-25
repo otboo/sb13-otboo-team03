@@ -1,10 +1,14 @@
 package com.otboo.team03.recommendation.client;
 
 import com.otboo.team03.global.client.groq.GroqClient;
+import com.otboo.team03.recommendation.client.dto.LlmRecommendationInput;
 import java.io.IOException;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -54,12 +58,21 @@ class GroqOutfitClientTest {
                     assertThat(input.get("wardrobe").get(0).get("attributes").get(0).get("value").asText())
                             .isEqualTo("비침 있음");
                     assertThat(input.get("weather").get("precipitationType").asText()).isEqualTo("RAIN");
+                    assertThat(input.get("wardrobe").get(0).get("clothesId").asText()).isEqualTo(TOP_ID.toString());
+                    assertThat(input.get("wardrobe").get(1).get("clothesId").asText()).isEqualTo(BOTTOM_ID.toString());
+                    assertThat(input.get("wardrobe").get(2).get("clothesId").asText()).isEqualTo(DRESS_ID.toString());
+                    assertThat(input.get("previousOutfitIds"))
+                            .isEqualTo(mapper.readTree(mapper.writeValueAsString(List.of(TOP_ID))));
+                    assertThat(input.get("adjustedTemperature").asDouble()).isEqualTo(24.0);
                     assertThat(input.has("userId")).isFalse();
                     assertThat(input.toString()).doesNotContain("imageUrl", "profileImage", "email", "selectableValues");
                     var schema = body.get("response_format").get("json_schema");
                     assertThat(schema.get("strict").asBoolean()).isTrue();
+                    var allowedIds = mapper.readTree(mapper.writeValueAsString(List.of(TOP_ID, BOTTOM_ID, DRESS_ID)));
                     assertThat(schema.get("schema").get("properties").get("clothesIds")
-                            .get("items").get("enum").size()).isEqualTo(3);
+                            .get("items").get("enum")).isEqualTo(allowedIds);
+                    assertThat(schema.get("schema").get("properties").get("analyses").get("items")
+                            .get("properties").get("clothesId").get("enum")).isEqualTo(allowedIds);
                     var featureProperties = schema.get("schema").get("properties").get("analyses").get("items")
                             .get("properties").get("features").get("items").get("properties");
                     for (String field : List.of("name", "value")) {
@@ -77,6 +90,32 @@ class GroqOutfitClientTest {
 
         assertThat(actual).isEqualTo(decision());
         server.verify();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"1,13.0", "2,15.0", "3,17.0", "4,19.0", "5,21.0"})
+    void 실제_기온과_민감도는_유지하고_보정_온도를_함께_보낸다(int sensitivity, double adjustedTemperature) {
+        var input = new LlmRecommendationInput(new LlmRecommendationInput.WeatherContext(
+                17.0, null, null, null, null, null), sensitivity, Set.of(), input().wardrobe());
+
+        var body = mapper.readTree(client.serializeInput(input));
+
+        assertThat(body.get("weather").get("temperature").asDouble()).isEqualTo(17.0);
+        assertThat(body.get("temperatureSensitivity").asInt()).isEqualTo(sensitivity);
+        assertThat(body.get("adjustedTemperature").asDouble()).isEqualTo(adjustedTemperature);
+        assertThat(body.get("weather").get("windSpeed").isNull()).isTrue();
+    }
+
+    @Test
+    void 기온이_없으면_보정_온도도_null로_보낸다() {
+        var input = new LlmRecommendationInput(new LlmRecommendationInput.WeatherContext(
+                null, null, null, null, null, null), 1, Set.of(), input().wardrobe());
+
+        var body = mapper.readTree(client.serializeInput(input));
+
+        assertThat(body.get("weather").get("temperature").isNull()).isTrue();
+        assertThat(body.get("adjustedTemperature").isNull()).isTrue();
+        assertThat(body.get("temperatureSensitivity").asInt()).isEqualTo(1);
     }
 
     private String completion(String content, String finishReason, String refusal) {
