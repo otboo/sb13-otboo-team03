@@ -1,6 +1,7 @@
 package com.otboo.team03.recommendation.service;
 
-import com.otboo.team03.global.exception.InvalidLlmResponseException;
+import com.otboo.team03.global.exception.llm.GroqRequestException;
+import com.otboo.team03.global.exception.llm.InvalidLlmResponseException;
 import com.otboo.team03.recommendation.client.GroqOutfitClient;
 import com.otboo.team03.recommendation.config.RecommendationLlmProperties;
 import com.otboo.team03.recommendation.client.dto.LlmOutfitDecision;
@@ -8,8 +9,11 @@ import com.otboo.team03.recommendation.client.dto.LlmRecommendationInput;
 import com.otboo.team03.recommendation.validation.LlmOutfitValidator;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.json.JsonMapper;
@@ -18,6 +22,7 @@ import static com.otboo.team03.recommendation.support.LlmTestFixtures.*;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+@ExtendWith(OutputCaptureExtension.class)
 class LlmOutfitRecommenderTest {
     private final GroqOutfitClient client = mock(GroqOutfitClient.class);
     private final LlmOutfitValidator validator = new LlmOutfitValidator();
@@ -56,13 +61,40 @@ class LlmOutfitRecommenderTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {401, 429, 500})
+    @ValueSource(ints = {400, 401, 429, 500})
     void 공급자_HTTP_오류는_재시도_없이_기본_추천으로_돌아간다(int status) {
         when(client.serializeInput(input())).thenReturn("input");
         when(client.recommend(input(), "input")).thenThrow(new RestClientResponseException(
                 "test", status, "error", null, null, null));
         assertThat(recommender(properties(true)).recommend(input())).isEmpty();
         verify(client, times(1)).recommend(input(), "input");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {400, 401, 429, 500})
+    void Groq_HTTP_오류는_안전한_진단_로그를_남기고_재시도하지_않는다(int status, CapturedOutput output) {
+        when(client.serializeInput(input())).thenReturn("비공개_옷장_입력");
+        when(client.recommend(input(), "비공개_옷장_입력"))
+                .thenThrow(new GroqRequestException(status, "invalid_request_error", "json_validate_failed"));
+
+        assertThat(recommender(properties(true)).recommend(input())).isEmpty();
+
+        verify(client, times(1)).recommend(input(), "비공개_옷장_입력");
+        assertThat(output.getAll()).contains("status=" + status,
+                "providerType=invalid_request_error", "providerCode=json_validate_failed")
+                .doesNotContain("비공개_옷장_입력", "GroqRequestException:");
+    }
+
+    @Test
+    void 공급자_오류_필드에_민감한_값이_있어도_로그에는_기록하지_않는다(CapturedOutput output) {
+        when(client.serializeInput(input())).thenReturn("input");
+        when(client.recommend(input(), "input"))
+                .thenThrow(new GroqRequestException(400, "gsk_test_secret", "비공개_옷_제목"));
+
+        assertThat(recommender(properties(true)).recommend(input())).isEmpty();
+
+        assertThat(output.getAll()).contains("status=400", "providerType=unknown", "providerCode=unknown")
+                .doesNotContain("gsk_test_secret", "비공개_옷_제목");
     }
 
     @Test
