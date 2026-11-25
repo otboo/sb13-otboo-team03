@@ -19,7 +19,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class BasicOutfitAlgorithm {
 
-    private static final double TEMPERATURE_ADJUSTMENT_PER_LEVEL = 2.0;
     private static final double OUTER_TEMPERATURE_THRESHOLD = 15.0;
     private static final double SCARF_TEMPERATURE_THRESHOLD = 15.0;
     private static final List<ClothesType> ADDITIONAL_ITEM_TYPES = List.of(
@@ -32,7 +31,7 @@ public class BasicOutfitAlgorithm {
                                   Map<UUID, SleeveLength> sleeveByClothesId,
                                   double temperature, int sensitivity,
                                   Set<UUID> previousOutfitIds) {
-        double adjustedTemperature = adjustTemperature(temperature, sensitivity);
+        double adjustedTemperature = TemperatureSensitivityPolicy.adjust(temperature, sensitivity);
         Comparator<Clothes> byThicknessDescending = Comparator.comparingInt((Clothes item) ->
                 suitabilityScorer.scoreThickness(thicknessOf(item, thicknessByClothesId),
                         adjustedTemperature, sensitivity)).reversed();
@@ -60,7 +59,8 @@ public class BasicOutfitAlgorithm {
     }
 
     public List<Clothes> recommend(List<Clothes> clothes, double temperature, int sensitivity) {
-        return recommendAtAdjustedTemperature(clothes, clothes, adjustTemperature(temperature, sensitivity), Set.of());
+        return recommendAtAdjustedTemperature(clothes, clothes,
+                TemperatureSensitivityPolicy.adjust(temperature, sensitivity), Set.of());
     }
 
     public List<Clothes> recommend(List<Clothes> clothes) {
@@ -77,10 +77,6 @@ public class BasicOutfitAlgorithm {
         }
 
         return List.of();
-    }
-
-    private double adjustTemperature(double temperature, int sensitivity) {
-        return temperature + (sensitivity - 3) * TEMPERATURE_ADJUSTMENT_PER_LEVEL;
     }
 
     private Optional<Clothes> firstOfType(List<Clothes> clothes, ClothesType type) {
