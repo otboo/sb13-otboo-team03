@@ -156,7 +156,7 @@ class DirectMessageWebSocketIntegrationTest {
             StompHeaders connectHeaders = new StompHeaders();
             connectHeaders.add("Authorization", "Bearer " + ACCESS_TOKEN);
             StompSession session = client.connectAsync(
-                    "ws://localhost:" + port + "/ws",
+                    "ws://localhost:" + port + "/ws/websocket",
                     new WebSocketHttpHeaders(),
                     connectHeaders,
                     new StompSessionHandlerAdapter() {
