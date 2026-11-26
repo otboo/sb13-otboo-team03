@@ -80,6 +80,7 @@ class DirectMessageServiceTest {
 
         assertThat(result.dmKey()).isEqualTo(DirectMessage.createDmKey(senderId, receiverId));
         assertThat(result.senderId()).isEqualTo(senderId);
+        assertThat(result.sender().userId()).isEqualTo(senderId);
         assertThat(result.receiverId()).isEqualTo(receiverId);
         assertThat(result.content()).isEqualTo("안녕하세요.");
 

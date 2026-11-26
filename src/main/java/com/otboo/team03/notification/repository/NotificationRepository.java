@@ -17,6 +17,7 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
             select n
             from Notification n
             where n.receiver.id = :receiverId
+              and n.readAt is null
               and (
                     n.createdAt < :cursor
                     or (n.createdAt = :cursor and n.id < :idAfter)
@@ -30,12 +31,12 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
             Pageable pageable
     );
 
-    List<Notification> findByReceiver_IdOrderByCreatedAtDescIdDesc(
+    List<Notification> findByReceiver_IdAndReadAtIsNullOrderByCreatedAtDescIdDesc(
             UUID receiverId,
             Pageable pageable
     );
 
-    long countByReceiver_Id(UUID receiverId);
+    long countByReceiver_IdAndReadAtIsNull(UUID receiverId);
 
     boolean existsByReceiver_IdAndNotificationTypeAndSourceEventId(
             UUID receiverId,
