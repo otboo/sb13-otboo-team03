@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 class SseConnectionManagerTest {
@@ -71,6 +72,49 @@ class SseConnectionManagerTest {
 
         assertThat(emitter).isNotNull();
         assertThat(connectionManager.connectionCount(receiverId)).isEqualTo(1);
+    }
+
+    @Test
+    void 복구_조회중_발생한_실시간_알림을_복구_알림과_중복없이_전송한다() throws Exception {
+        UUID receiverId = UUID.randomUUID();
+        SseEmitter emitter = mock(SseEmitter.class);
+        UUID replayId = UUID.randomUUID();
+        UUID bufferedId = UUID.randomUUID();
+        UUID duplicateId = UUID.randomUUID();
+        NotificationDto replayNotification = notification(receiverId, replayId);
+        NotificationDto bufferedNotification = notification(receiverId, bufferedId);
+        NotificationDto duplicateNotification = notification(receiverId, duplicateId);
+
+        connectionManager.registerForReplay(receiverId, emitter);
+        connectionManager.send(receiverId, bufferedNotification);
+        connectionManager.send(receiverId, bufferedNotification);
+        connectionManager.send(receiverId, duplicateNotification);
+
+        connectionManager.completeReplay(
+                receiverId,
+                emitter,
+                List.of(replayNotification, duplicateNotification),
+                false
+        );
+
+        verify(emitter, times(3)).send(any(SseEmitter.SseEventBuilder.class));
+        assertThat(connectionManager.connectionCount(receiverId)).isEqualTo(1);
+    }
+
+    @Test
+    void 복구_상한을_초과하면_전체_동기화_신호를_함께_전송한다() throws Exception {
+        UUID receiverId = UUID.randomUUID();
+        SseEmitter emitter = mock(SseEmitter.class);
+        connectionManager.registerForReplay(receiverId, emitter);
+
+        connectionManager.completeReplay(
+                receiverId,
+                emitter,
+                List.of(notification(receiverId)),
+                true
+        );
+
+        verify(emitter, times(2)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
     @Test
@@ -259,8 +303,12 @@ class SseConnectionManagerTest {
     }
 
     private NotificationDto notification(UUID receiverId) {
+        return notification(receiverId, UUID.randomUUID());
+    }
+
+    private NotificationDto notification(UUID receiverId, UUID notificationId) {
         return new NotificationDto(
-                UUID.randomUUID(),
+                notificationId,
                 Instant.parse("2026-01-01T00:00:00Z"),
                 receiverId,
                 "알림",

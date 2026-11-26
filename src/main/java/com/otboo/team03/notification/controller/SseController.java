@@ -1,8 +1,8 @@
 package com.otboo.team03.notification.controller;
 
 import com.otboo.team03.global.security.AuthenticatedUserIdExtractor;
-import com.otboo.team03.notification.dto.response.NotificationDto;
 import com.otboo.team03.notification.service.NotificationService;
+import com.otboo.team03.notification.service.NotificationReplayResult;
 import com.otboo.team03.notification.sse.SseConnectionManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.security.core.Authentication;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -38,10 +37,22 @@ public class SseController {
             return sseConnectionManager.connect(receiverId);
         }
 
-        List<NotificationDto> missedNotifications = notificationService.getNotificationsAfterEvent(
-                receiverId,
-                reconnectEventId
-        );
-        return sseConnectionManager.connect(receiverId, missedNotifications);
+        SseEmitter emitter = sseConnectionManager.connectForReplay(receiverId);
+        try {
+            NotificationReplayResult replay = notificationService.getNotificationsAfterEvent(
+                    receiverId,
+                    reconnectEventId
+            );
+            sseConnectionManager.completeReplay(
+                    receiverId,
+                    emitter,
+                    replay.notifications(),
+                    replay.hasMore()
+            );
+            return emitter;
+        } catch (RuntimeException exception) {
+            sseConnectionManager.disconnect(receiverId, emitter);
+            throw exception;
+        }
     }
 }
