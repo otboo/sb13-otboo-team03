@@ -80,16 +80,19 @@ class SseControllerTest {
         UUID lastEventId = UUID.randomUUID();
         Authentication authentication = authentication(receiverId);
         SseEmitter emitter = new SseEmitter();
-        List<NotificationDto> missedNotifications = List.of();
+        NotificationReplayResult replay = NotificationReplayResult.empty();
+        when(sseConnectionManager.connectForReplay(receiverId)).thenReturn(emitter);
         when(notificationService.getNotificationsAfterEvent(receiverId, lastEventId))
-                .thenReturn(missedNotifications);
-        when(sseConnectionManager.connect(receiverId, missedNotifications)).thenReturn(emitter);
+                .thenReturn(replay);
 
         SseEmitter result = sseController.connect(authentication, lastEventId, null, null);
 
         assertThat(result).isSameAs(emitter);
-        verify(notificationService).getNotificationsAfterEvent(receiverId, lastEventId);
-        verify(sseConnectionManager).connect(receiverId, missedNotifications);
+        var inOrder = inOrder(sseConnectionManager, notificationService);
+        inOrder.verify(sseConnectionManager).connectForReplay(receiverId);
+        inOrder.verify(notificationService).getNotificationsAfterEvent(receiverId, lastEventId);
+        inOrder.verify(sseConnectionManager)
+                .completeReplay(receiverId, emitter, replay.notifications(), replay.hasMore());
     }
 
     @Test
@@ -99,15 +102,19 @@ class SseControllerTest {
         UUID headerEventId = UUID.randomUUID();
         Authentication authentication = authentication(receiverId);
         SseEmitter emitter = new SseEmitter();
-        List<NotificationDto> missedNotifications = List.of();
+        NotificationReplayResult replay = NotificationReplayResult.empty();
+        when(sseConnectionManager.connectForReplay(receiverId)).thenReturn(emitter);
         when(notificationService.getNotificationsAfterEvent(receiverId, headerEventId))
-                .thenReturn(missedNotifications);
-        when(sseConnectionManager.connect(receiverId, missedNotifications)).thenReturn(emitter);
+                .thenReturn(replay);
 
         SseEmitter result = sseController.connect(authentication, queryEventId, null, headerEventId);
 
         assertThat(result).isSameAs(emitter);
-        verify(notificationService).getNotificationsAfterEvent(receiverId, headerEventId);
+        var inOrder = inOrder(sseConnectionManager, notificationService);
+        inOrder.verify(sseConnectionManager).connectForReplay(receiverId);
+        inOrder.verify(notificationService).getNotificationsAfterEvent(receiverId, headerEventId);
+        inOrder.verify(sseConnectionManager)
+                .completeReplay(receiverId, emitter, replay.notifications(), replay.hasMore());
     }
 
     @Test
