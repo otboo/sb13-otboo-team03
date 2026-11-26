@@ -30,6 +30,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +58,9 @@ class SseControllerHttpTest {
     @Autowired
     private SseConnectionManager sseConnectionManager;
 
+    @Autowired
+    private NotificationService notificationService;
+
     @Test
     void 인증되지_않은_SSE_요청은_401을_반환한다() throws Exception {
         clearInvocations(sseConnectionManager);
@@ -81,6 +85,22 @@ class SseControllerHttpTest {
 
         assertThat(result.getResponse().getContentType())
                 .isEqualTo(MediaType.TEXT_EVENT_STREAM_VALUE);
+    }
+
+    @Test
+    void 소문자_lastEventId_쿼리_파라미터로_SSE_재연결한다() throws Exception {
+        UUID lastEventId = UUID.randomUUID();
+        SseEmitter emitter = new SseEmitter();
+        when(notificationService.getNotificationsAfterEvent(USER_ID, lastEventId))
+                .thenReturn(List.of());
+        when(sseConnectionManager.connect(USER_ID, List.of())).thenReturn(emitter);
+
+        mockMvc.perform(get("/api/sse")
+                        .param("lastEventId", lastEventId.toString())
+                        .header("Authorization", "Bearer test-token")
+                        .accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(status().isOk())
+                .andExpect(request().asyncStarted());
     }
 
     @SpringBootConfiguration

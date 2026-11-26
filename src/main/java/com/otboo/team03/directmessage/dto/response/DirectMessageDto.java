@@ -11,17 +11,39 @@ public record DirectMessageDto(
         String dmKey,
         UUID senderId,
         UUID receiverId,
-        String content
+        String content,
+        DirectMessageSenderDto sender
 ) {
 
+    public DirectMessageDto(
+            UUID id,
+            Instant createdAt,
+            String dmKey,
+            UUID senderId,
+            UUID receiverId,
+            String content
+    ) {
+        this(
+                id,
+                createdAt,
+                dmKey,
+                senderId,
+                receiverId,
+                content,
+                new DirectMessageSenderDto(senderId)
+        );
+    }
+
     public static DirectMessageDto from(DirectMessage directMessage) {
+        UUID senderId = directMessage.getSender().getId();
         return new DirectMessageDto(
                 directMessage.getId(),
                 directMessage.getCreatedAt(),
                 directMessage.getDmKey(),
-                directMessage.getSender().getId(),
+                senderId,
                 directMessage.getReceiver().getId(),
-                directMessage.getContent()
+                directMessage.getContent(),
+                new DirectMessageSenderDto(senderId)
         );
     }
 }
