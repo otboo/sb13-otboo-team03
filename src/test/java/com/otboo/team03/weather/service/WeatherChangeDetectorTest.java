@@ -61,8 +61,41 @@ class WeatherChangeDetectorTest {
 
     // then
     assertThat(alertOpt).isPresent();
-    assertThat(alertOpt.get().title()).contains("기온 급변 알림");
+    assertThat(alertOpt.get().title()).contains("기온 급상승 알림");
     assertThat(alertOpt.get().content()).contains("기온이 급격히 상승");
+  }
+
+  @Test
+  @DisplayName("직전 예보 대비 기온이 5.0도 이상 급격히 하강하면 기온 급강하 알림 정보를 반환한다")
+  void detect_whenTemperatureDropsRapidly_returnsTemperatureDropAlert() {
+    // given
+    Instant now = Instant.parse("2026-11-23T06:00:00Z");
+    Weather current = createWeather(now, SkyStatus.CLEAR, PrecipitationType.NONE, 18.0);
+    // 3시간 뒤 기온이 18.0도에서 11.0도로 7도 급강하
+    Weather futureCold = createWeather(now.plusSeconds(10800), SkyStatus.CLEAR, PrecipitationType.NONE, 11.0);
+
+    // when
+    Optional<WeatherAlertInfo> alertOpt = detector.detect(List.of(current, futureCold));
+
+    // then
+    assertThat(alertOpt).isPresent();
+    assertThat(alertOpt.get().title()).contains("기온 급강하 알림");
+    assertThat(alertOpt.get().content()).contains("기온이 급격히 떨어질 예정");
+  }
+
+  @Test
+  @DisplayName("이미 직전 예보부터 비가 오고 있는 경우 동일 강수 예보에 대해 중복 알림을 반환하지 않는다")
+  void detect_whenAlreadyRaining_doesNotReturnDuplicateAlert() {
+    // given
+    Instant now = Instant.parse("2026-11-23T06:00:00Z");
+    Weather currentRain = createWeather(now, SkyStatus.CLOUDY, PrecipitationType.RAIN, 15.0);
+    Weather futureRain = createWeather(now.plusSeconds(10800), SkyStatus.CLOUDY, PrecipitationType.RAIN, 14.5);
+
+    // when
+    Optional<WeatherAlertInfo> alertOpt = detector.detect(List.of(currentRain, futureRain));
+
+    // then
+    assertThat(alertOpt).isEmpty();
   }
 
   @Test
