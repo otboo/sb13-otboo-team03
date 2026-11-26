@@ -52,6 +52,19 @@ class ClothesAttributeDefinitionServiceTest {
     }
 
     @Test
+    void addingAnOptionPreservesConcurrentOptionsAndCanBeRetried() {
+        UUID id = UUID.randomUUID();
+        var definition = new ClothesAttributeDefinition("소재", List.of("면", "울"));
+        when(repository.findForChange(id)).thenReturn(Optional.of(definition));
+        var request = new com.otboo.team03.clothes.dto.request.ClothesAttributeDefUpdateRequest(
+                null, null, List.of("린넨"));
+        service.update(id, request);
+        service.update(id, request);
+        assertThat(definition.getSelectableValues()).containsExactly("면", "울", "린넨");
+        verifyNoInteractions(attributes);
+    }
+
+    @Test
     void invalidUpdateRequestsPreserveDefinition() {
         UUID id = UUID.randomUUID();
         var definition = new ClothesAttributeDefinition("색상", List.of("파랑", "빨강"));
