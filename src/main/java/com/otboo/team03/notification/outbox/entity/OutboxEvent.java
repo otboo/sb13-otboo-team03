@@ -1,0 +1,143 @@
+package com.otboo.team03.notification.outbox.entity;
+
+import tools.jackson.databind.JsonNode;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.time.Instant;
+import java.time.Duration;
+import java.util.Objects;
+import java.util.UUID;
+
+@Entity
+@Table(name = "outbox_events")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class OutboxEvent {
+
+    @Id
+    @Column(name = "event_id", nullable = false)
+    private UUID eventId;
+
+    @Column(name = "event_type", nullable = false, length = 100)
+    private String eventType;
+
+    @Column(name = "schema_version", nullable = false)
+    private short schemaVersion;
+
+    @Column(name = "aggregate_type", nullable = false, length = 50)
+    private String aggregateType;
+
+    @Column(name = "aggregate_id", nullable = false)
+    private UUID aggregateId;
+
+    @Column(name = "partition_key", nullable = false, length = 100)
+    private String partitionKey;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "payload", nullable = false, columnDefinition = "jsonb")
+    private JsonNode payload;
+
+    @Column(name = "occurred_at", nullable = false, updatable = false)
+    private Instant occurredAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private OutboxEventStatus status;
+
+    @Column(name = "attempt_count", nullable = false)
+    private int attemptCount;
+
+    @Column(name = "available_at", nullable = false)
+    private Instant availableAt;
+
+    @Column(name = "published_at")
+    private Instant publishedAt;
+
+    @Column(name = "last_error", columnDefinition = "TEXT")
+    private String lastError;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    public OutboxEvent(
+            UUID eventId,
+            String eventType,
+            short schemaVersion,
+            String aggregateType,
+            UUID aggregateId,
+            String partitionKey,
+            JsonNode payload,
+            Instant occurredAt,
+            Instant createdAt
+    ) {
+        this.eventId = Objects.requireNonNull(eventId, "eventId must not be null");
+        this.eventType = Objects.requireNonNull(eventType, "eventType must not be null");
+        this.schemaVersion = schemaVersion;
+        this.aggregateType = Objects.requireNonNull(aggregateType, "aggregateType must not be null");
+        this.aggregateId = Objects.requireNonNull(aggregateId, "aggregateId must not be null");
+        this.partitionKey = Objects.requireNonNull(partitionKey, "partitionKey must not be null");
+        this.payload = Objects.requireNonNull(payload, "payload must not be null");
+        this.occurredAt = Objects.requireNonNull(occurredAt, "occurredAt must not be null");
+        this.status = OutboxEventStatus.PENDING;
+        this.attemptCount = 0;
+        this.availableAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
+        this.createdAt = createdAt;
+    }
+
+    public void markPublished(Instant publishedAt) {
+        Instant validatedPublishedAt = Objects.requireNonNull(
+                publishedAt,
+                "publishedAt must not be null"
+        );
+        this.status = OutboxEventStatus.PUBLISHED;
+        this.publishedAt = validatedPublishedAt;
+        this.lastError = null;
+    }
+
+    public void recordFailure(
+            Instant failedAt,
+            String errorMessage,
+            int maxAttempts,
+            Duration retryDelay
+    ) {
+        Objects.requireNonNull(failedAt, "failedAt must not be null");
+        Objects.requireNonNull(retryDelay, "retryDelay must not be null");
+        if (maxAttempts <= 0 || retryDelay.isNegative()) {
+            throw new IllegalArgumentException("재시도 정책이 올바르지 않습니다.");
+        }
+
+        this.attemptCount++;
+        this.lastError = errorMessage;
+
+        if (this.attemptCount >= maxAttempts) {
+            this.status = OutboxEventStatus.FAILED;
+            return;
+        }
+
+        this.status = OutboxEventStatus.PENDING;
+        this.availableAt = failedAt.plus(retryDelay);
+    }
+
+    public void requeue(Instant availableAt) {
+        Objects.requireNonNull(availableAt, "availableAt must not be null");
+        if (this.status != OutboxEventStatus.FAILED) {
+            throw new IllegalStateException("FAILED 상태의 이벤트만 재처리할 수 있습니다.");
+        }
+
+        this.status = OutboxEventStatus.PENDING;
+        this.attemptCount = 0;
+        this.availableAt = availableAt;
+        this.publishedAt = null;
+        this.lastError = null;
+    }
+}

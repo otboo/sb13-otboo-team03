@@ -1,0 +1,126 @@
+package com.otboo.team03.notification.repository;
+
+import com.otboo.team03.global.config.JpaConfig;
+import com.otboo.team03.global.config.QuerydslConfig;
+import com.otboo.team03.notification.entity.Notification;
+import com.otboo.team03.notification.entity.NotificationLevel;
+import com.otboo.team03.user.entity.User;
+import com.otboo.team03.user.repository.UserRepository;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageRequest;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.util.List;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@DataJpaTest
+@Import({JpaConfig.class, QuerydslConfig.class})
+@Testcontainers
+class NotificationRepositoryTest {
+
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:17");
+
+    @Autowired
+    private NotificationRepository notificationRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Test
+    void 수신자별_알림을_커서로_조회한다() {
+        User receiver = userRepository.save(
+                new User("receiver@otboo.io", "encoded-password", "수신자")
+        );
+
+        notificationRepository.save(newNotification(receiver, "첫 번째"));
+        notificationRepository.save(newNotification(receiver, "두 번째"));
+        notificationRepository.save(newNotification(receiver, "세 번째"));
+
+        List<Notification> firstPage = notificationRepository
+                .findByReceiver_IdAndReadAtIsNullOrderByCreatedAtDescIdDesc(
+                receiver.getId(),
+                PageRequest.of(0, 2)
+        );
+
+        Notification cursorItem = firstPage.get(firstPage.size() - 1);
+        List<Notification> nextPage = notificationRepository.findPageByReceiverIdAfterCursor(
+                receiver.getId(),
+                cursorItem.getCreatedAt(),
+                cursorItem.getId(),
+                PageRequest.of(0, 2)
+        );
+
+        assertThat(firstPage).hasSize(2);
+        assertThat(nextPage).hasSize(1);
+        assertThat(nextPage).doesNotContainAnyElementsOf(firstPage);
+    }
+
+    @Test
+    void 다른_수신자의_알림은_조회하지_않는다() {
+        User receiver = userRepository.save(
+                new User("receiver@otboo.io", "encoded-password", "수신자")
+        );
+        User otherReceiver = userRepository.save(
+                new User("other@otboo.io", "encoded-password", "다른 수신자")
+        );
+        notificationRepository.save(newNotification(receiver, "수신자 알림"));
+        notificationRepository.save(newNotification(otherReceiver, "다른 알림"));
+
+        List<Notification> notifications = notificationRepository
+                .findByReceiver_IdAndReadAtIsNullOrderByCreatedAtDescIdDesc(
+                receiver.getId(),
+                PageRequest.of(0, 20)
+        );
+
+        assertThat(notifications).hasSize(1);
+        assertThat(notifications.get(0).getReceiver()).isEqualTo(receiver);
+    }
+
+    @Test
+    void 읽은_알림은_목록과_개수에서_제외한다() {
+        User receiver = userRepository.save(
+                new User("receiver-read@otboo.io", "encoded-password", "수신자")
+        );
+        Notification unreadNotification = notificationRepository.save(
+                newNotification(receiver, "읽지 않은 알림")
+        );
+        Notification readNotification = notificationRepository.save(
+                newNotification(receiver, "읽은 알림")
+        );
+        readNotification.markAsRead(java.time.Instant.parse("2026-01-01T00:00:00Z"));
+        notificationRepository.flush();
+
+        List<Notification> notifications = notificationRepository
+                .findByReceiver_IdAndReadAtIsNullOrderByCreatedAtDescIdDesc(
+                        receiver.getId(),
+                        PageRequest.of(0, 20)
+                );
+
+        assertThat(notifications).containsExactly(unreadNotification);
+        assertThat(notificationRepository.countByReceiver_IdAndReadAtIsNull(receiver.getId()))
+                .isEqualTo(1L);
+    }
+
+    private Notification newNotification(User receiver, String content) {
+        return new Notification(
+                receiver,
+                null,
+                "TEST",
+                UUID.randomUUID(),
+                "알림",
+                content,
+                NotificationLevel.INFO,
+                UUID.randomUUID()
+        );
+    }
+}

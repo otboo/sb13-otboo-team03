@@ -1,0 +1,128 @@
+package com.otboo.team03.recommendation.algorithm;
+
+import com.otboo.team03.clothes.entity.Clothes;
+import com.otboo.team03.clothes.entity.ClothesType;
+import com.otboo.team03.recommendation.entity.SleeveLength;
+import com.otboo.team03.recommendation.entity.ThicknessLevel;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+
+@Component
+@RequiredArgsConstructor
+public class BasicOutfitAlgorithm {
+
+    private static final double OUTER_TEMPERATURE_THRESHOLD = 15.0;
+    private static final double SCARF_TEMPERATURE_THRESHOLD = 15.0;
+    private static final List<ClothesType> ADDITIONAL_ITEM_TYPES = List.of(
+            ClothesType.SHOES, ClothesType.BAG, ClothesType.HAT, ClothesType.ACCESSORY);
+
+    private final ClothesSuitabilityScorer suitabilityScorer;
+
+    public List<Clothes> recommend(List<Clothes> clothes,
+                                  Map<UUID, ThicknessLevel> thicknessByClothesId,
+                                  Map<UUID, SleeveLength> sleeveByClothesId,
+                                  double temperature, int sensitivity,
+                                  Set<UUID> previousOutfitIds) {
+        double adjustedTemperature = TemperatureSensitivityPolicy.adjust(temperature, sensitivity);
+        Comparator<Clothes> byThicknessDescending = Comparator.comparingInt((Clothes item) ->
+                suitabilityScorer.scoreThickness(thicknessOf(item, thicknessByClothesId),
+                        adjustedTemperature, sensitivity)).reversed();
+        Comparator<Clothes> bySleeveDescending = Comparator.comparingInt((Clothes item) ->
+                suitabilityScorer.scoreSleeve(item.getType(), sleeveOf(item, sleeveByClothesId),
+                        adjustedTemperature, sensitivity)).reversed();
+        Comparator<Clothes> byPreviousRecommendation = Comparator.comparing((Clothes item) ->
+                (item.getType() == ClothesType.TOP || item.getType() == ClothesType.BOTTOM
+                        || item.getType() == ClothesType.DRESS || item.getType() == ClothesType.OUTER)
+                        && item.getId() != null && previousOutfitIds.contains(item.getId()));
+
+        List<Clothes> rankedClothes = clothes.stream()
+                .sorted(byThicknessDescending.thenComparing(bySleeveDescending)
+                        .thenComparing(byPreviousRecommendation))
+                .toList();
+
+        // 적합도가 같은 기본 의상·아우터는 직전 추천에 없는 후보를 우선하고, 나머지 동점은 입력 순서를 유지한다.
+        return recommendAtAdjustedTemperature(rankedClothes, clothes, adjustedTemperature, previousOutfitIds);
+    }
+
+    public List<Clothes> recommend(List<Clothes> clothes,
+                                  Map<UUID, ThicknessLevel> thicknessByClothesId,
+                                  double temperature, int sensitivity) {
+        return recommend(clothes, thicknessByClothesId, Map.of(), temperature, sensitivity, Set.of());
+    }
+
+    public List<Clothes> recommend(List<Clothes> clothes, double temperature, int sensitivity) {
+        return recommendAtAdjustedTemperature(clothes, clothes,
+                TemperatureSensitivityPolicy.adjust(temperature, sensitivity), Set.of());
+    }
+
+    public List<Clothes> recommend(List<Clothes> clothes) {
+        Optional<Clothes> top = firstOfType(clothes, ClothesType.TOP);
+        Optional<Clothes> bottom = firstOfType(clothes, ClothesType.BOTTOM);
+        Optional<Clothes> dress = firstOfType(clothes, ClothesType.DRESS);
+
+        if (top.isPresent() && bottom.isPresent()) {
+            return List.of(top.get(), bottom.get());
+        }
+
+        if (dress.isPresent()) {
+            return List.of(dress.get());
+        }
+
+        return List.of();
+    }
+
+    private Optional<Clothes> firstOfType(List<Clothes> clothes, ClothesType type) {
+        return clothes.stream().filter(item -> item.getType() == type).findFirst();
+    }
+
+    private Optional<Clothes> selectAdditionalItem(List<Clothes> clothes, ClothesType type, Set<UUID> previousOutfitIds) {
+        return clothes.stream()
+                .filter(candidate -> candidate.getType() == type)
+                .filter(candidate -> candidate.getId() == null || !previousOutfitIds.contains(candidate.getId()))
+                .findFirst()
+                .or(() -> firstOfType(clothes, type));
+    }
+
+    private ThicknessLevel thicknessOf(Clothes clothes, Map<UUID, ThicknessLevel> thicknessByClothesId) {
+        UUID clothesId = clothes.getId();
+        return clothesId == null ? ThicknessLevel.UNKNOWN : thicknessByClothesId.getOrDefault(clothesId, ThicknessLevel.UNKNOWN);
+    }
+
+    private SleeveLength sleeveOf(Clothes clothes, Map<UUID, SleeveLength> sleeveByClothesId) {
+        UUID clothesId = clothes.getId();
+        return clothesId == null ? SleeveLength.UNKNOWN : sleeveByClothesId.getOrDefault(clothesId, SleeveLength.UNKNOWN);
+    }
+
+    private List<Clothes> recommendAtAdjustedTemperature(List<Clothes> rankedClothes, List<Clothes> originalClothes,
+                                                         double adjustedTemperature, Set<UUID> previousOutfitIds) {
+        List<Clothes> basicOutfit = recommend(rankedClothes);
+        if (basicOutfit.isEmpty()) {
+            return basicOutfit;
+        }
+
+        List<Clothes> outfit = new ArrayList<>(basicOutfit);
+        if (adjustedTemperature < OUTER_TEMPERATURE_THRESHOLD) {
+            firstOfType(rankedClothes, ClothesType.OUTER).ifPresent(outfit::add);
+        }
+
+        for (ClothesType type : ADDITIONAL_ITEM_TYPES) {
+            Optional<Clothes> item = selectAdditionalItem(originalClothes, type, previousOutfitIds);
+            item.ifPresent(outfit::add);
+            if (type == ClothesType.SHOES && item.isPresent()) {
+                selectAdditionalItem(originalClothes, ClothesType.SOCKS, previousOutfitIds).ifPresent(outfit::add);
+            }
+        }
+        if (adjustedTemperature < SCARF_TEMPERATURE_THRESHOLD) {
+            selectAdditionalItem(originalClothes, ClothesType.SCARF, previousOutfitIds).ifPresent(outfit::add);
+        }
+        return List.copyOf(outfit);
+    }
+}

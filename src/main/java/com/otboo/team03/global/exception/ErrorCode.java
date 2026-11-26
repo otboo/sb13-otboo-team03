@@ -1,0 +1,62 @@
+package com.otboo.team03.global.exception;
+
+import lombok.Getter;
+import org.springframework.http.HttpStatus;
+
+@Getter
+public enum ErrorCode {
+
+    // user
+    DUPLICATE_EMAIL(HttpStatus.BAD_REQUEST, "이미 사용 중인 이메일입니다."),
+    NOT_FOUND_USER(HttpStatus.NOT_FOUND, "사용자가 존재하지 않습니다."),
+    LAST_ADMIN_ROLE_CHANGE_FORBIDDEN(HttpStatus.CONFLICT, "마지막 관리자의 권한은 변경할 수 없습니다."),
+    PASSWORD_RESET_RATE_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "비밀번호 초기화 요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요."),
+
+    // auth
+    AUTHENTICATION_REQUIRED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
+    AUTHENTICATION_FAILED(HttpStatus.UNAUTHORIZED, "인증에 실패했습니다."),
+    AUTHENTICATION_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "인증 서비스를 일시적으로 이용할 수 없습니다."),
+    ACCESS_DENIED(HttpStatus.FORBIDDEN, "접근 권한이 없습니다."),
+
+    // jwt
+    INVALID_JWT(HttpStatus.UNAUTHORIZED, "유효하지 않은 JWT입니다."),
+
+    // profile
+    NOT_FOUND_PROFILE(HttpStatus.NOT_FOUND, "프로필이 존재하지 않습니다."),
+
+    // weather
+    NOT_FOUND_WEATHER(HttpStatus.NOT_FOUND, "날씨 정보가 존재하지 않습니다."),
+
+    // common
+    NOT_FOUND_RESOURCE(HttpStatus.NOT_FOUND, "요청한 리소스가 존재하지 않습니다."),
+    INVALID_INPUT_VALUE(HttpStatus.BAD_REQUEST, "입력값이 올바르지 않습니다."),
+    INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 내부 오류가 발생했습니다."),
+
+    //clothes
+    INVALID_PURCHASE_URL(HttpStatus.BAD_REQUEST, "올바른 HTTPS 구매 링크를 입력해 주세요."),
+    UNSUPPORTED_SHOPPING_SITE(HttpStatus.BAD_REQUEST, "지원하지 않는 쇼핑몰입니다."),
+    CLOTHES_EXTRACTION_FAILED(HttpStatus.BAD_REQUEST, "이 사이트는 자동 불러오기가 안 돼요. 직접 입력해 주세요"),
+    NOT_FOUND_CLOTHES(HttpStatus.NOT_FOUND,"의상이 존재하지 않습니다."),
+
+    //attribute
+    DUPLICATE_ATTRIBUTE(HttpStatus.BAD_REQUEST,"이미 정의된 속성입니다."),
+    NOT_FOUND_ATTRIBUTE_DEFINITION(HttpStatus.NOT_FOUND,"속성 정의 없음"),
+    INVALID_CLOTHES_ATTRIBUTE_VALUE(HttpStatus.BAD_REQUEST, "허용되지 않은 의상 속성 값입니다."),
+    // 정의 수정 시 기존 의상에서 사용하는 선택값 제거를 거부한다.
+    ATTRIBUTE_VALUE_IN_USE(HttpStatus.BAD_REQUEST, "의상에서 사용 중인 선택값은 제거할 수 없습니다."),
+    // 정의 삭제 시 의상 속성의 참조가 남아 있으면 거부한다.
+    ATTRIBUTE_DEFINITION_IN_USE(HttpStatus.BAD_REQUEST, "의상에서 사용 중인 속성 정의는 삭제할 수 없습니다."),
+    // notification
+    NOT_FOUND_NOTIFICATION(HttpStatus.NOT_FOUND, "알림이 존재하지 않습니다."),
+    NOT_FOUND_OUTBOX_EVENT(HttpStatus.NOT_FOUND, "아웃박스 이벤트가 존재하지 않습니다."),
+    OUTBOX_EVENT_NOT_FAILED(HttpStatus.CONFLICT, "실패 상태의 아웃박스 이벤트만 재처리할 수 있습니다.");
+
+    private final HttpStatus httpStatus;
+    private final String message;
+
+    ErrorCode(HttpStatus httpStatus, String message) {
+        this.httpStatus = httpStatus;
+        this.message = message;
+    }
+
+}

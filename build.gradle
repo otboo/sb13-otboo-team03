@@ -1,5 +1,7 @@
 plugins {
     id 'java'
+    // 테스트 중 실행된 코드의 범위를 측정한다.
+    id 'jacoco'
     id 'org.springframework.boot' version '4.1.2'
     id 'io.spring.dependency-management' version '1.1.7'
 }
@@ -21,9 +23,18 @@ repositories {
 dependencies {
         // Web
         implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+        implementation 'io.swagger.core.v3:swagger-annotations-jakarta:2.2.52'
+        implementation 'org.springframework.boot:spring-boot-starter-websocket'
 
         // JPA
         implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+        // Spring Batch
+        implementation 'org.springframework.boot:spring-boot-starter-batch'
+        testImplementation 'org.springframework.batch:spring-batch-test'
+
+        // Actuator:
+        implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
         // DB
         runtimeOnly 'org.postgresql:postgresql'
@@ -31,6 +42,11 @@ dependencies {
         // Flyway
         implementation 'org.springframework.boot:spring-boot-starter-flyway'
         runtimeOnly 'org.flywaydb:flyway-database-postgresql'
+        // AWS SDK 모듈 버전을 통일한다.
+        implementation platform('software.amazon.awssdk:bom:2.57.8')
+
+        // S3 업로드·삭제 및 서명 URL 생성 기능
+        implementation 'software.amazon.awssdk:s3'
 
         // Validation
         implementation 'org.springframework.boot:spring-boot-starter-validation'
@@ -53,11 +69,72 @@ dependencies {
         testAnnotationProcessor 'org.projectlombok:lombok'
 
         // Testcontainers
+        testImplementation platform('org.testcontainers:testcontainers-bom:2.0.5')
         testImplementation 'org.springframework.boot:spring-boot-testcontainers'
         testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
         testImplementation 'org.testcontainers:testcontainers-postgresql'
+        testImplementation 'org.testcontainers:testcontainers-kafka'
+
+        // Security
+        implementation 'org.springframework.boot:spring-boot-starter-security'
+        testImplementation 'org.springframework.security:spring-security-test'
+
+        //oauth
+        implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-client'
+        implementation 'org.springframework.session:spring-session-data-redis'
+
+        // JWT
+        implementation 'com.nimbusds:nimbus-jose-jwt:10.10'
+
+        // Redis 설정
+        implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+        // 재시도 관련
+        implementation 'org.springframework.retry:spring-retry:2.0.12'
+        implementation 'org.springframework.boot:spring-boot-starter-aspectj'
+
+        // 구매 링크 HTML 분석
+        implementation 'org.jsoup:jsoup:1.18.3'
+
+        // Mail
+        implementation 'org.springframework.boot:spring-boot-starter-mail'
+
+        // Cache
+        implementation 'org.springframework.boot:spring-boot-starter-cache'
+
+        // Kafka
+        implementation 'org.springframework.boot:spring-boot-starter-kafka'
 }
 
 tasks.named('test') {
     useJUnitPlatform()
+    // 테스트 실행 후 HTML/XML 커버리지 리포트를 만든다.
+    finalizedBy tasks.named('jacocoTestReport')
+}
+
+jacoco {
+    toolVersion = '0.8.14'
+}
+
+tasks.named('jacocoTestReport') {
+    dependsOn tasks.named('test')
+    reports {
+        // HTML은 사람이 확인하는 용도, XML은 CI 등 도구가 읽는 용도다.
+        html.required = true
+        xml.required = true
+    }
+}
+
+tasks.named('jacocoTestCoverageVerification') {
+    dependsOn tasks.named('test')
+
+    violationRules {
+        rule {
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+        }
+    }
 }

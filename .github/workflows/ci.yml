@@ -3,6 +3,8 @@ name: CI
 on:
   pull_request:
     branches: [main, dev]
+  push:
+    branches: [main, dev]
   workflow_dispatch:
 
 permissions:
@@ -10,7 +12,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -32,11 +34,26 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
 
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/otboo_test
       SPRING_DATASOURCE_USERNAME: otboo_test
       SPRING_DATASOURCE_PASSWORD: ci_test_password
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      SPRING_KAFKA_LISTENER_AUTO_STARTUP: false
+
+      # JWT 테스트 환경 설정
+      JWT_SECRET: otboo-ci-test-secret-key-12345678901234567890
 
     steps:
       - name: Checkout
@@ -51,8 +68,15 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
 
-      - name: Build and test
-        run: bash ./gradlew clean build --no-daemon
+      - name: Build, test and verify coverage
+        run: bash ./gradlew clean build jacocoTestReport jacocoTestCoverageVerification --no-daemon
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./build/reports/jacoco/test/jacocoTestReport.xml
+          fail_ci_if_error: true
 
       - name: Upload test reports
         if: always()
@@ -64,3 +88,110 @@ jobs:
             build/test-results/test/
           if-no-files-found: ignore
           retention-days: 7
+
+  deploy:
+    name: Deploy main to ECS
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    permissions:
+      contents: read
+      id-token: write
+
+    concurrency:
+      group: ecs-dev-deploy
+      cancel-in-progress: false
+
+    env:
+      AWS_REGION: ap-northeast-2
+      ECR_REPOSITORY: otboo-dev
+      ECS_CLUSTER: otboo-dev-cluster
+      ECS_SERVICE: otboo-dev-service
+      CONTAINER_NAME: otboo-app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA"
+          docker build --platform linux/amd64 -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+          echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Download current service task definition
+        run: |
+          TASK_DEFINITION_ARN=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].taskDefinition' \
+            --output text)
+
+          if [ -z "$TASK_DEFINITION_ARN" ] || [ "$TASK_DEFINITION_ARN" = "None" ]; then
+            echo "Could not find the service task definition."
+            exit 1
+          fi
+
+          aws ecs describe-task-definition \
+            --task-definition "$TASK_DEFINITION_ARN" \
+            --query 'taskDefinition' \
+            --output json > task-definition-raw.json
+
+          jq 'del(.taskDefinitionArn, .revision, .status,
+            .requiresAttributes, .compatibilities, .registeredAt,
+            .registeredBy, .deregisteredAt)' \
+            task-definition-raw.json > task-definition.json
+
+      - name: Render task definition
+        id: task
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.image.outputs.uri }}
+
+      - name: Deploy to ECS
+        id: deployment
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+          wait-for-minutes: 30
+
+      - name: Verify deployed revision
+        env:
+          EXPECTED_TASK_DEFINITION: ${{ steps.deployment.outputs.task-definition-arn }}
+        run: |
+          aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --output json > deployed-service.json
+
+          jq -e --arg expected "$EXPECTED_TASK_DEFINITION" '
+            (.failures | length) == 0 and
+            (.services | length) == 1 and
+            (.services[0] |
+              .taskDefinition == $expected and
+              .desiredCount > 0 and
+              .runningCount == .desiredCount and
+              .pendingCount == 0)
+          ' deployed-service.json > /dev/null

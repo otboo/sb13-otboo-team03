@@ -1,0 +1,176 @@
+package com.otboo.team03.directmessage.service;
+
+import com.otboo.team03.directmessage.dto.response.DirectMessageDto;
+import com.otboo.team03.directmessage.entity.DirectMessage;
+import com.otboo.team03.directmessage.repository.DirectMessageRepository;
+import com.otboo.team03.directmessage.redis.DirectMessageRedisPublisher;
+import com.otboo.team03.global.dto.CursorResponse;
+import com.otboo.team03.global.exception.ErrorCode;
+import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.notification.entity.NotificationLevel;
+import com.otboo.team03.notification.event.NotificationEvent;
+import com.otboo.team03.notification.event.NotificationEventType;
+import com.otboo.team03.notification.outbox.service.OutboxEventPublisher;
+import com.otboo.team03.user.entity.User;
+import com.otboo.team03.user.exception.UserNotFoundException;
+import com.otboo.team03.user.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class DirectMessageService {
+
+    private static final String SORT_BY_CREATED_AT = "createdAt";
+    private static final String SORT_DIRECTION_DESCENDING = "DESCENDING";
+
+    private final DirectMessageRepository directMessageRepository;
+    private final UserRepository userRepository;
+    private final OutboxEventPublisher outboxEventPublisher;
+    private final DirectMessageRedisPublisher directMessageRedisPublisher;
+
+    @Transactional
+    public DirectMessageDto send(UUID senderId, UUID receiverId, String content) {
+        validateSendRequest(senderId, receiverId, content);
+
+        User sender = userRepository.findById(senderId)
+                .orElseThrow(UserNotFoundException::new);
+        User receiver = userRepository.findById(receiverId)
+                .orElseThrow(UserNotFoundException::new);
+
+        DirectMessage saved = directMessageRepository.save(
+                new DirectMessage(sender, receiver, content)
+        );
+
+        outboxEventPublisher.publish(
+                new NotificationEvent(
+                        UUID.randomUUID(),
+                        NotificationEventType.DIRECT_MESSAGE_RECEIVED,
+                        NotificationEvent.CURRENT_SCHEMA_VERSION,
+                        Instant.now(),
+                        saved.getId(),
+                        saved.getReceiver().getId(),
+                        saved.getSender().getId(),
+                        saved.getId(),
+                        "새 메시지",
+                        "새로운 메시지가 도착했습니다.",
+                        NotificationLevel.INFO
+                ),
+                "DIRECT_MESSAGE",
+                saved.getDmKey()
+        );
+        DirectMessageDto response = DirectMessageDto.from(saved);
+        publishAfterCommit(response);
+        return response;
+    }
+
+    private void publishAfterCommit(DirectMessageDto directMessage) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            publishToRedis(directMessage);
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                publishToRedis(directMessage);
+            }
+        });
+    }
+
+    private void publishToRedis(DirectMessageDto directMessage) {
+        try {
+            directMessageRedisPublisher.publish(directMessage);
+        } catch (RuntimeException exception) {
+            log.error("Redis DM 발행에 실패했습니다. directMessageId={}", directMessage.id(), exception);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public CursorResponse<DirectMessageDto> getMessages(
+            UUID requesterId,
+            UUID otherUserId,
+            Instant cursor,
+            UUID idAfter,
+            int limit
+    ) {
+        validateListRequest(requesterId, otherUserId, cursor, idAfter, limit);
+
+        String dmKey = DirectMessage.createDmKey(requesterId, otherUserId);
+        PageRequest pageRequest = PageRequest.of(0, limit + 1);
+        List<DirectMessage> messages = cursor == null
+                ? directMessageRepository.findByDmKeyOrderByCreatedAtDescIdDesc(
+                dmKey,
+                pageRequest
+        )
+                : directMessageRepository.findPageByDmKeyAfterCursor(
+                dmKey,
+                cursor,
+                idAfter,
+                pageRequest
+        );
+
+        boolean hasNext = messages.size() > limit;
+        List<DirectMessage> page = hasNext
+                ? messages.subList(0, limit)
+                : messages;
+        List<DirectMessageDto> data = page.stream()
+                .map(DirectMessageDto::from)
+                .toList();
+
+        DirectMessage lastMessage = page.isEmpty()
+                ? null
+                : page.get(page.size() - 1);
+
+        return new CursorResponse<>(
+                data,
+                hasNext && lastMessage != null
+                        ? lastMessage.getCreatedAt().toString()
+                        : null,
+                hasNext && lastMessage != null
+                        ? lastMessage.getId()
+                        : null,
+                hasNext,
+                directMessageRepository.countByDmKey(dmKey),
+                SORT_BY_CREATED_AT,
+                SORT_DIRECTION_DESCENDING
+        );
+    }
+
+    private void validateSendRequest(UUID senderId, UUID receiverId, String content) {
+        if (senderId == null
+                || receiverId == null
+                || senderId.equals(receiverId)
+                || content == null
+                || content.isBlank()
+                || content.length() > 1_000) {
+            throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+    }
+
+    private void validateListRequest(
+            UUID requesterId,
+            UUID otherUserId,
+            Instant cursor,
+            UUID idAfter,
+            int limit
+    ) {
+        if (requesterId == null
+                || otherUserId == null
+                || requesterId.equals(otherUserId)
+                || limit <= 0
+                || (cursor == null) != (idAfter == null)) {
+            throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+    }
+}
