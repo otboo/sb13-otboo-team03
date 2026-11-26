@@ -248,7 +248,7 @@ class NotificationPipelineIntegrationTest {
 
         while (System.nanoTime() < deadline) {
             List<Notification> notifications = notificationRepository
-                    .findByReceiver_IdOrderByCreatedAtDescIdDesc(
+                    .findByReceiver_IdAndReadAtIsNullOrderByCreatedAtDescIdDesc(
                             receiverId,
                             PageRequest.of(0, 20)
                     );

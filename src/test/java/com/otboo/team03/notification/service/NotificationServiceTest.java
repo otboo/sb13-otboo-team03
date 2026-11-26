@@ -53,9 +53,11 @@ class NotificationServiceTest {
                 UUID.randomUUID()
         );
 
-        when(notificationRepository.findByReceiver_IdOrderByCreatedAtDescIdDesc(eq(receiverId), any(Pageable.class)))
+        when(notificationRepository.findByReceiver_IdAndReadAtIsNullOrderByCreatedAtDescIdDesc(
+                eq(receiverId), any(Pageable.class)
+        ))
                 .thenReturn(List.of(notification));
-        when(notificationRepository.countByReceiver_Id(receiverId)).thenReturn(1L);
+        when(notificationRepository.countByReceiver_IdAndReadAtIsNull(receiverId)).thenReturn(1L);
 
         var response = notificationService.getNotifications(receiverId, null, null, 20);
 
@@ -85,7 +87,7 @@ class NotificationServiceTest {
         when(notificationRepository.findPageByReceiverIdAfterCursor(
                 eq(receiverId), eq(cursor), eq(idAfter), any(Pageable.class)
         )).thenReturn(List.of(notification));
-        when(notificationRepository.countByReceiver_Id(receiverId)).thenReturn(1L);
+        when(notificationRepository.countByReceiver_IdAndReadAtIsNull(receiverId)).thenReturn(1L);
 
         var response = notificationService.getNotifications(receiverId, cursor, idAfter, 20);
 
@@ -100,10 +102,10 @@ class NotificationServiceTest {
     void 알림이_없으면_빈_목록을_반환한다() {
         UUID receiverId = UUID.randomUUID();
 
-        when(notificationRepository.findByReceiver_IdOrderByCreatedAtDescIdDesc(
+        when(notificationRepository.findByReceiver_IdAndReadAtIsNullOrderByCreatedAtDescIdDesc(
                 eq(receiverId), any(Pageable.class)
         )).thenReturn(List.of());
-        when(notificationRepository.countByReceiver_Id(receiverId)).thenReturn(0L);
+        when(notificationRepository.countByReceiver_IdAndReadAtIsNull(receiverId)).thenReturn(0L);
 
         var response = notificationService.getNotifications(receiverId, null, null, 20);
 
@@ -131,10 +133,10 @@ class NotificationServiceTest {
         when(firstNotification.getCreatedAt()).thenReturn(lastCreatedAt);
         when(firstNotification.getId()).thenReturn(lastNotificationId);
 
-        when(notificationRepository.findByReceiver_IdOrderByCreatedAtDescIdDesc(
+        when(notificationRepository.findByReceiver_IdAndReadAtIsNullOrderByCreatedAtDescIdDesc(
                 eq(receiverId), any(Pageable.class)
         )).thenReturn(List.of(firstNotification, additionalNotification));
-        when(notificationRepository.countByReceiver_Id(receiverId)).thenReturn(2L);
+        when(notificationRepository.countByReceiver_IdAndReadAtIsNull(receiverId)).thenReturn(2L);
 
         var response = notificationService.getNotifications(receiverId, null, null, 1);
 
