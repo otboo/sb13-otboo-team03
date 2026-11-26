@@ -1,6 +1,5 @@
 package com.otboo.team03.notification.service;
 
-import com.otboo.team03.notification.dto.response.NotificationDto;
 import com.otboo.team03.notification.entity.Notification;
 import com.otboo.team03.notification.entity.NotificationLevel;
 import com.otboo.team03.notification.exception.NotificationNotFoundException;
@@ -229,15 +228,16 @@ class NotificationServiceTest {
                 eq(receiverId), eq(lastEventCreatedAt), eq(lastEventId), any(Pageable.class)
         )).thenReturn(List.of(missedNotification));
 
-        List<NotificationDto> result = notificationService.getNotificationsAfterEvent(receiverId, lastEventId);
+        NotificationReplayResult result = notificationService.getNotificationsAfterEvent(receiverId, lastEventId);
 
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).title()).isEqualTo("새 알림");
+        assertThat(result.notifications()).hasSize(1);
+        assertThat(result.notifications().get(0).title()).isEqualTo("새 알림");
+        assertThat(result.hasMore()).isFalse();
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
         verify(notificationRepository).findByReceiverIdAfterEvent(
                 eq(receiverId), eq(lastEventCreatedAt), eq(lastEventId), pageableCaptor.capture()
         );
-        assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(100);
+        assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(101);
     }
 
     @Test
@@ -248,9 +248,45 @@ class NotificationServiceTest {
         when(notificationRepository.findByIdAndReceiver_Id(lastEventId, receiverId))
                 .thenReturn(Optional.empty());
 
-        List<NotificationDto> result = notificationService.getNotificationsAfterEvent(receiverId, lastEventId);
+        NotificationReplayResult result = notificationService.getNotificationsAfterEvent(receiverId, lastEventId);
 
-        assertThat(result).isEmpty();
+        assertThat(result.notifications()).isEmpty();
+        assertThat(result.hasMore()).isFalse();
         verify(notificationRepository).findByIdAndReceiver_Id(lastEventId, receiverId);
+    }
+
+    @Test
+    void 복구_조회_상한을_초과하면_초과_여부를_반환한다() {
+        UUID receiverId = UUID.randomUUID();
+        UUID lastEventId = UUID.randomUUID();
+        Instant lastEventCreatedAt = Instant.parse("2026-01-01T00:00:00Z");
+        Notification lastEvent = mock(Notification.class);
+        User receiver = mock(User.class);
+        List<Notification> notifications = new java.util.ArrayList<>();
+
+        when(lastEvent.getId()).thenReturn(lastEventId);
+        when(lastEvent.getCreatedAt()).thenReturn(lastEventCreatedAt);
+        when(notificationRepository.findByIdAndReceiver_Id(lastEventId, receiverId))
+                .thenReturn(Optional.of(lastEvent));
+        when(notificationRepository.findByReceiverIdAfterEvent(
+                eq(receiverId), eq(lastEventCreatedAt), eq(lastEventId), any(Pageable.class)
+        )).thenAnswer(invocation -> {
+            for (int index = 0; index < 100; index++) {
+                Notification notification = mock(Notification.class);
+                when(notification.getId()).thenReturn(UUID.randomUUID());
+                when(notification.getReceiver()).thenReturn(receiver);
+                when(notification.getTitle()).thenReturn("알림 " + index);
+                when(notification.getContent()).thenReturn("내용 " + index);
+                when(notification.getLevel()).thenReturn(NotificationLevel.INFO);
+                notifications.add(notification);
+            }
+            notifications.add(mock(Notification.class));
+            return notifications;
+        });
+
+        NotificationReplayResult result = notificationService.getNotificationsAfterEvent(receiverId, lastEventId);
+
+        assertThat(result.notifications()).hasSize(100);
+        assertThat(result.hasMore()).isTrue();
     }
 }

@@ -9,7 +9,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,8 +22,11 @@ public class SseConnectionManager {
 
     private static final long SSE_TIMEOUT = 30 * 60 * 1000L;
     private static final String NOTIFICATION_EVENT_NAME = "notifications";
+    private static final String NOTIFICATION_SYNC_REQUIRED_EVENT_NAME = "notifications-sync-required";
+    private static final String NOTIFICATION_SYNC_REQUIRED_REASON = "REPLAY_LIMIT_EXCEEDED";
 
     private final ConcurrentHashMap<UUID, Set<SseEmitter>> emitters = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<SseEmitter, ReplayState> replayStates = new ConcurrentHashMap<>();
     private final NotificationMetrics metrics;
 
     public SseConnectionManager() {
@@ -34,14 +39,8 @@ public class SseConnectionManager {
     }
 
     public SseEmitter connect(UUID receiverId) {
-        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT);
-        Runnable cleanup = () -> remove(receiverId, emitter);
-        emitter.onCompletion(cleanup);
-        emitter.onTimeout(cleanup);
-        emitter.onError(ignored -> cleanup.run());
-
+        SseEmitter emitter = createEmitter(receiverId);
         register(receiverId, emitter);
-
         return emitter;
     }
 
@@ -49,6 +48,50 @@ public class SseConnectionManager {
         SseEmitter emitter = connect(receiverId);
         sendMissedNotifications(receiverId, emitter, missedNotifications);
         return emitter;
+    }
+
+    public SseEmitter connectForReplay(UUID receiverId) {
+        SseEmitter emitter = createEmitter(receiverId);
+        registerForReplay(receiverId, emitter);
+        return emitter;
+    }
+
+    void registerForReplay(UUID receiverId, SseEmitter emitter) {
+        replayStates.put(emitter, new ReplayState());
+        register(receiverId, emitter);
+    }
+
+    public void completeReplay(
+            UUID receiverId,
+            SseEmitter emitter,
+            List<NotificationDto> missedNotifications,
+            boolean hasMore
+    ) {
+        ReplayState replayState = replayStates.get(emitter);
+        if (replayState == null) {
+            sendMissedNotifications(receiverId, emitter, missedNotifications);
+            return;
+        }
+
+        synchronized (replayState) {
+            Map<UUID, NotificationDto> notificationsById = new LinkedHashMap<>();
+            missedNotifications.forEach(notification ->
+                    notificationsById.putIfAbsent(notification.id(), notification)
+            );
+            replayState.bufferedNotifications.forEach(notificationsById::putIfAbsent);
+
+            for (NotificationDto notification : notificationsById.values()) {
+                if (!send(receiverId, emitter, notification)) {
+                    replayStates.remove(emitter, replayState);
+                    return;
+                }
+            }
+
+            if (hasMore && sendSyncRequired(receiverId, emitter)) {
+                log.info("SSE 복구 상한을 초과해 전체 동기화가 필요합니다. receiverId={}", receiverId);
+            }
+            replayStates.remove(emitter, replayState);
+        }
     }
 
     void sendMissedNotifications(
@@ -82,8 +125,29 @@ public class SseConnectionManager {
         }
 
         for (SseEmitter emitter : receiverEmitters) {
-            send(receiverId, emitter, notification);
+            ReplayState replayState = replayStates.get(emitter);
+            if (replayState == null) {
+                send(receiverId, emitter, notification);
+                continue;
+            }
+
+            synchronized (replayState) {
+                if (replayStates.containsKey(emitter)) {
+                    replayState.bufferedNotifications.putIfAbsent(notification.id(), notification);
+                } else {
+                    send(receiverId, emitter, notification);
+                }
+            }
         }
+    }
+
+    private SseEmitter createEmitter(UUID receiverId) {
+        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT);
+        Runnable cleanup = () -> remove(receiverId, emitter);
+        emitter.onCompletion(cleanup);
+        emitter.onTimeout(cleanup);
+        emitter.onError(ignored -> cleanup.run());
+        return emitter;
     }
 
     private boolean send(UUID receiverId, SseEmitter emitter, NotificationDto notification) {
@@ -101,6 +165,24 @@ public class SseConnectionManager {
                     "SSE 연결이 종료된 상태입니다.");
         }
         return false;
+    }
+
+    private boolean sendSyncRequired(UUID receiverId, SseEmitter emitter) {
+        try {
+            emitter.send(SseEmitter.event()
+                    .name(NOTIFICATION_SYNC_REQUIRED_EVENT_NAME)
+                    .data(Map.of("reason", NOTIFICATION_SYNC_REQUIRED_REASON)));
+            return true;
+        } catch (IOException exception) {
+            log.warn("SSE 전체 동기화 필요 신호 전송에 실패했습니다.", exception);
+            remove(receiverId, emitter);
+            return false;
+        } catch (IllegalStateException exception) {
+            log.warn("SSE 전체 동기화 필요 신호 전송 중 연결이 종료되었습니다.", exception);
+            remove(receiverId, emitter);
+            emitter.completeWithError(exception);
+            return false;
+        }
     }
 
     @Scheduled(fixedDelayString = "${scheduler.sse-heartbeat.fixed-delay:PT15S}")
@@ -142,6 +224,7 @@ public class SseConnectionManager {
     }
 
     private void remove(UUID receiverId, SseEmitter emitter) {
+        replayStates.remove(emitter);
         emitters.computeIfPresent(receiverId, (id, connections) -> {
             if (connections.remove(emitter) && metrics != null) {
                 metrics.sseDisconnected();
@@ -150,7 +233,7 @@ public class SseConnectionManager {
         });
     }
 
-    void disconnect(UUID receiverId, SseEmitter emitter) {
+    public void disconnect(UUID receiverId, SseEmitter emitter) {
         remove(receiverId, emitter);
         emitter.complete();
     }
@@ -170,5 +253,9 @@ public class SseConnectionManager {
     int connectionCount(UUID receiverId) {
         Set<SseEmitter> receiverEmitters = emitters.get(receiverId);
         return receiverEmitters == null ? 0 : receiverEmitters.size();
+    }
+
+    private static final class ReplayState {
+        private final Map<UUID, NotificationDto> bufferedNotifications = new LinkedHashMap<>();
     }
 }
