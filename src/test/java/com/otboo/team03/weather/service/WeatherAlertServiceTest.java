@@ -2,6 +2,7 @@ package com.otboo.team03.weather.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -154,6 +155,38 @@ class WeatherAlertServiceTest {
 
     // then
     verify(outboxEventPublisher, never()).publish(any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("거점 프로필 목록이 null인 경우 알림을 발행하지 않고 안전하게 종료된다")
+  void checkAndSendAlerts_whenProfilesNull_doesNotPublish() {
+    // given
+    given(weatherChangeDetector.detect(any())).willReturn(Optional.of(new WeatherAlertInfo("비 예보", "우산 챙기세요")));
+    given(profileRepository.findAllByLatitudeAndLongitude(anyDouble(), anyDouble())).willReturn(null);
+
+    // when
+    weatherAlertService.checkAndSendAlerts(37.5, 127.0, List.of(createWeather(37.5, 127.0)));
+
+    // then
+    verify(outboxEventPublisher, never()).publish(any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("프로필의 userId가 null인 경우 해당 프로필은 건너뛰고 정상 유저에게만 알림을 발행한다")
+  void checkAndSendAlerts_whenProfileUserIdNull_skipsAndPublishesOthers() {
+    // given
+    UUID validUserId = UUID.randomUUID();
+    Profile nullUserProfile = new Profile(null, null, null, null, 37.5, 127.0, null, List.of("서울"));
+    Profile validProfile = createProfileWithUser(validUserId, 37.5, 127.0);
+    given(weatherChangeDetector.detect(any())).willReturn(Optional.of(new WeatherAlertInfo("비 예보", "우산 챙기세요")));
+    given(profileRepository.findAllByLatitudeAndLongitude(anyDouble(), anyDouble()))
+        .willReturn(List.of(nullUserProfile, validProfile));
+
+    // when
+    weatherAlertService.checkAndSendAlerts(37.5, 127.0, List.of(createWeather(37.5, 127.0)));
+
+    // then
+    verify(outboxEventPublisher, times(1)).publish(any(), any(), eq(validUserId.toString()));
   }
 
 
