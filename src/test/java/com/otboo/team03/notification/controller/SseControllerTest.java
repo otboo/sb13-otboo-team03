@@ -47,7 +47,7 @@ class SseControllerTest {
         SseEmitter emitter = new SseEmitter();
         when(sseConnectionManager.connect(receiverId)).thenReturn(emitter);
 
-        SseEmitter result = sseController.connect(authentication, null, null);
+        SseEmitter result = sseController.connect(authentication, null, null, null);
 
         assertThat(result).isSameAs(emitter);
         verify(sseConnectionManager).connect(receiverId);
@@ -64,7 +64,7 @@ class SseControllerTest {
                 .thenReturn(missedNotifications);
         when(sseConnectionManager.connect(receiverId, missedNotifications)).thenReturn(emitter);
 
-        SseEmitter result = sseController.connect(authentication, null, lastEventId);
+        SseEmitter result = sseController.connect(authentication, null, lastEventId, null);
 
         assertThat(result).isSameAs(emitter);
         verify(notificationService).getNotificationsAfterEvent(receiverId, lastEventId);
@@ -72,8 +72,44 @@ class SseControllerTest {
     }
 
     @Test
+    void 브라우저가_보내는_소문자_lastEventId로_누락된_알림을_조회한다() {
+        UUID receiverId = UUID.randomUUID();
+        UUID lastEventId = UUID.randomUUID();
+        Authentication authentication = authentication(receiverId);
+        SseEmitter emitter = new SseEmitter();
+        List<NotificationDto> missedNotifications = List.of();
+        when(notificationService.getNotificationsAfterEvent(receiverId, lastEventId))
+                .thenReturn(missedNotifications);
+        when(sseConnectionManager.connect(receiverId, missedNotifications)).thenReturn(emitter);
+
+        SseEmitter result = sseController.connect(authentication, lastEventId, null, null);
+
+        assertThat(result).isSameAs(emitter);
+        verify(notificationService).getNotificationsAfterEvent(receiverId, lastEventId);
+        verify(sseConnectionManager).connect(receiverId, missedNotifications);
+    }
+
+    @Test
+    void SSE_헤더가_쿼리_파라미터보다_우선한다() {
+        UUID receiverId = UUID.randomUUID();
+        UUID queryEventId = UUID.randomUUID();
+        UUID headerEventId = UUID.randomUUID();
+        Authentication authentication = authentication(receiverId);
+        SseEmitter emitter = new SseEmitter();
+        List<NotificationDto> missedNotifications = List.of();
+        when(notificationService.getNotificationsAfterEvent(receiverId, headerEventId))
+                .thenReturn(missedNotifications);
+        when(sseConnectionManager.connect(receiverId, missedNotifications)).thenReturn(emitter);
+
+        SseEmitter result = sseController.connect(authentication, queryEventId, null, headerEventId);
+
+        assertThat(result).isSameAs(emitter);
+        verify(notificationService).getNotificationsAfterEvent(receiverId, headerEventId);
+    }
+
+    @Test
     void 인증되지_않은_사용자는_SSE_연결을_생성할_수_없다() {
-        assertThatThrownBy(() -> sseController.connect(null, null, null))
+        assertThatThrownBy(() -> sseController.connect(null, null, null, null))
                 .isInstanceOfSatisfying(OtbooException.class, exception ->
                         assertThat(exception.getErrorCode())
                                 .isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED)
@@ -86,7 +122,7 @@ class SseControllerTest {
         Authentication authentication = mock(Authentication.class);
         when(authentication.isAuthenticated()).thenReturn(false);
 
-        assertThatThrownBy(() -> sseController.connect(authentication, null, null))
+        assertThatThrownBy(() -> sseController.connect(authentication, null, null, null))
                 .isInstanceOfSatisfying(OtbooException.class, exception ->
                         assertThat(exception.getErrorCode())
                                 .isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED)
@@ -100,7 +136,7 @@ class SseControllerTest {
         when(authentication.isAuthenticated()).thenReturn(true);
         when(authentication.getPrincipal()).thenReturn("wrong-principal");
 
-        assertThatThrownBy(() -> sseController.connect(authentication, null, null))
+        assertThatThrownBy(() -> sseController.connect(authentication, null, null, null))
                 .isInstanceOfSatisfying(OtbooException.class, exception ->
                         assertThat(exception.getErrorCode())
                                 .isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED)
