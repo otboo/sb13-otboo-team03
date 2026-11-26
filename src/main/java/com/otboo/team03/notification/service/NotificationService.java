@@ -41,7 +41,7 @@ public class NotificationService {
 
         PageRequest pageRequest = PageRequest.of(0, limit + 1);
         List<Notification> notifications = cursor == null
-                ? notificationRepository.findByReceiver_IdOrderByCreatedAtDescIdDesc(
+                ? notificationRepository.findByReceiver_IdAndReadAtIsNullOrderByCreatedAtDescIdDesc(
                         receiverId,
                         pageRequest
                 )
@@ -71,7 +71,7 @@ public class NotificationService {
                         ? lastNotification.getId()
                         : null,
                 hasNext,
-                notificationRepository.countByReceiver_Id(receiverId),
+                notificationRepository.countByReceiver_IdAndReadAtIsNull(receiverId),
                 SORT_BY_CREATED_AT,
                 SORT_DIRECTION_DESCENDING
         );
