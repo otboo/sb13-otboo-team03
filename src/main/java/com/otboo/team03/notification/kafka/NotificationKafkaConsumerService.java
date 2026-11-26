@@ -30,10 +30,10 @@ public class NotificationKafkaConsumerService {
         }
 
         notificationEventService.handle(event)
-                .ifPresent(this::sendToRedisAfterCommit);
+                .ifPresent(this::publishAfterCommit);
     }
 
-    private void sendToRedisAfterCommit(NotificationDto notification) {
+    private void publishAfterCommit(NotificationDto notification) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             publishToRedis(notification);
             return;

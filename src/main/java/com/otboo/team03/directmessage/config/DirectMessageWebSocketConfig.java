@@ -27,7 +27,8 @@ public class DirectMessageWebSocketConfig implements WebSocketMessageBrokerConfi
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/ws");
+        registry.addEndpoint("/ws")
+                .withSockJS();
     }
 
     @Override

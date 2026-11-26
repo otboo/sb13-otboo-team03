@@ -47,7 +47,9 @@ public enum ErrorCode {
     // 정의 삭제 시 의상 속성의 참조가 남아 있으면 거부한다.
     ATTRIBUTE_DEFINITION_IN_USE(HttpStatus.BAD_REQUEST, "의상에서 사용 중인 속성 정의는 삭제할 수 없습니다."),
     // notification
-    NOT_FOUND_NOTIFICATION(HttpStatus.NOT_FOUND, "알림이 존재하지 않습니다.");
+    NOT_FOUND_NOTIFICATION(HttpStatus.NOT_FOUND, "알림이 존재하지 않습니다."),
+    NOT_FOUND_OUTBOX_EVENT(HttpStatus.NOT_FOUND, "아웃박스 이벤트가 존재하지 않습니다."),
+    OUTBOX_EVENT_NOT_FAILED(HttpStatus.CONFLICT, "실패 상태의 아웃박스 이벤트만 재처리할 수 있습니다.");
 
     private final HttpStatus httpStatus;
     private final String message;

@@ -28,11 +28,12 @@ public class SseController {
     @GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter connect(
             Authentication authentication,
-            @RequestParam(value = "LastEventId", required = false) UUID lastEventId,
+            @RequestParam(value = "lastEventId", required = false) UUID lastEventId,
+            @RequestParam(value = "LastEventId", required = false) UUID legacyLastEventId,
             @RequestHeader(value = "Last-Event-ID", required = false) UUID lastEventHeader
     ) {
         UUID receiverId = AuthenticatedUserIdExtractor.extract(authentication);
-        UUID reconnectEventId = lastEventHeader != null ? lastEventHeader : lastEventId;
+        UUID reconnectEventId = firstNonNull(lastEventHeader, lastEventId, legacyLastEventId);
 
         if (reconnectEventId == null) {
             return sseConnectionManager.connect(receiverId);
@@ -43,5 +44,14 @@ public class SseController {
                 reconnectEventId
         );
         return sseConnectionManager.connect(receiverId, missedNotifications);
+    }
+
+    private UUID firstNonNull(UUID... eventIds) {
+        for (UUID eventId : eventIds) {
+            if (eventId != null) {
+                return eventId;
+            }
+        }
+        return null;
     }
 }

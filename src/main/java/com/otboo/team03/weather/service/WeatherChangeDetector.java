@@ -38,7 +38,7 @@ public class WeatherChangeDetector {
       }
     }
 
-    // 2. 기온 급변 감지 (직전 예보 대비 5.0℃ 이상 급상승 또는 급강하)
+    // 2. 기온 급상승 감지 (직전 예보 대비 5.0℃ 이상 급격히 상승하는 경우)
     for (int i = 1; i < sortedWeathers.size(); i++) {
       Weather prev = sortedWeathers.get(i - 1);
       Weather next = sortedWeathers.get(i);

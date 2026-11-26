@@ -90,9 +90,9 @@ jobs:
           retention-days: 7
 
   deploy:
-    name: Deploy dev to ECS
+    name: Deploy main to ECS
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 

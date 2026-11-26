@@ -3,6 +3,8 @@ package com.otboo.team03.notification.outbox.relay;
 import com.otboo.team03.notification.outbox.entity.OutboxEvent;
 import com.otboo.team03.notification.outbox.entity.OutboxEventStatus;
 import com.otboo.team03.notification.outbox.repository.OutboxEventRepository;
+import com.otboo.team03.global.exception.ErrorCode;
+import com.otboo.team03.global.exception.OtbooException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.data.domain.PageRequest;
@@ -12,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
 
 @Service
 @ConditionalOnBean(OutboxEventMessagePublisher.class)
@@ -46,6 +50,18 @@ public class OutboxEventRelayService {
         return relayPendingEvents(DEFAULT_BATCH_SIZE);
     }
 
+    @Transactional
+    public void retryFailedEvent(UUID eventId) {
+        OutboxEvent event = outboxEventRepository.findById(eventId)
+                .orElseThrow(() -> new OtbooException(ErrorCode.NOT_FOUND_OUTBOX_EVENT));
+        if (event.getStatus() != OutboxEventStatus.FAILED) {
+            throw new OtbooException(ErrorCode.OUTBOX_EVENT_NOT_FAILED);
+        }
+
+        event.requeue(Instant.now());
+        outboxEventRepository.save(event);
+    }
+
     private void relay(OutboxEvent event, Instant now) {
         try {
             messagePublisher.publish(event);
@@ -63,9 +79,22 @@ public class OutboxEventRelayService {
     }
 
     private String resolveErrorMessage(RuntimeException exception) {
-        return exception.getMessage() == null
+        String message = exception.getMessage() == null
                 ? exception.getClass().getSimpleName()
                 : exception.getMessage();
+        Throwable rootCause = exception;
+        while (rootCause.getCause() != null) {
+            rootCause = rootCause.getCause();
+        }
+
+        if (rootCause == exception || Objects.equals(message, rootCause.getMessage())) {
+            return message;
+        }
+
+        String causeMessage = rootCause.getMessage() == null
+                ? rootCause.getClass().getSimpleName()
+                : rootCause.getMessage();
+        return message + " (원인: " + causeMessage + ")";
     }
 
     private void validateBatchSize(int batchSize) {

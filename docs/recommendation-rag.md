@@ -15,7 +15,7 @@ GET /api/recommendations?weatherId=...
 → Redis에서 직전 추천 ID 조회
 → BasicOutfitAlgorithm으로 장애 시 사용할 기본 추천 계산
 → LlmOutfitRecommender: 활성화·입력 크기 확인
-→ GroqOutfitRequestFactory: 제목·속성 JSON과 Structured Outputs 스키마 구성
+→ GroqOutfitRequestFactory: 제목·속성·민감도 보정 온도 JSON과 Structured Outputs 스키마 구성
 → GroqOutfitClient: 코디 DTO 변환 / global.client.groq.GroqClient: HTTP 통신
 → LlmOutfitValidator: 소유 의상 ID·조합·분석 근거 검사
 → 유효한 AI 코디 또는 기본 추천 선택
@@ -34,13 +34,15 @@ GET /api/recommendations?weatherId=...
 - 직전 추천 ID는 적절한 대안이 있을 때 다른 코디를 고르는 참고 정보다. 모든 대안을 배제하는 강제 필터는 아니다.
 - LLM 장애·검증 실패 시에는 기존 기본 추천을 사용한다.
 
-시스템 프롬프트는 `src/main/resources/prompts/outfit-recommendation-system.txt`에서 관리한다. `GroqOutfitRequestFactory`는 프롬프트와 JSON 응답 스키마를 구성하고, `GroqOutfitClient`는 코디 DTO 변환을, `global.client.groq.GroqClient`는 공통 HTTP 통신·완료 상태 검사를 담당한다. 공통 응답 예외는 `global.exception.InvalidLlmResponseException`에서 관리한다. `LlmOutfitValidator`는 응답 구조, 의상 조합, 분석 근거를 순서대로 검증한다.
+프롬프트에서는 날씨 적합성을 색상 조화·직전 추천과의 차별화보다 우선한다. 비가 오면 보온과 젖음 대비를 따로 판단해 기온에 적합한 비 대비 아우터와 신발을 각각 검토한다. 방수 신발을 선택했어도 적합한 비 대비 아우터가 있으면 함께 선택하며, 제공되지 않은 보호 기능은 만들어내지 않는다. 쌀쌀하고 바람이 강한 상황에서는 기온에 적합하고 방풍 근거가 있는 아우터를 포함하도록 지시한다. 방수·방풍 여부도 등록 속성을 우선하고 두께만으로 추정하지 않는다. 최종 선택 목록과 설명이 일치하는지도 확인하도록 한다. 이는 모델에 주는 판단 지시이며 서버의 의미 검증이나 선택 보장을 추가한 것은 아니다.
+
+시스템 프롬프트는 `src/main/resources/prompts/outfit-recommendation-system.txt`에서 관리한다. `GroqOutfitRequestFactory`는 프롬프트와 JSON 응답 스키마를 구성하고, `GroqOutfitClient`는 코디 DTO 변환을, `global.client.groq.GroqClient`는 공통 HTTP 통신·완료 상태 검사를 담당한다. LLM 관련 예외는 `global.exception.llm`에서 관리하며, `InvalidLlmResponseException`은 응답 유효성 오류를, `GroqRequestException`은 Groq HTTP 요청 오류를 나타낸다. `LlmOutfitValidator`는 응답 구조, 의상 조합, 분석 근거를 순서대로 검증한다.
 
 ## 패키지 구성
 
 - `global/client/groq`: 추천 DTO에 의존하지 않는 Groq HTTP 통신
 - `global/config`: `GroqConfig`·`GroqProperties` — 공통 API 키·HTTP 연결 설정
-- `global/exception`: 외부 LLM 응답 예외
+- `global/exception/llm`: LLM 응답·Groq HTTP 요청 예외
 - `recommendation/client`: 코디 요청·응답 변환 및 프롬프트/스키마 구성
 - `recommendation/client/dto`: LLM 통신에 사용하는 입력·출력 DTO
 - `recommendation/config`: `RecommendationLlmConfig`·`RecommendationLlmProperties` — 추천 활성화·모델·입출력 제한
@@ -56,10 +58,15 @@ GET /api/recommendations?weatherId=...
 
 - 실제 기온(℃), 하늘 상태, 강수 형태, 강수 확률(%), 습도(%), 풍속(m/s)
 - 온도 민감도: 1·2는 추위를 타는 방향, 3은 중립, 4·5는 더위를 타는 방향. 미설정은 3
-- 직전 추천 의상 ID
-- 의상 ID·제목·종류·실제로 선택한 모든 속성 이름과 값
+- 민감도 보정 온도(`adjustedTemperature`): 실제 기온 + (민감도 - 3) × 2℃
+- 직전 추천 의상 UUID
+- 의상 UUID·제목·종류·실제로 선택한 모든 속성 이름과 값
+
+`TemperatureSensitivityPolicy`의 보정식을 기본 알고리즘과 LLM 입력이 공유한다. 실제 기온·민감도도 유지하며, 프롬프트에서는 보정 온도로 보온을 판단하고 민감도를 다시 적용하지 않도록 지시한다. 기온이 null이면 보정 온도도 null이다. 예를 들어 17℃·민감도 1이면 보정 온도는 13℃다. 의상을 고르는 판단은 계속 LLM이 담당한다.
 
 성명·이메일·생년월일·정확한 위치·이미지·이미지 URL·속성 선택지 전체는 전달하지 않는다. 제목과 속성 안에 명령이 있어도 데이터로만 취급하도록 시스템 프롬프트에서 명시한다.
+
+프로필의 민감도가 미설정이면 `RecommendationInputReader`에서 3으로 보정하며, LLM 입력의 `temperatureSensitivity`는 `int`다. 날씨 DTO는 `Double` 등 참조 타입으로 `null`을 표현할 수 있다. 프롬프트에서는 두 설명을 분리하고, 날씨의 `null`을 0·무풍·비 없음으로 단정하지 않는다는 지시만 한 문장으로 둔다. 현재 `Weather` 엔티티의 필수 제약과 DTO의 null 표현 가능성은 구분한다.
 
 ## 분석 결과와 근거
 
@@ -82,9 +89,11 @@ GET /api/recommendations?weatherId=...
 }
 ```
 
-예시의 UUID 표기는 설명용이며 실제 요청에서는 UUID 문자열을 사용한다. `name`, `value`는 자유 문자열이고 고정된 속성 사전에 제한하지 않는다. `source`만 TITLE/ATTRIBUTE로 구분한다. 제목에서 알 수 없는 실제 보온 성능·방수 기능·소재 혼용률 등을 만들어내지 않도록 지시한다. 근거 있는 특징이 없으면 빈 features 배열을 허용한다.
+예시의 UUID 표기는 설명용이며 실제 요청·응답에서는 UUID 문자열을 그대로 사용한다. 응답 스키마는 요청에 포함된 의상 UUID만 허용하고, 서버 검증기에서도 소유 의상인지 확인한다.
 
-검증기는 인용 문구가 해당 의상의 실제 제목이나 속성 값 안에 있는지 확인한다. 이는 인용의 존재를 검증하며, 문구를 올바르게 해석했는지나 추천 이유의 의미가 정확한지까지 보장하지 않는다. 실제 추천 품질은 대표 옷장·날씨 사례를 비교해 평가해야 한다.
+`name`, `value`는 자유 문자열이고 고정된 속성 사전에 제한하지 않는다. `source`만 TITLE/ATTRIBUTE로 구분한다. 제목에서 알 수 없는 실제 보온 성능·방수 기능·소재 혼용률 등을 만들어내지 않도록 지시한다. 근거 있는 특징이 없으면 빈 features 배열을 허용한다.
+
+프롬프트와 스키마의 evidence 설명은 분석의 `clothesId`에 해당하는 옷장 항목을 먼저 찾고, 그 항목의 제목·속성 값에서만 근거를 고르도록 지시한다. 같은 코디의 다른 의상에 있는 방수 속성도 옮겨 인용할 수 없다. 검증기는 인용 문구가 해당 의상의 실제 제목이나 속성 값 안에 있는지 확인한다. 이는 인용의 존재를 검증하며, 문구를 올바르게 해석했는지나 추천 이유의 의미가 정확한지까지 보장하지 않는다. 실제 추천 품질은 대표 옷장·날씨 사례를 비교해 평가해야 한다.
 
 ## 서버 검증
 
@@ -121,7 +130,7 @@ Spring AI 추가 의존성 없이 프로젝트의 Spring RestClient와 Jackson�
 | otboo.recommendation.llm.max-input-characters | 12000 | 사용자 입력 JSON 길이 제한. 토큰 수와 동일하지 않음 |
 | otboo.recommendation.llm.max-completion-tokens | 2048 | 추론 토큰을 포함한 출력 상한. 초과로 잘리면 기본 추천 사용 |
 
-429·인증/서버 오류·통신 실패·시간 초과·JSON 오류·검증 실패는 기본 추천으로 복구하며 자동 재시도하지 않는다. 예상하지 못한 코드 오류는 숨기지 않는다. 로그에는 실패 종류·입력 크기만 남기고 키·제목·속성·외부 응답 본문은 남기지 않는다.
+429·인증/서버 오류·통신 실패·시간 초과·JSON 오류·검증 실패는 기본 추천으로 복구하며 자동 재시도하지 않는다. 예상하지 못한 코드 오류는 숨기지 않는다. 로그에는 실패 종류·입력 크기와 HTTP 상태·허용 목록으로 제한한 공급자 오류 종류·코드만 남기고 키·제목·속성·외부 응답 본문은 남기지 않는다.
 
 추천은 조회 시점의 옷장 스냅샷을 사용한다. 동시에 수정된 의상 정보는 다음 요청에서 반영된다.
 

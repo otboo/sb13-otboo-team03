@@ -12,6 +12,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -126,6 +127,26 @@ class OutboxEventRelayServiceTest {
     }
 
     @Test
+    void 발행_예외의_근본원인까지_lastError에_저장한다() throws Exception {
+        OutboxEvent event = newEvent();
+        when(outboxEventRepository
+                .findByStatusAndAvailableAtLessThanEqualOrderByAvailableAtAscCreatedAtAscEventIdAsc(
+                        eq(OutboxEventStatus.PENDING),
+                        any(Instant.class),
+                        any(Pageable.class)
+                )).thenReturn(List.of(event));
+        doThrow(new IllegalStateException(
+                "Kafka 이벤트 발행에 실패했습니다.",
+                new IllegalStateException("broker unavailable")
+        )).when(messagePublisher).publish(event);
+
+        relayService.relayPendingEvents(10);
+
+        assertThat(event.getLastError())
+                .isEqualTo("Kafka 이벤트 발행에 실패했습니다. (원인: broker unavailable)");
+    }
+
+    @Test
     void 한_이벤트_발행에_실패해도_다음_이벤트를_계속_처리한다() throws Exception {
         OutboxEvent failedEvent = newEvent();
         OutboxEvent successfulEvent = newEvent();
@@ -180,6 +201,20 @@ class OutboxEventRelayServiceTest {
         assertThat(event.getAttemptCount())
                 .isEqualTo(OutboxEventRelayService.MAX_ATTEMPTS);
         assertThat(event.getLastError()).isEqualTo("세 번째 실패");
+        verify(outboxEventRepository).save(event);
+    }
+
+    @Test
+    void FAILED_이벤트를_재처리_대기상태로_되돌린다() throws Exception {
+        OutboxEvent event = newEvent();
+        event.recordFailure(Instant.now(), "Kafka 실패", 1, Duration.ZERO);
+        when(outboxEventRepository.findById(event.getEventId())).thenReturn(java.util.Optional.of(event));
+
+        relayService.retryFailedEvent(event.getEventId());
+
+        assertThat(event.getStatus()).isEqualTo(OutboxEventStatus.PENDING);
+        assertThat(event.getAttemptCount()).isZero();
+        assertThat(event.getLastError()).isNull();
         verify(outboxEventRepository).save(event);
     }
 
