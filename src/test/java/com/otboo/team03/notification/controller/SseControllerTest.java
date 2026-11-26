@@ -3,8 +3,8 @@ package com.otboo.team03.notification.controller;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.global.security.OtbooUserDetails;
-import com.otboo.team03.notification.dto.response.NotificationDto;
 import com.otboo.team03.notification.sse.SseConnectionManager;
+import com.otboo.team03.notification.service.NotificationReplayResult;
 import com.otboo.team03.notification.service.NotificationService;
 import com.otboo.team03.user.dto.response.UserDto;
 import com.otboo.team03.user.entity.UserRole;
@@ -18,7 +18,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,6 +26,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
 
 @ExtendWith(MockitoExtension.class)
 class SseControllerTest {
@@ -59,16 +59,19 @@ class SseControllerTest {
         UUID lastEventId = UUID.randomUUID();
         Authentication authentication = authentication(receiverId);
         SseEmitter emitter = new SseEmitter();
-        List<NotificationDto> missedNotifications = List.of();
+        NotificationReplayResult replay = NotificationReplayResult.empty();
+        when(sseConnectionManager.connectForReplay(receiverId)).thenReturn(emitter);
         when(notificationService.getNotificationsAfterEvent(receiverId, lastEventId))
-                .thenReturn(missedNotifications);
-        when(sseConnectionManager.connect(receiverId, missedNotifications)).thenReturn(emitter);
+                .thenReturn(replay);
 
         SseEmitter result = sseController.connect(authentication, null, lastEventId, null);
 
         assertThat(result).isSameAs(emitter);
-        verify(notificationService).getNotificationsAfterEvent(receiverId, lastEventId);
-        verify(sseConnectionManager).connect(receiverId, missedNotifications);
+        var inOrder = inOrder(sseConnectionManager, notificationService);
+        inOrder.verify(sseConnectionManager).connectForReplay(receiverId);
+        inOrder.verify(notificationService).getNotificationsAfterEvent(receiverId, lastEventId);
+        inOrder.verify(sseConnectionManager)
+                .completeReplay(receiverId, emitter, replay.notifications(), replay.hasMore());
     }
 
     @Test
