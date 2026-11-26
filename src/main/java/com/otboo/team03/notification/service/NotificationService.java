@@ -41,7 +41,7 @@ public class NotificationService {
 
         PageRequest pageRequest = PageRequest.of(0, limit + 1);
         List<Notification> notifications = cursor == null
-                ? notificationRepository.findByReceiver_IdOrderByCreatedAtDescIdDesc(
+                ? notificationRepository.findByReceiver_IdAndReadAtIsNullOrderByCreatedAtDescIdDesc(
                         receiverId,
                         pageRequest
                 )
@@ -71,7 +71,7 @@ public class NotificationService {
                         ? lastNotification.getId()
                         : null,
                 hasNext,
-                notificationRepository.countByReceiver_Id(receiverId),
+                notificationRepository.countByReceiver_IdAndReadAtIsNull(receiverId),
                 SORT_BY_CREATED_AT,
                 SORT_DIRECTION_DESCENDING
         );
@@ -88,18 +88,25 @@ public class NotificationService {
     }
 
     @Transactional(readOnly = true)
-    public List<NotificationDto> getNotificationsAfterEvent(UUID receiverId, UUID lastEventId) {
+    public NotificationReplayResult getNotificationsAfterEvent(UUID receiverId, UUID lastEventId) {
         return notificationRepository.findByIdAndReceiver_Id(lastEventId, receiverId)
-                .map(lastEvent -> notificationRepository.findByReceiverIdAfterEvent(
-                        receiverId,
-                        lastEvent.getCreatedAt(),
-                        lastEvent.getId(),
-                        PageRequest.of(0, sseReplayLimit)
-                ))
-                .orElseGet(List::of)
-                .stream()
-                .map(NotificationDto::from)
-                .toList();
+                .map(lastEvent -> {
+                    List<Notification> notifications = notificationRepository.findByReceiverIdAfterEvent(
+                            receiverId,
+                            lastEvent.getCreatedAt(),
+                            lastEvent.getId(),
+                            PageRequest.of(0, sseReplayLimit + 1)
+                    );
+                    boolean hasMore = notifications.size() > sseReplayLimit;
+                    List<Notification> replayPage = hasMore
+                            ? notifications.subList(0, sseReplayLimit)
+                            : notifications;
+                    return new NotificationReplayResult(
+                            replayPage.stream().map(NotificationDto::from).toList(),
+                            hasMore
+                    );
+                })
+                .orElseGet(NotificationReplayResult::empty);
     }
 
     private void validateLimit(int limit) {

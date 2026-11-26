@@ -15,6 +15,7 @@ import com.otboo.team03.weather.entity.PrecipitationType;
 import com.otboo.team03.weather.entity.SkyStatus;
 import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.repository.WeatherRepository;
+import com.otboo.team03.weather.service.WeatherAlertService;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
@@ -36,6 +37,9 @@ class WeatherCollectionTaskletTest {
 
   @Mock
   private WeatherRepository weatherRepository;
+
+  @Mock
+  private WeatherAlertService weatherAlertService;
 
   @InjectMocks
   private WeatherCollectionTasklet tasklet;
@@ -75,6 +79,7 @@ class WeatherCollectionTaskletTest {
     // then
     assertThat(status).isEqualTo(RepeatStatus.FINISHED);
     verify(weatherRepository, times(5)).saveAll(List.of(fetched));
+    verify(weatherAlertService, times(5)).checkAndSendAlerts(anyDouble(), anyDouble(), eq(List.of(fetched)));
   }
 
   @Test

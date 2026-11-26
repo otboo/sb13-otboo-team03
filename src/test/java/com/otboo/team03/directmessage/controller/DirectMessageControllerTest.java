@@ -33,6 +33,7 @@ import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 @ExtendWith(MockitoExtension.class)
 class DirectMessageControllerTest {
@@ -102,7 +103,9 @@ class DirectMessageControllerTest {
                         .content("{\"receiverId\":\"" + receiverId
                                 + "\",\"content\":\"안녕하세요.\"}")
                         .principal(authentication()))
-                .andExpect(status().isCreated());
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.sender.userId").value(requesterId.toString()))
+                .andExpect(jsonPath("$.senderId").value(requesterId.toString()));
 
         verify(directMessageService).send(requesterId, receiverId, "안녕하세요.");
     }

@@ -10,6 +10,7 @@ import com.otboo.team03.global.security.jwt.JwtLoginSuccessHandler;
 import com.otboo.team03.global.security.jwt.JwtLogoutHandler;
 import com.otboo.team03.global.security.jwt.JwtRegistry;
 import com.otboo.team03.global.security.jwt.JwtTokenProvider;
+import com.otboo.team03.notification.service.NotificationReplayResult;
 import com.otboo.team03.notification.service.NotificationService;
 import com.otboo.team03.notification.sse.SseConnectionManager;
 import com.otboo.team03.user.dto.response.UserDto;
@@ -35,6 +36,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -56,6 +58,9 @@ class SseControllerHttpTest {
 
     @Autowired
     private SseConnectionManager sseConnectionManager;
+
+    @Autowired
+    private NotificationService notificationService;
 
     @Test
     void 인증되지_않은_SSE_요청은_401을_반환한다() throws Exception {
@@ -81,6 +86,27 @@ class SseControllerHttpTest {
 
         assertThat(result.getResponse().getContentType())
                 .isEqualTo(MediaType.TEXT_EVENT_STREAM_VALUE);
+    }
+
+    @Test
+    void 소문자_lastEventId_쿼리_파라미터로_SSE_재연결한다() throws Exception {
+        UUID lastEventId = UUID.randomUUID();
+        SseEmitter emitter = new SseEmitter();
+        NotificationReplayResult replay = NotificationReplayResult.empty();
+        when(sseConnectionManager.connectForReplay(USER_ID)).thenReturn(emitter);
+        when(notificationService.getNotificationsAfterEvent(USER_ID, lastEventId))
+                .thenReturn(replay);
+
+        mockMvc.perform(get("/api/sse")
+                        .param("lastEventId", lastEventId.toString())
+                        .header("Authorization", "Bearer test-token")
+                        .accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(status().isOk())
+                .andExpect(request().asyncStarted());
+
+        verify(notificationService).getNotificationsAfterEvent(USER_ID, lastEventId);
+        verify(sseConnectionManager)
+                .completeReplay(USER_ID, emitter, replay.notifications(), replay.hasMore());
     }
 
     @SpringBootConfiguration

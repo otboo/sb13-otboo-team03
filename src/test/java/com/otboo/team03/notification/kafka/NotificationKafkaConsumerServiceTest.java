@@ -9,12 +9,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -96,7 +98,7 @@ class NotificationKafkaConsumerServiceTest {
     }
 
     @Test
-    void 알림_저장과_같은_트랜잭션에서_Redis로_발행한다() {
+    void 알림_저장_트랜잭션이_커밋된_후_Redis로_발행한다() {
         NotificationKafkaConsumerService service = newService();
         NotificationEvent event = event();
         NotificationDto notification = notification(event);
@@ -106,13 +108,23 @@ class NotificationKafkaConsumerServiceTest {
         )).thenReturn(true);
         when(notificationEventService.handle(event)).thenReturn(Optional.of(notification));
 
-        service.process(event);
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.process(event);
 
-        verify(notificationRedisPublisher).publish(notification);
+            verifyNoInteractions(notificationRedisPublisher);
+
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+
+            verify(notificationRedisPublisher).publish(notification);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
-    void Redis_발행에_실패하면_예외를_전파해_Kafka_재시도를_유도한다() {
+    void 트랜잭션_커밋_후_Redis_발행에_실패해도_알림_저장_결과는_유지한다() {
         NotificationKafkaConsumerService service = newService();
         NotificationEvent event = event();
         NotificationDto notification = notification(event);
@@ -124,11 +136,17 @@ class NotificationKafkaConsumerServiceTest {
         org.mockito.Mockito.doThrow(new IllegalStateException("Redis unavailable"))
                 .when(notificationRedisPublisher).publish(notification);
 
-        assertThatThrownBy(() -> service.process(event))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Redis unavailable");
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.process(event);
 
-        verify(notificationRedisPublisher).publish(notification);
+            assertThatCode(() -> TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit))
+                    .doesNotThrowAnyException();
+            verify(notificationRedisPublisher).publish(notification);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     private NotificationKafkaConsumerService newService() {

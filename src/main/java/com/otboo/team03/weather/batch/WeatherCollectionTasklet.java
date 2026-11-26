@@ -3,6 +3,7 @@ package com.otboo.team03.weather.batch;
 import com.otboo.team03.weather.client.OpenWeatherClient;
 import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.repository.WeatherRepository;
+import com.otboo.team03.weather.service.WeatherAlertService;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,6 +25,7 @@ public class WeatherCollectionTasklet implements Tasklet {
 
   private final OpenWeatherClient openWeatherClient;
   private final WeatherRepository weatherRepository;
+  private final WeatherAlertService weatherAlertService;
 
   // 서비스 주요 거점 좌표 목록 (예: 서울 강남, 종로 등)
   private record TargetLocation(String name, double lat, double lon) {}
@@ -89,6 +91,9 @@ public class WeatherCollectionTasklet implements Tasklet {
         if (!newWeathers.isEmpty()) {
           weatherRepository.saveAll(newWeathers);
         }
+
+        // 날씨 급변(강수 발생, 기온 급상승) 감지 시 해당 거점 유저들에게 알림 발행
+        weatherAlertService.checkAndSendAlerts(target.lat(), target.lon(), weathers);
 
         log.info(">>>>> [WeatherBatch] {} 날씨 수집 완료 - 신규: {}건, 최신 갱신: {}건", target.name(), newCount, updateCount);
         successCount++;

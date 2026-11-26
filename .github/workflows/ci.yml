@@ -3,6 +3,7 @@ name: CI
 on:
   pull_request:
     branches: [main, dev]
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main, dev]
   workflow_dispatch:
@@ -15,6 +16,25 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  main-source-guard:
+    name: main-source-guard
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Require dev as the source branch for main
+        env:
+          PR_HEAD_REF: ${{ github.head_ref }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          if [ "$PR_HEAD_REF" != "dev" ] || [ "$PR_HEAD_REPOSITORY" != "$GITHUB_REPOSITORY" ]; then
+            echo "::error::Only pull requests from this repository's dev branch can be merged into main."
+            exit 1
+          fi
+
+          echo "Source branch verified: dev -> main"
+
   build:
     name: Build and test
     runs-on: ubuntu-latest
@@ -90,9 +110,9 @@ jobs:
           retention-days: 7
 
   deploy:
-    name: Deploy dev to ECS
+    name: Deploy main to ECS
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -126,14 +146,31 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push image
+      - name: Reuse or build and push image
         id: image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA"
-          docker build --platform linux/amd64 -t "$IMAGE_URI" .
-          docker push "$IMAGE_URI"
+          IMAGE_LOOKUP=$(aws ecr batch-get-image \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$GITHUB_SHA" \
+            --output json)
+
+          if jq -e '.images | length > 0' <<< "$IMAGE_LOOKUP" > /dev/null; then
+            echo "Reusing existing image: $IMAGE_URI"
+          elif jq -e '
+            (.failures | length) == 1 and
+            .failures[0].failureCode == "ImageNotFound"
+          ' <<< "$IMAGE_LOOKUP" > /dev/null; then
+            docker build --platform linux/amd64 -t "$IMAGE_URI" .
+            docker push "$IMAGE_URI"
+          else
+            echo "Failed to look up the image in ECR."
+            jq '.failures' <<< "$IMAGE_LOOKUP"
+            exit 1
+          fi
+
           echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
       - name: Download current service task definition
