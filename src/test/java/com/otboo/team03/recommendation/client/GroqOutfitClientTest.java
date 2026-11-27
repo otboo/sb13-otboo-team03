@@ -3,6 +3,7 @@ package com.otboo.team03.recommendation.client;
 import com.otboo.team03.global.client.groq.GroqClient;
 import com.otboo.team03.recommendation.client.dto.LlmRecommendationInput;
 import java.io.IOException;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,12 +41,13 @@ class GroqOutfitClientTest {
     }
 
     @Test
-    void 모든_제목과_자유_속성을_보내고_특징_이름을_사전으로_제한하지_않는다() {
+    void 모든_제목과_자유_속성을_보내고_소유_의상_ID만_응답받는다() {
         server.expect(requestTo("https://api.groq.com/openai/v1/chat/completions"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer test-key"))
                 .andExpect(request -> {
                     var body = mapper.readTree(((MockClientHttpRequest) request).getBodyAsString());
+                    assertThat(body.get("messages").size()).isEqualTo(2);
                     assertThat(body.get("model").asText()).isEqualTo("openai/gpt-oss-120b");
                     assertThat(body.get("messages").get(0).get("role").asText()).isEqualTo("system");
                     assertThat(body.get("messages").get(0).get("content").asText())
@@ -64,25 +66,22 @@ class GroqOutfitClientTest {
                     assertThat(input.get("previousOutfitIds"))
                             .isEqualTo(mapper.readTree(mapper.writeValueAsString(List.of(TOP_ID))));
                     assertThat(input.get("adjustedTemperature").asDouble()).isEqualTo(24.0);
+                    assertThat(input.get("weather").get("forecastDate").asText()).isEqualTo("2026-04-10");
+                    assertThat(input.has("seasonalStyle")).isFalse();
+                    assertThat(input.has("season")).isFalse();
                     assertThat(input.has("userId")).isFalse();
                     assertThat(input.toString()).doesNotContain("imageUrl", "profileImage", "email", "selectableValues");
                     var schema = body.get("response_format").get("json_schema");
                     assertThat(schema.get("strict").asBoolean()).isTrue();
                     var allowedIds = mapper.readTree(mapper.writeValueAsString(List.of(TOP_ID, BOTTOM_ID, DRESS_ID)));
-                    assertThat(schema.get("schema").get("properties").get("clothesIds")
-                            .get("items").get("enum")).isEqualTo(allowedIds);
-                    assertThat(schema.get("schema").get("properties").get("analyses").get("items")
-                            .get("properties").get("clothesId").get("enum")).isEqualTo(allowedIds);
-                    var featureProperties = schema.get("schema").get("properties").get("analyses").get("items")
-                            .get("properties").get("features").get("items").get("properties");
-                    for (String field : List.of("name", "value")) {
-                        assertThat(featureProperties.get(field).get("type").asText()).isEqualTo("string");
-                        assertThat(featureProperties.get(field).has("enum")).isFalse();
-                    }
-                    var evidence = featureProperties.get("evidence");
-                    assertThat(evidence.get("type").asText()).isEqualTo("string");
-                    assertThat(evidence.get("description").asText())
-                            .contains("TITLE", "ATTRIBUTE", "attributes[].value");
+                    var properties = schema.get("schema").get("properties");
+                    assertThat(properties.size()).isEqualTo(1);
+                    assertThat(properties.has("clothesIds")).isTrue();
+                    assertThat(properties.get("clothesIds").get("type").asText()).isEqualTo("array");
+                    assertThat(properties.get("clothesIds").get("items").get("enum")).isEqualTo(allowedIds);
+                    assertThat(schema.get("schema").get("additionalProperties").asBoolean()).isFalse();
+                    assertThat(schema.get("schema").get("required"))
+                            .isEqualTo(mapper.readTree("[\"clothesIds\"]"));
                 }).andRespond(withSuccess(completion(mapper.writeValueAsString(decision()), "stop", null),
                         MediaType.APPLICATION_JSON));
 
@@ -96,7 +95,7 @@ class GroqOutfitClientTest {
     @CsvSource({"1,13.0", "2,15.0", "3,17.0", "4,19.0", "5,21.0"})
     void 실제_기온과_민감도는_유지하고_보정_온도를_함께_보낸다(int sensitivity, double adjustedTemperature) {
         var input = new LlmRecommendationInput(new LlmRecommendationInput.WeatherContext(
-                17.0, null, null, null, null, null), sensitivity, Set.of(), input().wardrobe());
+                17.0, null, null, null, null, null, LocalDate.of(2026, 4, 10)), sensitivity, Set.of(), input().wardrobe(), List.of());
 
         var body = mapper.readTree(client.serializeInput(input));
 
@@ -109,13 +108,14 @@ class GroqOutfitClientTest {
     @Test
     void 기온이_없으면_보정_온도도_null로_보낸다() {
         var input = new LlmRecommendationInput(new LlmRecommendationInput.WeatherContext(
-                null, null, null, null, null, null), 1, Set.of(), input().wardrobe());
+                null, null, null, null, null, null, null), 1, Set.of(), input().wardrobe(), List.of());
 
         var body = mapper.readTree(client.serializeInput(input));
 
         assertThat(body.get("weather").get("temperature").isNull()).isTrue();
         assertThat(body.get("adjustedTemperature").isNull()).isTrue();
         assertThat(body.get("temperatureSensitivity").asInt()).isEqualTo(1);
+        assertThat(body.get("weather").get("forecastDate").isNull()).isTrue();
     }
 
     private String completion(String content, String finishReason, String refusal) {

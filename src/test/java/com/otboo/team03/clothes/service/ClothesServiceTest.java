@@ -48,6 +48,8 @@ class ClothesServiceTest {
     private ClothesAttributeRepository clothesAttributeRepository;
     @Mock
     private ClothesAttributeDefinitionRepository clothesAttributeDefinitionRepository;
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher events;
 
     // 실제 검증 대상이다. 위 가짜 Repository를 생성자에 주입한다.
     @InjectMocks
@@ -172,6 +174,7 @@ class ClothesServiceTest {
         assertThat(attributeCaptor.getValue().getClothes()).isSameAs(saved);
         assertThat(attributeCaptor.getValue().getDefinition()).isSameAs(definition);
         assertThat(attributeCaptor.getValue().getValue()).isEqualTo("파랑");
+        verify(events).publishEvent(new com.otboo.team03.clothes.event.WardrobeChangedEvent(ownerId));
     }
 
     @Test
@@ -258,6 +261,17 @@ class ClothesServiceTest {
 
         assertThat(clothes.getName()).isEqualTo("새 이름");
         assertThat(result).isEqualTo(new ClothesDto(id, ownerId, "새 이름", "image.png", ClothesType.TOP, List.of()));
+        verify(events).publishEvent(new com.otboo.team03.clothes.event.WardrobeChangedEvent(ownerId));
+    }
+
+    @Test
+    void 삭제된_옷장을_다시_준비하도록_소유자_이벤트를_발행한다() {
+        UUID id = UUID.randomUUID(); UUID ownerId = UUID.randomUUID();
+        Clothes clothes = new Clothes("삭제할 옷", ClothesType.TOP, null, owner(ownerId));
+        when(clothesRepository.findForChange(id)).thenReturn(Optional.of(clothes));
+        clothesService.delete(id, ownerId);
+        verify(clothesRepository).delete(clothes);
+        verify(events).publishEvent(new com.otboo.team03.clothes.event.WardrobeChangedEvent(ownerId));
     }
 
     @Test

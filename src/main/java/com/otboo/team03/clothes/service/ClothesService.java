@@ -9,6 +9,7 @@ import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesAttribute;
 import com.otboo.team03.clothes.entity.ClothesAttributeDefinition;
 import com.otboo.team03.clothes.entity.ClothesType;
+import com.otboo.team03.clothes.event.WardrobeChangedEvent;
 import com.otboo.team03.clothes.exception.ClothesAttributeDefinitionNotFoundException;
 import com.otboo.team03.clothes.exception.ClothesNotFoundException;
 import com.otboo.team03.clothes.exception.DuplicateAttributeException;
@@ -28,6 +29,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -47,6 +49,7 @@ public class ClothesService {
     private final UserRepository userRepository;
     // 이미지 없는 local/test 실행은 가능하며, 이미지 작업 시에는 저장소 구현이 반드시 필요하다.
     private final ObjectProvider<ImageStorage> imageStorageProvider;
+    private final ApplicationEventPublisher events;
 
 
     /**
@@ -103,6 +106,7 @@ public class ClothesService {
 
             attributeWithDefDtos.add(attributeDto);
         }
+        events.publishEvent(new WardrobeChangedEvent(request.ownerId()));
         return toDto(savedClothes, List.copyOf(attributeWithDefDtos));
     }
 
@@ -207,6 +211,9 @@ public class ClothesService {
             clothesAttributeRepository.deleteAll(remaining.values());
         }
         clothes.update(request.name(), request.type());
+        if (request.name() != null || request.type() != null || request.attributes() != null) {
+            events.publishEvent(new WardrobeChangedEvent(requesterId));
+        }
         return toClothesDto(clothes, resultAttributes);
     }
 
@@ -226,6 +233,7 @@ public class ClothesService {
         }
         clothesRepository.delete(clothes);
         deleteImageAfterCommit(clothes.getImageKey());
+        events.publishEvent(new WardrobeChangedEvent(requesterId));
     }
     /**
      * 소유자와 타입 조건에 맞는 의상을 커서 방식으로 조회한다.

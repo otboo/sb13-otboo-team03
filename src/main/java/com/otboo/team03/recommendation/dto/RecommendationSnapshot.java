@@ -20,7 +20,7 @@ public record RecommendationSnapshot(
         Map<UUID, SleeveLength> sleeveByClothesId,
         List<LlmRecommendationInput.Item> wardrobe
 ) {
-    public LlmRecommendationInput llmInput(Set<UUID> previousOutfitIds) {
-        return new LlmRecommendationInput(weather, sensitivity, previousOutfitIds, wardrobe);
+    public LlmRecommendationInput llmInput(Set<UUID> previousOutfitIds, List<Set<UUID>> recentOutfits) {
+        return new LlmRecommendationInput(weather, sensitivity, previousOutfitIds, wardrobe, recentOutfits);
     }
 }

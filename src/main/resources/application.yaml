@@ -67,6 +67,23 @@ otboo:
       max-input-characters: 12000
       max-completion-tokens: 2048
 
+    rag:
+      ollama-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      model: ${RAG_EMBEDDING_MODEL:bge-m3:latest}
+      model-digest: ${RAG_EMBEDDING_MODEL_DIGEST:7907646426070047a77226ac3e684fbbe8410524f7b4a74d02837e43f2146bab}
+      jdbc-url: ${RAG_JDBC_URL:jdbc:postgresql://localhost:5433/outfit_references}
+      username: ${RAG_POSTGRES_USER:outfit_references}
+      password: ${RAG_POSTGRES_PASSWORD:outfit_reference_local}
+      connect-timeout: 1s
+      read-timeout: 60s
+      retrieval-timeout: 5s
+      candidates: 10
+      top-k: 2
+      min-score: 0.55
+      max-context-characters: 2500
+      cache-ttl: 15m
+      cache-entries: 256
+
   admin:
     email: ${ADMIN_EMAIL}
     password: ${ADMIN_PASSWORD}

@@ -6,6 +6,7 @@ import com.otboo.team03.recommendation.client.dto.LlmOutfitDecision;
 import com.otboo.team03.recommendation.client.dto.LlmRecommendationInput;
 import com.otboo.team03.weather.entity.PrecipitationType;
 import com.otboo.team03.weather.entity.SkyStatus;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -21,23 +22,18 @@ public final class LlmTestFixtures {
 
     public static LlmRecommendationInput input() {
         return new LlmRecommendationInput(new LlmRecommendationInput.WeatherContext(
-                24.0, SkyStatus.CLOUDY, PrecipitationType.RAIN, 80.0, 70.0, 3.0), 3, Set.of(TOP_ID), List.of(
+                24.0, SkyStatus.CLOUDY, PrecipitationType.RAIN, 80.0, 70.0, 3.0,
+                LocalDate.of(2026, 4, 10)), 3, Set.of(TOP_ID), List.of(
                 new LlmRecommendationInput.Item(TOP_ID, "시스루 크롭 셔츠", ClothesType.TOP,
                         List.of(new LlmRecommendationInput.Attribute("원단 특징", "비침 있음"),
                                 new LlmRecommendationInput.Attribute("핏", "여유로운 실루엣"))),
                 new LlmRecommendationInput.Item(BOTTOM_ID, "하이웨이스트 슬랙스", ClothesType.BOTTOM,
                         List.of(new LlmRecommendationInput.Attribute("색상", "검정"))),
-                new LlmRecommendationInput.Item(DRESS_ID, "린넨 원피스", ClothesType.DRESS, List.of())));
+                new LlmRecommendationInput.Item(DRESS_ID, "린넨 원피스", ClothesType.DRESS, List.of())), List.of());
     }
 
     public static LlmOutfitDecision decision() {
-        return new LlmOutfitDecision(List.of(TOP_ID, BOTTOM_ID), List.of(
-                new LlmOutfitDecision.Analysis(TOP_ID, List.of(
-                        new LlmOutfitDecision.Feature("비침", "있음", "비침 있음", LlmOutfitDecision.Source.ATTRIBUTE),
-                        new LlmOutfitDecision.Feature("기장", "크롭", "크롭", LlmOutfitDecision.Source.TITLE))),
-                new LlmOutfitDecision.Analysis(BOTTOM_ID, List.of(
-                        new LlmOutfitDecision.Feature("허리선", "하이웨이스트", "하이웨이스트", LlmOutfitDecision.Source.TITLE)))
-        ), "짧은 상의와 하이웨이스트 하의를 조합합니다.");
+        return new LlmOutfitDecision(List.of(TOP_ID, BOTTOM_ID));
     }
 
     private LlmTestFixtures() { }
