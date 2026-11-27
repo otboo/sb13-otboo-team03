@@ -74,7 +74,7 @@ public class RecommendationInputReader {
 
     /** 한도 초과는 속성 조회·DTO 생성 전에 종료한다. 날씨와 프로필은 조회하지 않는다. */
     public Optional<LlmRecommendationInput> readForStyleReferences(UUID userId, int maxClothes) {
-        List<Clothes> clothes = clothesRepository.findPage(userId, null, null, null, maxClothes + 1);
+        List<Clothes> clothes = clothesRepository.findForStyleReferences(userId, maxClothes + 1);
         if (clothes.size() > maxClothes) return Optional.empty();
         return Optional.of(new LlmRecommendationInput(
                 new LlmRecommendationInput.WeatherContext(null, null, null, null, null, null, null),

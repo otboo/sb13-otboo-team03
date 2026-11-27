@@ -5,8 +5,9 @@ import com.otboo.team03.clothes.entity.ClothesType;
 import java.util.List;
 import java.util.UUID;
 
-/** Spring Data 메서드 이름으로 표현하기 어려운 커서 조건을 별도 구현한다. */
+/** 목록의 커서 정렬 조회와 사전 검색용 무정렬 제한 조회를 구분한다. */
 public interface ClothesRepositoryCustom {
     List<Clothes> findPage(UUID ownerId, ClothesType typeEqual, String cursor, UUID idAfter, int fetchSize);
+    List<Clothes> findForStyleReferences(UUID ownerId, int fetchSize);
     long countByFilter(UUID ownerId, ClothesType typeEqual);
 }

@@ -30,6 +30,7 @@ import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.repository.WeatherRepository;
 import jakarta.persistence.EntityManager;
 import org.hibernate.SessionFactory;
+import org.hibernate.resource.jdbc.spi.StatementInspector;
 import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -67,7 +68,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /** 실제 PostgreSQL·Redis 추천 기록·서비스·알고리즘·JWT 필터를 사용하며 토큰 등록과 이미지 저장소를 대체한다. */
-@SpringBootTest
+@SpringBootTest(properties = "spring.jpa.properties.hibernate.session_factory.statement_inspector="
+        + "com.otboo.team03.recommendation.integration.RecommendationIntegrationTest$SqlCapture")
 @AutoConfigureMockMvc
 @Transactional
 @Testcontainers
@@ -99,7 +101,7 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
     @MockitoBean private ImageStorage imageStorage;
 
     @Test
-    void 사전검색은_큰_옷장에서도_81개만_읽고_속성을_조회하지_않는다() {
+    void 사전검색은_정렬_없이_81개만_읽고_속성을_조회하지_않는다() {
         User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "큰 옷장 사용자"));
         UUID ownerId = owner.getId();
         clothes.saveAll(java.util.stream.IntStream.range(0, 120)
@@ -111,13 +113,51 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
         boolean previousEnabled = statistics.isStatisticsEnabled();
         statistics.setStatisticsEnabled(true);
         statistics.clear();
+        var statements = new ArrayList<String>();
+        SqlCapture.statements.set(statements);
         try {
             assertThat(inputReader.readForStyleReferences(ownerId, 80)).isEmpty();
             assertThat(statistics.getEntityStatistics(Clothes.class.getName()).getLoadCount()).isEqualTo(81);
             assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
+            assertThat(statements).singleElement().satisfies(sql -> {
+                assertThat(sql).contains("owner_id").containsPattern("(?i)(fetch first|limit)\\s+\\?");
+                assertThat(sql).doesNotContainIgnoringCase("order by");
+            });
         } finally {
+            SqlCapture.statements.remove();
             statistics.setStatisticsEnabled(previousEnabled);
         }
+    }
+
+    /** 검증 구간의 현재 스레드에서 실행한 SQL만 수집한다. */
+    public static final class SqlCapture implements StatementInspector {
+        private static final ThreadLocal<List<String>> statements = new ThreadLocal<>();
+
+        @Override public String inspect(String sql) {
+            var current = statements.get();
+            if (current != null) current.add(sql);
+            return sql;
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 80})
+    void 사전검색은_한도_이하의_소유_의상만_전부_읽는다(int count) {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "사전 검색 사용자"));
+        User other = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "다른 사용자"));
+        var owned = clothes.saveAll(java.util.stream.IntStream.range(0, count)
+                .mapToObj(index -> new Clothes("소유 의상 " + index, ClothesType.DRESS, null, owner)).toList());
+        clothes.saveAll(java.util.stream.IntStream.range(0, 81)
+                .mapToObj(index -> new Clothes("다른 의상 " + index, ClothesType.TOP, null, other)).toList());
+        var ids = owned.stream().map(Clothes::getId).toList();
+        UUID ownerId = owner.getId();
+        entityManager.flush();
+        entityManager.clear();
+
+        var input = inputReader.readForStyleReferences(ownerId, 80).orElseThrow();
+
+        assertThat(input.wardrobe()).extracting(item -> item.clothesId())
+                .containsExactlyInAnyOrderElementsOf(ids);
     }
 
     @ParameterizedTest
