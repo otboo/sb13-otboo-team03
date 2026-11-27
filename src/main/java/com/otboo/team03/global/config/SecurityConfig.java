@@ -46,7 +46,10 @@ public class SecurityConfig {
                                                    AccessDeniedHandler accessDeniedHandler) throws Exception {
         http
                 .authenticationProvider(passwordAuthenticationProvider)
-                .csrf(csrf -> csrf.spa())
+                .csrf(csrf -> csrf
+                        .spa()
+                        .ignoringRequestMatchers("/ws/**")
+                )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/actuator/health/readiness").permitAll()
                         .requestMatchers(
