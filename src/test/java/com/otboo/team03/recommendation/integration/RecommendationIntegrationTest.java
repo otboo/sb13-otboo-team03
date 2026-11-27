@@ -98,6 +98,28 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
     @MockitoBean private JwtRegistry jwtRegistry;
     @MockitoBean private ImageStorage imageStorage;
 
+    @Test
+    void 사전검색은_큰_옷장에서도_81개만_읽고_속성을_조회하지_않는다() {
+        User owner = users.save(new User(UUID.randomUUID() + "@example.com", "encoded", "큰 옷장 사용자"));
+        UUID ownerId = owner.getId();
+        clothes.saveAll(java.util.stream.IntStream.range(0, 120)
+                .mapToObj(index -> new Clothes("원피스 " + index, ClothesType.DRESS, null, owner)).toList());
+        entityManager.flush();
+        entityManager.clear();
+        Statistics statistics = entityManager.getEntityManagerFactory()
+                .unwrap(SessionFactory.class).getStatistics();
+        boolean previousEnabled = statistics.isStatisticsEnabled();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+        try {
+            assertThat(inputReader.readForStyleReferences(ownerId, 80)).isEmpty();
+            assertThat(statistics.getEntityStatistics(Clothes.class.getName()).getLoadCount()).isEqualTo(81);
+            assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
+        } finally {
+            statistics.setStatisticsEnabled(previousEnabled);
+        }
+    }
+
     @ParameterizedTest
     @CsvSource(value = {"NULL, 3", "1, 1", "5, 5"}, nullValues = "NULL")
     void 프로필_이미지가_있어도_민감도만_조회하고_미설정이면_중립값을_사용한다(

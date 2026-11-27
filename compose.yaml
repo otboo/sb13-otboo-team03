@@ -78,10 +78,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      reference-db:
-        condition: service_healthy
-      ollama:
-        condition: service_started
 
   nginx:
     image: nginx:1.28-alpine
