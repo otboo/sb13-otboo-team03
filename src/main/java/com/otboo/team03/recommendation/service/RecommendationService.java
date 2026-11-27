@@ -33,8 +33,9 @@ public class RecommendationService {
     // 입력 조회의 짧은 트랜잭션이 끝난 뒤 외부 API를 호출한다.
     public RecommendationDto recommend(UUID weatherId, UUID userId) {
         RecommendationSnapshot snapshot = inputReader.read(weatherId, userId);
-        Set<UUID> previousOutfitIds = historyRepository.find(userId, weatherId);
-        List<Clothes> recommended = chooseOutfit(snapshot, previousOutfitIds);
+        List<Set<UUID>> recentOutfits = historyRepository.findRecent(userId, weatherId);
+        Set<UUID> previousOutfitIds = recentOutfits.isEmpty() ? Set.of() : recentOutfits.get(0);
+        List<Clothes> recommended = chooseOutfit(snapshot, previousOutfitIds, recentOutfits);
 
         List<OotdDto> ootds = recommended.stream()
                 .map(item -> clothesService.toClothesDto(item,
@@ -50,13 +51,13 @@ public class RecommendationService {
         return new RecommendationDto(weatherId, userId, ootds);
     }
 
-    private List<Clothes> chooseOutfit(RecommendationSnapshot snapshot, Set<UUID> previousOutfitIds) {
+    private List<Clothes> chooseOutfit(RecommendationSnapshot snapshot, Set<UUID> previousOutfitIds, List<Set<UUID>> recentOutfits) {
         List<Clothes> fallback = algorithm.recommend(snapshot.clothes(), snapshot.thicknessByClothesId(),
                 snapshot.sleeveByClothesId(), snapshot.weather().temperature(), snapshot.sensitivity(), previousOutfitIds);
         if (fallback.isEmpty()) {
             return fallback;
         }
-        return llmRecommender.recommend(snapshot.llmInput(previousOutfitIds))
+        return llmRecommender.recommend(snapshot.llmInput(previousOutfitIds, recentOutfits))
                 .map(decision -> selectOwnedClothes(snapshot, Set.copyOf(decision.clothesIds())))
                 .orElse(fallback);
     }

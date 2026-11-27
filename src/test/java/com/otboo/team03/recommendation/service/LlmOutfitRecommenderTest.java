@@ -7,6 +7,8 @@ import com.otboo.team03.recommendation.config.RecommendationLlmProperties;
 import com.otboo.team03.recommendation.client.dto.LlmOutfitDecision;
 import com.otboo.team03.recommendation.client.dto.LlmRecommendationInput;
 import com.otboo.team03.recommendation.validation.LlmOutfitValidator;
+import com.otboo.team03.recommendation.rag.OutfitReferenceProvider;
+import com.otboo.team03.recommendation.rag.StyleReference;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,6 +28,7 @@ import static org.mockito.Mockito.*;
 class LlmOutfitRecommenderTest {
     private final GroqOutfitClient client = mock(GroqOutfitClient.class);
     private final LlmOutfitValidator validator = new LlmOutfitValidator();
+    private final OutfitReferenceProvider references = mock(OutfitReferenceProvider.class);
 
     @Test
     void 비활성화하면_외부_API를_호출하지_않는다() {
@@ -36,7 +39,7 @@ class LlmOutfitRecommenderTest {
     @Test
     void 빈_옷장이면_외부_API를_호출하지_않는다() {
         var emptyWardrobe = new LlmRecommendationInput(input().weather(), 3,
-                input().previousOutfitIds(), List.of());
+                input().previousOutfitIds(), List.of(), List.of());
 
         assertThat(recommender(properties(true)).recommend(emptyWardrobe)).isEmpty();
         verifyNoInteractions(client);
@@ -117,8 +120,7 @@ class LlmOutfitRecommenderTest {
     @Test
     void 존재하지_않는_의상이나_근거가_없는_결과는_거부한다() {
         when(client.serializeInput(input())).thenReturn("input");
-        when(client.recommend(input(), "input")).thenReturn(new LlmOutfitDecision(
-                List.of(TOP_ID), List.of(), "상의만 선택"));
+        when(client.recommend(input(), "input")).thenReturn(new LlmOutfitDecision(List.of()));
         assertThat(recommender(properties(true)).recommend(input())).isEmpty();
     }
 
@@ -129,7 +131,40 @@ class LlmOutfitRecommenderTest {
                 .isInstanceOf(IllegalStateException.class);
     }
 
-    private LlmOutfitRecommender recommender(RecommendationLlmProperties properties) {
-        return new LlmOutfitRecommender(properties, client, validator);
+    @Test
+    void 참고자료가_있어도_원래_옷장을_줄이지_않고_합산_입력_길이를_지킨다() {
+        var reference = new StyleReference.Context("example", "source", "https://example.com", "요약", "UNKNOWN");
+        when(client.serializeInput(input())).thenReturn("full-wardrobe");
+        when(references.find(input())).thenReturn(List.of(reference));
+        when(client.serializeReferences(List.of(reference))).thenReturn("x".repeat(12000));
+        when(client.recommend(input(), "full-wardrobe")).thenReturn(decision());
+
+        assertThat(recommender(properties(true)).recommend(input())).contains(decision());
+        verify(client).recommend(input(), "full-wardrobe");
+        verify(client, never()).recommend(any(), anyString(), anyString());
     }
+
+    @Test
+    void 참고자료가_길이제한_안에_있으면_기존_입력과_함께_전달한다() {
+        var reference = new StyleReference.Context("example", "source", "https://example.com", "요약", "UNKNOWN");
+        when(client.serializeInput(input())).thenReturn("full-wardrobe");
+        when(references.find(input())).thenReturn(List.of(reference));
+        when(client.serializeReferences(List.of(reference))).thenReturn("references");
+        when(client.recommend(input(), "full-wardrobe", "references")).thenReturn(decision());
+
+        assertThat(recommender(properties(true)).recommend(input())).contains(decision());
+        verify(client).recommend(input(), "full-wardrobe", "references");
+    }
+
+    @Test
+    void 비활성화나_입력제한_초과이면_검색도_하지_않는다() {
+        assertThat(recommender(properties(false)).recommend(input())).isEmpty();
+        assertThat(recommender(new RecommendationLlmProperties(true, "model", 1, 100, 100)).recommend(input())).isEmpty();
+        verifyNoInteractions(references);
+    }
+
+    private LlmOutfitRecommender recommender(RecommendationLlmProperties properties) {
+        return new LlmOutfitRecommender(properties, client, validator, references);
+    }
+
 }

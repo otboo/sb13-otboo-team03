@@ -15,11 +15,13 @@ import com.otboo.team03.recommendation.dto.RecommendationSnapshot;
 import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.exception.WeatherNotFoundException;
 import com.otboo.team03.weather.repository.WeatherRepository;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class RecommendationInputReader {
+
+    private static final ZoneId FORECAST_ZONE = ZoneId.of("Asia/Seoul");
 
     private final ClothesRepository clothesRepository;
     private final ClothesAttributeRepository clothesAttributeRepository;
@@ -42,33 +46,49 @@ public class RecommendationInputReader {
         Weather weather = weatherRepository.findById(weatherId).orElseThrow(WeatherNotFoundException::new);
         var weatherContext = new LlmRecommendationInput.WeatherContext(weather.getTemperature(),
                 weather.getSkyStatus(), weather.getPrecipitationType(), weather.getPrecipitationProbability(),
-                weather.getHumidity(), weather.getWindSpeed());
+                weather.getHumidity(), weather.getWindSpeed(),
+                weather.getForecastAt().atZone(FORECAST_ZONE).toLocalDate());
         Integer sensitivity = profileService.getTemperatureSensitivity(userId);
         int effectiveSensitivity = sensitivity != null ? sensitivity : 3;
-        List<Clothes> clothes = clothesRepository.findAllByOwner_Id(userId);
-        List<UUID> clothesIds = clothes.stream().map(Clothes::getId).toList();
-        Map<UUID, List<ClothesAttribute>> attributesByClothesId = clothesIds.isEmpty() ? Map.of()
-                : clothesAttributeRepository.findAllByClothes_IdIn(clothesIds).stream()
-                        .collect(Collectors.groupingBy(attribute -> attribute.getClothes().getId()));
+        Wardrobe wardrobe = wardrobe(userId);
+        List<Clothes> clothes = wardrobe.clothes();
+        Map<UUID, List<ClothesAttribute>> attributesByClothesId = wardrobe.attributes();
         Map<UUID, ThicknessLevel> thicknessByClothesId = new HashMap<>();
         Map<UUID, SleeveLength> sleeveByClothesId = new HashMap<>();
-        List<LlmRecommendationInput.Item> wardrobe = new ArrayList<>();
         for (Clothes item : clothes) {
             List<ThicknessLevel> thicknessLevels = new ArrayList<>();
             List<SleeveLength> sleeveLengths = new ArrayList<>();
-            List<LlmRecommendationInput.Attribute> rawAttributes = new ArrayList<>();
             for (ClothesAttribute attribute : attributesByClothesId.getOrDefault(item.getId(), List.of())) {
                 String name = attribute.getDefinition().getName();
                 String value = attribute.getValue();
                 thicknessLevels.add(attributeAnalyzer.analyze(name, value));
                 sleeveLengths.add(sleeveAnalyzer.analyze(name, value));
-                rawAttributes.add(new LlmRecommendationInput.Attribute(name, value));
             }
             thicknessByClothesId.put(item.getId(), attributeEstimator.estimateThickness(thicknessLevels));
             sleeveByClothesId.put(item.getId(), attributeEstimator.estimateSleeveLength(sleeveLengths));
-            wardrobe.add(new LlmRecommendationInput.Item(item.getId(), item.getName(), item.getType(), rawAttributes));
         }
         return new RecommendationSnapshot(weatherContext, effectiveSensitivity, List.copyOf(clothes),
-                attributesByClothesId, thicknessByClothesId, sleeveByClothesId, List.copyOf(wardrobe));
+                attributesByClothesId, thicknessByClothesId, sleeveByClothesId, wardrobe.items());
     }
+
+    /** No weather/profile lookup is needed to prepare wardrobe-only reference searches. */
+    public LlmRecommendationInput readForStyleReferences(UUID userId) {
+        return new LlmRecommendationInput(new LlmRecommendationInput.WeatherContext(null, null, null, null, null, null, null),
+                3, Set.of(), wardrobe(userId).items(), List.of());
+    }
+
+    private Wardrobe wardrobe(UUID userId) {
+        List<Clothes> clothes = clothesRepository.findAllByOwner_Id(userId);
+        List<UUID> ids = clothes.stream().map(Clothes::getId).toList();
+        Map<UUID, List<ClothesAttribute>> attributes = ids.isEmpty() ? Map.of()
+                : clothesAttributeRepository.findAllByClothes_IdIn(ids).stream()
+                        .collect(Collectors.groupingBy(attribute -> attribute.getClothes().getId()));
+        var items = clothes.stream().map(item -> new LlmRecommendationInput.Item(item.getId(), item.getName(), item.getType(),
+                attributes.getOrDefault(item.getId(), List.of()).stream().map(attribute ->
+                        new LlmRecommendationInput.Attribute(attribute.getDefinition().getName(), attribute.getValue())).toList())).toList();
+        return new Wardrobe(clothes, attributes, items);
+    }
+
+    private record Wardrobe(List<Clothes> clothes, Map<UUID, List<ClothesAttribute>> attributes,
+                            List<LlmRecommendationInput.Item> items) { }
 }

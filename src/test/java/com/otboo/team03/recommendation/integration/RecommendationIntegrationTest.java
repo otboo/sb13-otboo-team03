@@ -160,7 +160,7 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
                 .andReturn().getResponse().getContentAsString();
         UUID selectedId = UUID.fromString(JsonPath.read(response, "$.clothes[0].clothesId"));
         assertThat(selectedId).isIn(firstId, secondId);
-        assertThat(historyRepository.find(ownerId, weatherId)).containsExactly(selectedId);
+        assertThat(historyRepository.findRecent(ownerId, weatherId)).containsExactly(Set.of(selectedId));
         UUID alternativeId = selectedId.equals(firstId) ? secondId : firstId;
 
         mvc.perform(get("/api/recommendations")
@@ -169,7 +169,7 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.clothes.length()").value(1))
                 .andExpect(jsonPath("$.clothes[0].clothesId").value(alternativeId.toString()));
-        assertThat(historyRepository.find(ownerId, weatherId)).containsExactly(alternativeId);
+        assertThat(historyRepository.findRecent(ownerId, weatherId)).containsExactly(Set.of(alternativeId), Set.of(selectedId));
 
         clothes.deleteAllById(List.of(firstId, secondId));
         entityManager.flush();
@@ -180,7 +180,7 @@ class RecommendationIntegrationTest extends PostgresTestSupport {
                         .param("weatherId", weatherId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.clothes.length()").value(0));
-        assertThat(historyRepository.find(ownerId, weatherId)).isEmpty();
+        assertThat(historyRepository.findRecent(ownerId, weatherId)).isEmpty();
     }
 
     @ParameterizedTest

@@ -11,6 +11,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Duration;
 import java.util.Set;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -57,10 +59,10 @@ class RedisRecommendationHistoryRepositoryIntegrationTest {
         repository.save(otherUserId, weatherId, otherUserOutfit);
         repository.save(userId, otherWeatherId, otherWeatherOutfit);
 
-        assertThat(repository.find(userId, weatherId)).isEqualTo(outfit);
-        assertThat(repository.find(otherUserId, weatherId)).isEqualTo(otherUserOutfit);
-        assertThat(repository.find(userId, otherWeatherId)).isEqualTo(otherWeatherOutfit);
-        assertThat(repository.find(otherUserId, otherWeatherId)).isEmpty();
+        assertThat(repository.findRecent(userId, weatherId)).containsExactly(outfit);
+        assertThat(repository.findRecent(otherUserId, weatherId)).containsExactly(otherUserOutfit);
+        assertThat(repository.findRecent(userId, otherWeatherId)).containsExactly(otherWeatherOutfit);
+        assertThat(repository.findRecent(otherUserId, otherWeatherId)).isEmpty();
     }
 
     @Test
@@ -70,21 +72,13 @@ class RedisRecommendationHistoryRepositoryIntegrationTest {
         repository.save(userId, weatherId, previous);
         assertThat(redisTemplate.getExpire(key, TimeUnit.SECONDS)).isBetween(1700L, 1800L);
         redisTemplate.expire(key, Duration.ofMinutes(1));
+        redisTemplate.expire(recentKey(), Duration.ofMinutes(1));
 
         repository.save(userId, weatherId, latest);
 
-        assertThat(repository.find(userId, weatherId)).isEqualTo(latest);
+        assertThat(repository.findRecent(userId, weatherId)).containsExactly(latest, previous);
         assertThat(redisTemplate.getExpire(key, TimeUnit.SECONDS)).isBetween(1700L, 1800L);
-    }
-
-    @Test
-    void 기록을_조회해도_보관_기간을_연장하지_않는다() {
-        Set<UUID> outfit = Set.of(UUID.randomUUID());
-        repository.save(userId, weatherId, outfit);
-        redisTemplate.expire(key, Duration.ofMinutes(1));
-
-        assertThat(repository.find(userId, weatherId)).isEqualTo(outfit);
-        assertThat(redisTemplate.getExpire(key, TimeUnit.SECONDS)).isBetween(1L, 60L);
+        assertThat(redisTemplate.getExpire(recentKey(), TimeUnit.SECONDS)).isBetween(1700L, 1800L);
     }
 
     @Test
@@ -96,16 +90,69 @@ class RedisRecommendationHistoryRepositoryIntegrationTest {
 
         repository.delete(userId, weatherId);
 
-        assertThat(repository.find(userId, weatherId)).isEmpty();
-        assertThat(repository.find(userId, otherWeatherId)).isEqualTo(outfit);
+        assertThat(repository.findRecent(userId, weatherId)).isEmpty();
+        assertThat(repository.findRecent(userId, otherWeatherId)).containsExactly(outfit);
     }
 
     @Test
-    void 기록이_없거나_만료되면_빈_ID_집합을_반환한다() {
-        assertThat(repository.find(userId, weatherId)).isEmpty();
+    void 기록이_없거나_만료되면_빈_이력을_반환한다() {
+        assertThat(repository.findRecent(userId, weatherId)).isEmpty();
         repository.save(userId, weatherId, Set.of(UUID.randomUUID()));
         redisTemplate.expire(key, Duration.ZERO);
+        redisTemplate.expire(recentKey(), Duration.ZERO);
 
-        assertThat(repository.find(userId, weatherId)).isEmpty();
+        assertThat(repository.findRecent(userId, weatherId)).isEmpty();
     }
+
+    @Test
+    void 최근_다섯_코디만_최신순으로_원자적으로_보관한다() {
+        List<Set<UUID>> outfits = new ArrayList<>();
+        for (int index = 0; index < 7; index++) {
+            Set<UUID> outfit = Set.of(UUID.randomUUID(), UUID.randomUUID());
+            outfits.add(outfit); repository.save(userId, weatherId, outfit);
+        }
+        assertThat(repository.findRecent(userId, weatherId)).containsExactly(
+                outfits.get(6), outfits.get(5), outfits.get(4), outfits.get(3), outfits.get(2));
+        assertThat(redisTemplate.opsForList().size(recentKey())).isEqualTo(5L);
+        assertThat(redisTemplate.getExpire(recentKey(), TimeUnit.SECONDS)).isBetween(1700L, 1800L);
+    }
+
+    @Test
+    void 기존_문자열_기록을_읽고_이전_배포의_쓰기와도_호환한다() {
+        Set<UUID> old = Set.of(UUID.randomUUID());
+        redisTemplate.opsForValue().set(key, encode(old), Duration.ofMinutes(30));
+        assertThat(repository.findRecent(userId, weatherId)).containsExactly(old);
+        Set<UUID> current = Set.of(UUID.randomUUID()); repository.save(userId, weatherId, current);
+        assertThat(repository.findRecent(userId, weatherId)).containsExactly(current, old);
+        Set<UUID> oldWriter = Set.of(UUID.randomUUID());
+        redisTemplate.opsForValue().set(key, encode(oldWriter), Duration.ofMinutes(30));
+        assertThat(repository.findRecent(userId, weatherId)).containsExactly(oldWriter, current, old);
+        Set<UUID> newest = Set.of(UUID.randomUUID()); repository.save(userId, weatherId, newest);
+        assertThat(repository.findRecent(userId, weatherId)).containsExactly(newest, oldWriter, current, old);
+    }
+
+    @Test
+    void 최근_기록도_조회로_TTL을_연장하지_않고_삭제시_두_형식을_지운다() {
+        repository.save(userId, weatherId, Set.of(UUID.randomUUID()));
+        redisTemplate.expire(key, Duration.ofMinutes(1)); redisTemplate.expire(recentKey(), Duration.ofMinutes(1));
+        assertThat(repository.findRecent(userId, weatherId)).hasSize(1);
+        assertThat(redisTemplate.getExpire(key, TimeUnit.SECONDS)).isBetween(1L, 60L);
+        assertThat(redisTemplate.getExpire(recentKey(), TimeUnit.SECONDS)).isBetween(1L, 60L);
+        repository.delete(userId, weatherId);
+        assertThat(redisTemplate.hasKey(key)).isFalse();
+        assertThat(redisTemplate.hasKey(recentKey())).isFalse();
+    }
+
+    @Test
+    void 손상된_기록이나_Redis_자료형_오류로_추천을_중단하지_않는다() {
+        redisTemplate.opsForValue().set(key, "not-a-uuid", Duration.ofMinutes(30));
+        assertThat(repository.findRecent(userId, weatherId)).isEmpty();
+        redisTemplate.opsForValue().set(recentKey(), "wrong-type");
+        assertThat(repository.findRecent(userId, weatherId)).isEmpty();
+        repository.save(userId, weatherId, Set.of(UUID.randomUUID()));
+        repository.delete(userId, weatherId);
+    }
+
+    private String recentKey() { return "recommendation:recent:" + userId + ":" + weatherId; }
+    private String encode(Set<UUID> ids) { return ids.stream().map(UUID::toString).sorted().collect(java.util.stream.Collectors.joining(",")); }
 }
