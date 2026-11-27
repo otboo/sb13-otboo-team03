@@ -41,10 +41,11 @@ public class WardrobeReferenceWarmup {
         try {
             worker.execute(() -> {
                 try {
-                    var input = reader.readForStyleReferences(event.ownerId());
+                    var candidate = reader.readForStyleReferences(event.ownerId(), llm.maxClothes());
+                    if (candidate.isEmpty()) return;
+                    var input = candidate.get();
                     var types = input.wardrobe().stream().map(item -> item.type()).toList();
-                    if (input.wardrobe().size() > llm.maxClothes()
-                            || !(types.contains(ClothesType.DRESS) || types.contains(ClothesType.TOP) && types.contains(ClothesType.BOTTOM))
+                    if (!(types.contains(ClothesType.DRESS) || types.contains(ClothesType.TOP) && types.contains(ClothesType.BOTTOM))
                             || mapper.writeValueAsString(input).length() > llm.maxInputCharacters()) return;
                     references.prepare(input);
                 } catch (RuntimeException exception) {

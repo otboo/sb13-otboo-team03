@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -50,7 +51,7 @@ public class RecommendationInputReader {
                 weather.getForecastAt().atZone(FORECAST_ZONE).toLocalDate());
         Integer sensitivity = profileService.getTemperatureSensitivity(userId);
         int effectiveSensitivity = sensitivity != null ? sensitivity : 3;
-        Wardrobe wardrobe = wardrobe(userId);
+        Wardrobe wardrobe = wardrobe(clothesRepository.findAllByOwner_Id(userId));
         List<Clothes> clothes = wardrobe.clothes();
         Map<UUID, List<ClothesAttribute>> attributesByClothesId = wardrobe.attributes();
         Map<UUID, ThicknessLevel> thicknessByClothesId = new HashMap<>();
@@ -71,14 +72,16 @@ public class RecommendationInputReader {
                 attributesByClothesId, thicknessByClothesId, sleeveByClothesId, wardrobe.items());
     }
 
-    /** No weather/profile lookup is needed to prepare wardrobe-only reference searches. */
-    public LlmRecommendationInput readForStyleReferences(UUID userId) {
-        return new LlmRecommendationInput(new LlmRecommendationInput.WeatherContext(null, null, null, null, null, null, null),
-                3, Set.of(), wardrobe(userId).items(), List.of());
+    /** 한도 초과는 속성 조회·DTO 생성 전에 종료한다. 날씨와 프로필은 조회하지 않는다. */
+    public Optional<LlmRecommendationInput> readForStyleReferences(UUID userId, int maxClothes) {
+        List<Clothes> clothes = clothesRepository.findPage(userId, null, null, null, maxClothes + 1);
+        if (clothes.size() > maxClothes) return Optional.empty();
+        return Optional.of(new LlmRecommendationInput(
+                new LlmRecommendationInput.WeatherContext(null, null, null, null, null, null, null),
+                3, Set.of(), wardrobe(clothes).items(), List.of()));
     }
 
-    private Wardrobe wardrobe(UUID userId) {
-        List<Clothes> clothes = clothesRepository.findAllByOwner_Id(userId);
+    private Wardrobe wardrobe(List<Clothes> clothes) {
         List<UUID> ids = clothes.stream().map(Clothes::getId).toList();
         Map<UUID, List<ClothesAttribute>> attributes = ids.isEmpty() ? Map.of()
                 : clothesAttributeRepository.findAllByClothes_IdIn(ids).stream()

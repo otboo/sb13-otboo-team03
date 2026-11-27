@@ -8,6 +8,7 @@ import com.otboo.team03.recommendation.service.RecommendationInputReader;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -44,14 +45,14 @@ class WardrobeReferenceWarmupTest {
         CountDownLatch release = new CountDownLatch(1);
         try (var fixture = new Fixture(true)) {
             var input = brownTopAndBlackPants(); UUID owner = UUID.randomUUID();
-            when(fixture.reader.readForStyleReferences(owner)).thenAnswer(call -> {
-                release.await(3, TimeUnit.SECONDS); return input;
+            when(fixture.reader.readForStyleReferences(owner, 80)).thenAnswer(call -> {
+                release.await(3, TimeUnit.SECONDS); return Optional.of(input);
             });
             assertTimeout(Duration.ofSeconds(1), () -> fixture.transaction.executeWithoutResult(status -> {
                 fixture.context.publishEvent(new WardrobeChangedEvent(owner));
                 verifyNoInteractions(fixture.reader, fixture.references);
             }));
-            verify(fixture.reader, timeout(1000)).readForStyleReferences(owner);
+            verify(fixture.reader, timeout(1000)).readForStyleReferences(owner, 80);
             verifyNoInteractions(fixture.references);
             release.countDown();
             verify(fixture.references, timeout(1000)).prepare(input);
@@ -70,27 +71,26 @@ class WardrobeReferenceWarmupTest {
     }
     @ParameterizedTest
     @MethodSource("unsuitableInputs")
-    void 기본조합이_없거나_입력_한도를_넘으면_검색하지_않는다(LlmRecommendationInput rejected) {
+    void 기본조합이_없거나_입력_한도를_넘으면_검색하지_않는다(Optional<LlmRecommendationInput> rejected) {
         try (var fixture = new Fixture(true)) {
             var valid = pinkDress();
-            when(fixture.reader.readForStyleReferences(any())).thenReturn(rejected, valid);
+            when(fixture.reader.readForStyleReferences(any(), eq(80))).thenReturn(rejected, Optional.of(valid));
             fixture.publish(); fixture.publish();
             // A following valid task completes on the same worker, so the skipped task is also finished.
             verify(fixture.references, timeout(1000)).prepare(valid);
             verifyNoMoreInteractions(fixture.references);
         }
     }
-    static Stream<LlmRecommendationInput> unsuitableInputs() {
-        return Stream.of(input(List.of(item(ClothesType.TOP, "상의만 있음"))),
-                input(List.of(item(ClothesType.BOTTOM, "하의만 있음"))),
-                input(java.util.Collections.nCopies(81, item(ClothesType.DRESS, "원피스"))),
-                input(List.of(item(ClothesType.DRESS, "가".repeat(12001)))));
+    static Stream<Optional<LlmRecommendationInput>> unsuitableInputs() {
+        return Stream.of(Optional.empty(), Optional.of(input(List.of(item(ClothesType.TOP, "상의만 있음")))),
+                Optional.of(input(List.of(item(ClothesType.BOTTOM, "하의만 있음")))),
+                Optional.of(input(List.of(item(ClothesType.DRESS, "가".repeat(12001))))));
     }
     @Test void 사전검색_실패가_다음_작업을_막거나_개인정보를_로그에_남기지_않는다(CapturedOutput output) {
         try (var fixture = new Fixture(true)) {
             var valid = pinkDress();
-            when(fixture.reader.readForStyleReferences(any()))
-                    .thenThrow(new IllegalStateException("private-wardrobe private-password")).thenReturn(valid);
+            when(fixture.reader.readForStyleReferences(any(), eq(80)))
+                    .thenThrow(new IllegalStateException("private-wardrobe private-password")).thenReturn(Optional.of(valid));
             fixture.publish(); fixture.publish();
             verify(fixture.references, timeout(1000)).prepare(valid);
             assertThat(output.getAll()).doesNotContain("private-wardrobe", "private-password");
