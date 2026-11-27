@@ -27,6 +27,9 @@ class VectorOutfitReferenceProviderTest {
     @Test void 없는_의상_종류와_색상_충돌을_제외하고_뒤의_후보로_채운다() throws Exception {
         when(embedding.embed(anyList())).thenReturn(List.of(vector(0)));
         when(store.search(anyString(), anyString(), any(), anyDouble(), anyInt())).thenReturn(List.of(
+                new PgVectorReferenceStore.Hit("unknown-reference", .99),
+                new PgVectorReferenceStore.Hit("uniqlo-accent-bag", Double.NaN),
+                new PgVectorReferenceStore.Hit("uniqlo-accent-bag", .1),
                 new PgVectorReferenceStore.Hit("musinsa-shirt-trousers", .9),
                 new PgVectorReferenceStore.Hit("musinsa-cropped-curve", .8),
                 new PgVectorReferenceStore.Hit("uniqlo-brown-black", .7),
@@ -75,6 +78,15 @@ class VectorOutfitReferenceProviderTest {
         when(embedding.embed(anyList())).thenThrow(new IllegalStateException("bug"));
         try (var provider = provider(Map.of())) {
             assertThatThrownBy(() -> provider.find(brownDressWithBlackBag())).isInstanceOf(IllegalStateException.class);
+        }
+    }
+    @Test void 종료된_검색기는_추가_외부호출_없이_빈_문맥으로_복구한다() throws Exception {
+        try (var provider = provider(Map.of())) {
+            provider.close();
+            var input = brownDressWithBlackBag();
+            assertThat(provider.find(input)).isEmpty();
+            assertThatCode(() -> provider.prepare(input)).doesNotThrowAnyException();
+            verifyNoInteractions(embedding, store);
         }
     }
 }

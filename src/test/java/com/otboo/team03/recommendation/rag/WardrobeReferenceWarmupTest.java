@@ -2,6 +2,7 @@ package com.otboo.team03.recommendation.rag;
 
 import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.clothes.event.WardrobeChangedEvent;
+import com.otboo.team03.recommendation.client.dto.LlmRecommendationInput;
 import com.otboo.team03.recommendation.config.RecommendationLlmProperties;
 import com.otboo.team03.recommendation.service.RecommendationInputReader;
 import java.time.Duration;
@@ -10,7 +11,13 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -31,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+@ExtendWith(OutputCaptureExtension.class)
 class WardrobeReferenceWarmupTest {
     @Test void 커밋한_옷장만_별도_스레드에서_읽고_저장_응답을_기다리게_하지_않는다() throws Exception {
         CountDownLatch release = new CountDownLatch(1);
@@ -60,12 +68,32 @@ class WardrobeReferenceWarmupTest {
             verifyNoInteractions(fixture.reader, fixture.references);
         }
     }
-    @Test void 기본조합이_없으면_검색하지_않는다() {
+    @ParameterizedTest
+    @MethodSource("unsuitableInputs")
+    void 기본조합이_없거나_입력_한도를_넘으면_검색하지_않는다(LlmRecommendationInput rejected) {
         try (var fixture = new Fixture(true)) {
-            when(fixture.reader.readForStyleReferences(any())).thenReturn(input(List.of(item(ClothesType.TOP, "상의만 있음"))));
-            fixture.publish();
-            verify(fixture.reader, timeout(1000)).readForStyleReferences(any());
-            verify(fixture.references, after(200).never()).prepare(any());
+            var valid = pinkDress();
+            when(fixture.reader.readForStyleReferences(any())).thenReturn(rejected, valid);
+            fixture.publish(); fixture.publish();
+            // A following valid task completes on the same worker, so the skipped task is also finished.
+            verify(fixture.references, timeout(1000)).prepare(valid);
+            verifyNoMoreInteractions(fixture.references);
+        }
+    }
+    static Stream<LlmRecommendationInput> unsuitableInputs() {
+        return Stream.of(input(List.of(item(ClothesType.TOP, "상의만 있음"))),
+                input(List.of(item(ClothesType.BOTTOM, "하의만 있음"))),
+                input(java.util.Collections.nCopies(81, item(ClothesType.DRESS, "원피스"))),
+                input(List.of(item(ClothesType.DRESS, "가".repeat(12001)))));
+    }
+    @Test void 사전검색_실패가_다음_작업을_막거나_개인정보를_로그에_남기지_않는다(CapturedOutput output) {
+        try (var fixture = new Fixture(true)) {
+            var valid = pinkDress();
+            when(fixture.reader.readForStyleReferences(any()))
+                    .thenThrow(new IllegalStateException("private-wardrobe private-password")).thenReturn(valid);
+            fixture.publish(); fixture.publish();
+            verify(fixture.references, timeout(1000)).prepare(valid);
+            assertThat(output.getAll()).doesNotContain("private-wardrobe", "private-password");
         }
     }
     @Test void LLM이_꺼져있으면_사전검색_빈도_만들지_않는다() {

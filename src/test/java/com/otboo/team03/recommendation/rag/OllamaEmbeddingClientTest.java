@@ -3,6 +3,8 @@ package com.otboo.team03.recommendation.rag;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -61,5 +63,37 @@ class OllamaEmbeddingClientTest {
                 JsonMapper.builder().build().writeValueAsString(Map.of("embeddings", List.of(RagTestFixtures.vector(0)))), MediaType.APPLICATION_JSON));
         expectTags("0".repeat(64));
         assertThatThrownBy(() -> fixture.client.embed(List.of("옷장"))).isInstanceOf(ReferenceRetrievalException.class);
+    }
+    @ParameterizedTest
+    @ValueSource(strings = {"", "{}", "{\"models\":null}", "{\"models\":[null,{\"name\":\"other-model\"}]}"})
+    void 모델_목록이_없거나_원하는_모델이_없으면_임베딩을_요청하지_않는다(String response) {
+        fixture.server.expect(requestTo("http://localhost:11434/api/tags"))
+                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+        assertThatThrownBy(() -> fixture.client.embed(List.of("옷장"))).isInstanceOf(ReferenceRetrievalException.class);
+        fixture.server.verify();
+    }
+    @ParameterizedTest
+    @ValueSource(strings = {"", "{}", "{\"embeddings\":null}", "{\"embeddings\":[]}", "{\"embeddings\":[null]}"})
+    void 임베딩_응답이_비어있거나_입력과_대응하지_않으면_거부한다(String response) {
+        expectTags(fixture.properties.modelDigest());
+        fixture.server.expect(requestTo("http://localhost:11434/api/embed"))
+                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+        assertThatThrownBy(() -> fixture.client.embed(List.of("옷장"))).isInstanceOf(ReferenceRetrievalException.class);
+        fixture.server.verify();
+    }
+    @Test void 빈_입력은_임베딩을_요청하지_않는다() {
+        for (var input : List.of(List.<String>of(), List.of("옷장", " "))) {
+            expectTags(fixture.properties.modelDigest());
+            assertThatThrownBy(() -> fixture.client.embed(input)).isInstanceOf(ReferenceRetrievalException.class);
+            fixture.server.verify(); fixture.server.reset();
+        }
+    }
+    @Test void 취소된_작업은_HTTP_호출_없이_인터럽트_상태를_유지한다() {
+        Thread.currentThread().interrupt();
+        try {
+            assertThatThrownBy(() -> fixture.client.embed(List.of("옷장"))).isInstanceOf(ReferenceRetrievalException.class);
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            fixture.server.verify();
+        } finally { Thread.interrupted(); }
     }
 }

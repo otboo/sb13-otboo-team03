@@ -103,13 +103,16 @@ class RedisOutfitReferenceCacheTest {
         var input = brownTopAndBlackPants();
         try (var first = provider(properties(Map.of()), embedding, store, redis)) { first.find(input); }
         String key = redis.keys(RedisOutfitReferenceCache.PREFIX + "*").iterator().next();
-        for (String value : List.of("invalid-json", "[\"unknown-reference\"]", "[null]")) {
+        var invalidValues = List.of("invalid-json", "null", "[\"unknown-reference\"]", "[null]", "[\" \" ]",
+                "[\"uniqlo-brown-black\",\"uniqlo-brown-black\"]", "[\"a\",\"b\",\"c\"]", "x".repeat(2501),
+                "[\"musinsa-cropped-curve\"]");
+        for (String value : invalidValues) {
             redis.opsForValue().set(key, value);
             try (var next = provider(properties(Map.of()), embedding, store, redis)) {
                 assertThat(next.find(input)).extracting(StyleReference.Context::id).containsExactly("uniqlo-brown-black");
             }
         }
-        verify(embedding, times(4)).embed(anyList());
+        verify(embedding, times(1 + invalidValues.size())).embed(anyList());
     }
     @Test void 공유캐시_장애가_정상적인_벡터검색_결과를_막지_않는다() throws Exception {
         var unavailable = mock(StringRedisTemplate.class);

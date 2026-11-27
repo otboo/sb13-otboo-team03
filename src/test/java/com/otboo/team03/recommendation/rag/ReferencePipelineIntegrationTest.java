@@ -28,6 +28,8 @@ import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.json.JsonMapper;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.*;
 
@@ -69,6 +71,22 @@ class ReferencePipelineIntegrationTest {
     }
     @Test void 검색_HTTP_장애에도_기존_LLM_요청으로_복구한다() throws Exception {
         exercisePipeline(true);
+    }
+    @Test void 인덱싱_명령은_업무DB_Redis_Groq_없이_자료_전체를_저장한다() {
+        try (var embeddings = mockConstruction(OllamaEmbeddingClient.class, (client, context) ->
+                when(client.embed(anyList())).thenAnswer(call ->
+                        java.util.Collections.nCopies(((List<?>) call.getArgument(0)).size(), RagTestFixtures.vector(0))))) {
+            ReferenceIndexCommand.main(new String[]{
+                    "--spring.config.import=", "--spring.profiles.active=rag-index",
+                    "--otboo.recommendation.rag.jdbc-url=" + DATABASE.getJdbcUrl(),
+                    "--otboo.recommendation.rag.username=" + DATABASE.getUsername(),
+                    "--otboo.recommendation.rag.password=" + DATABASE.getPassword()
+            });
+            assertThat(embeddings.constructed()).hasSize(1);
+            assertThat(store.search(catalog.version(), properties.modelKey(), RagTestFixtures.vector(0), .99, 100))
+                    .extracting(PgVectorReferenceStore.Hit::id)
+                    .containsExactlyInAnyOrderElementsOf(catalog.all().stream().map(StyleReference::id).toList());
+        }
     }
     private void exercisePipeline(boolean embeddingFailure) throws Exception {
         RestClient.Builder ollama = RestClient.builder().baseUrl("http://ollama.test");
