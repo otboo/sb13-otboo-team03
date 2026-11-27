@@ -13,6 +13,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.dao.DataAccessResourceFailureException;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -54,7 +56,30 @@ class ReferenceCacheTest {
             verify(store, times(1)).search(anyString(), anyString(), any(), anyDouble(), anyInt());
         }
     }
-    @Test void 제목_속성_종류_추가삭제는_이전_결과를_재사용하지_않는다() throws Exception {
+    @ParameterizedTest
+    @EnumSource(value = ClothesType.class, names = {"UNDERWEAR", "ETC"})
+    void 추천_제외_의상의_추가_변경_삭제는_검색어와_캐시를_바꾸지_않는다(ClothesType excluded) throws Exception {
+        var original = brownTopAndBlackPants();
+        var items = new ArrayList<>(original.wardrobe());
+        items.add(item(excluded, "분홍색 속옷 또는 기타 의상", new LlmRecommendationInput.Attribute("색상", "분홍")));
+        var added = input(List.copyOf(items));
+        items.set(items.size() - 1, item(excluded, "변경한 파란 의상", new LlmRecommendationInput.Attribute("색상", "파랑")));
+        var updated = input(List.copyOf(items));
+        var query = VectorOutfitReferenceProvider.query(original);
+        assertThat(VectorOutfitReferenceProvider.query(added)).isEqualTo(query);
+        assertThat(VectorOutfitReferenceProvider.query(updated)).isEqualTo(query);
+        try (var provider = provider(Map.of())) {
+            var references = provider.find(original);
+            assertThat(references).hasSize(1);
+            assertThat(provider.find(added)).isEqualTo(references);
+            assertThat(provider.find(updated)).isEqualTo(references);
+            assertThat(provider.find(original)).isEqualTo(references);
+            verify(embeddings).embed(List.of(query));
+            verify(store).search(anyString(), anyString(), any(), anyDouble(), anyInt());
+            verifyNoMoreInteractions(embeddings, store);
+        }
+    }
+    @Test void 추천_대상_의상의_제목_속성_종류_추가삭제는_이전_결과를_재사용하지_않는다() throws Exception {
         var input = brownDressWithBlackBag(); var original = input.wardrobe().get(0);
         List<List<LlmRecommendationInput.Item>> changes = List.of(
                 input.wardrobe(), List.of(original),

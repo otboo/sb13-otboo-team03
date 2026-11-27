@@ -153,11 +153,12 @@ public final class VectorOutfitReferenceProvider implements OutfitReferenceProvi
         }
         return List.copyOf(selected);
     }
-    /** Sort semantic fields, retaining duplicate items; IDs, dates and history do not affect style search. */
+    /** Sort eligible semantic fields, retaining duplicates; IDs, dates and history do not affect style search. */
     private static List<SearchItem> semanticItems(LlmRecommendationInput input) {
         var attributeOrder = Comparator.comparing(LlmRecommendationInput.Attribute::name)
                 .thenComparing(LlmRecommendationInput.Attribute::value);
-        return input.wardrobe().stream().map(item -> new SearchItem(item.type().name(), item.type().ordinal(), item.name(),
+        return input.wardrobe().stream().filter(item -> !ReferenceCompatibility.excluded(item.type()))
+                .map(item -> new SearchItem(item.type().name(), item.type().ordinal(), item.name(),
                         item.attributes().stream().sorted(attributeOrder).toList()))
                 .sorted(Comparator.comparingInt(SearchItem::order).thenComparing(SearchItem::signature)).toList();
     }
