@@ -65,7 +65,7 @@ class DirectMessageWebSocketIntegrationTest {
 
     private static final String ACCESS_TOKEN = "websocket-test-token";
     private static final String DEPLOYED_FRONTEND_ORIGIN =
-            "https://d1urpq6rj5swu.cloudfront.net";
+            "https://d1urpq66rj5swu.cloudfront.net";
     private static final UUID SENDER_ID = UUID.fromString(
             "00000000-0000-0000-0000-000000000001"
     );
