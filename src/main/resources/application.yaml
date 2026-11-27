@@ -120,6 +120,8 @@ otboo:
     relay:
       fixed-delay: ${OUTBOX_RELAY_FIXED_DELAY:PT5S}
       batch-size: ${OUTBOX_RELAY_BATCH_SIZE:100}
+  websocket:
+    allowed-origins: ${WEBSOCKET_ALLOWED_ORIGINS:https://d1urpq66rj5swu.cloudfront.net,http://localhost:*,http://127.0.0.1:*}
   kafka:
     notification-topic: ${KAFKA_NOTIFICATION_TOPIC:otboo.notification.events}
     notification-dlt-topic: ${KAFKA_NOTIFICATION_DLT_TOPIC:otboo.notification.events.DLT}

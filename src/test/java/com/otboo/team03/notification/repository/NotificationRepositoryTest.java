@@ -46,7 +46,8 @@ class NotificationRepositoryTest {
         notificationRepository.save(newNotification(receiver, "두 번째"));
         notificationRepository.save(newNotification(receiver, "세 번째"));
 
-        List<Notification> firstPage = notificationRepository.findByReceiver_IdOrderByCreatedAtDescIdDesc(
+        List<Notification> firstPage = notificationRepository
+                .findByReceiver_IdAndReadAtIsNullOrderByCreatedAtDescIdDesc(
                 receiver.getId(),
                 PageRequest.of(0, 2)
         );
@@ -75,13 +76,39 @@ class NotificationRepositoryTest {
         notificationRepository.save(newNotification(receiver, "수신자 알림"));
         notificationRepository.save(newNotification(otherReceiver, "다른 알림"));
 
-        List<Notification> notifications = notificationRepository.findByReceiver_IdOrderByCreatedAtDescIdDesc(
+        List<Notification> notifications = notificationRepository
+                .findByReceiver_IdAndReadAtIsNullOrderByCreatedAtDescIdDesc(
                 receiver.getId(),
                 PageRequest.of(0, 20)
         );
 
         assertThat(notifications).hasSize(1);
         assertThat(notifications.get(0).getReceiver()).isEqualTo(receiver);
+    }
+
+    @Test
+    void 읽은_알림은_목록과_개수에서_제외한다() {
+        User receiver = userRepository.save(
+                new User("receiver-read@otboo.io", "encoded-password", "수신자")
+        );
+        Notification unreadNotification = notificationRepository.save(
+                newNotification(receiver, "읽지 않은 알림")
+        );
+        Notification readNotification = notificationRepository.save(
+                newNotification(receiver, "읽은 알림")
+        );
+        readNotification.markAsRead(java.time.Instant.parse("2026-01-01T00:00:00Z"));
+        notificationRepository.flush();
+
+        List<Notification> notifications = notificationRepository
+                .findByReceiver_IdAndReadAtIsNullOrderByCreatedAtDescIdDesc(
+                        receiver.getId(),
+                        PageRequest.of(0, 20)
+                );
+
+        assertThat(notifications).containsExactly(unreadNotification);
+        assertThat(notificationRepository.countByReceiver_IdAndReadAtIsNull(receiver.getId()))
+                .isEqualTo(1L);
     }
 
     private Notification newNotification(User receiver, String content) {

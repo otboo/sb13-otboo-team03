@@ -3,6 +3,7 @@ package com.otboo.team03.directmessage.config;
 import com.otboo.team03.directmessage.websocket.DirectMessageWebSocketInterceptor;
 import com.otboo.team03.realtime.websocket.WebSocketSessionTrackingHandlerDecoratorFactory;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
@@ -19,6 +20,9 @@ public class DirectMessageWebSocketConfig implements WebSocketMessageBrokerConfi
     private final DirectMessageWebSocketInterceptor directMessageWebSocketInterceptor;
     private final WebSocketSessionTrackingHandlerDecoratorFactory sessionDecoratorFactory;
 
+    @Value("${otboo.websocket.allowed-origins}")
+    private String[] allowedOrigins;
+
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
         registry.setApplicationDestinationPrefixes("/pub");
@@ -28,6 +32,7 @@ public class DirectMessageWebSocketConfig implements WebSocketMessageBrokerConfi
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
+                .setAllowedOriginPatterns(allowedOrigins)
                 .withSockJS();
     }
 

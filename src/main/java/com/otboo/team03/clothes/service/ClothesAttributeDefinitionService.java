@@ -19,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -88,9 +89,8 @@ public class ClothesAttributeDefinitionService {
                 .orElseThrow(ClothesAttributeDefinitionNotFoundException::new);
         if (request == null || (request.name() != null
                 && (request.name().isBlank() || request.name().length() > 255))
-                || (request.selectableValues() != null && (request.selectableValues().isEmpty()
-                || request.selectableValues().stream().anyMatch(value ->
-                        value == null || value.isBlank() || value.length() > 255)))) {
+                || (request.selectableValues() != null && request.additionalValues() != null)
+                || invalidOptions(request.selectableValues()) || invalidOptions(request.additionalValues())) {
             throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
         }
         if (request.selectableValues() != null) {
@@ -105,8 +105,22 @@ public class ClothesAttributeDefinitionService {
         // 검증이 끝난 뒤 변경한다. ID와 최초 생성 시각은 유지된다.
         // 정의와 함께 의상을 조립해 조회하는 다른 도메인에도 변경된 이름·선택지가 반영된다.
         // 정의의 배타 잠금과 의상 등록·수정의 공유 잠금으로 사용 여부 검사와 저장 사이의 경합을 막는다.
-        definition.update(request.name(), request.selectableValues());
+        List<String> values = request.selectableValues();
+        if (request.additionalValues() != null) {
+            values = new ArrayList<>(definition.getSelectableValues());
+            for (String option : request.additionalValues()) {
+                if (!values.contains(option)) {
+                    values.add(option);
+                }
+            }
+        }
+        definition.update(request.name(), values);
         return ClothesAttributeDefDto.from(definition);
+    }
+
+    private boolean invalidOptions(List<String> options) {
+        return options != null && (options.isEmpty() || options.stream()
+                .anyMatch(value -> value == null || value.isBlank() || value.length() > 255));
     }
 
     /**
