@@ -64,6 +64,8 @@ import static org.mockito.Mockito.when;
 class DirectMessageWebSocketIntegrationTest {
 
     private static final String ACCESS_TOKEN = "websocket-test-token";
+    private static final String DEPLOYED_FRONTEND_ORIGIN =
+            "https://d1urpq6rj5swu.cloudfront.net";
     private static final UUID SENDER_ID = UUID.fromString(
             "00000000-0000-0000-0000-000000000001"
     );
@@ -115,9 +117,11 @@ class DirectMessageWebSocketIntegrationTest {
         try {
             StompHeaders connectHeaders = new StompHeaders();
             connectHeaders.add("Authorization", "Bearer " + ACCESS_TOKEN);
+            WebSocketHttpHeaders httpHeaders = new WebSocketHttpHeaders();
+            httpHeaders.setOrigin(DEPLOYED_FRONTEND_ORIGIN);
             StompSession session = client.connectAsync(
                     "ws://localhost:" + port + "/ws/websocket",
-                    new WebSocketHttpHeaders(),
+                    httpHeaders,
                     connectHeaders,
                     new StompSessionHandlerAdapter() {}
             ).get(10, TimeUnit.SECONDS);
