@@ -8,7 +8,7 @@ import lombok.RequiredArgsConstructor;
 import java.util.List;
 import java.util.UUID;
 
-/** 이름 ASC, ID ASC를 조회 조건과 정렬에 동일하게 적용한다. */
+/** 목록 API의 커서 정렬과 사전 검색용 무정렬 제한 조회를 분리한다. */
 @RequiredArgsConstructor
 public class ClothesRepositoryCustomImpl implements ClothesRepositoryCustom {
     private final EntityManager entityManager;
@@ -29,6 +29,14 @@ public class ClothesRepositoryCustomImpl implements ClothesRepositoryCustom {
             query.setParameter("idAfter", idAfter);
         }
         return query.setMaxResults(fetchSize).getResultList();
+    }
+
+    @Override
+    public List<Clothes> findForStyleReferences(UUID ownerId, int fetchSize) {
+        return entityManager.createQuery("select c from Clothes c where c.owner.id = :ownerId", Clothes.class)
+                .setParameter("ownerId", ownerId)
+                .setMaxResults(fetchSize)
+                .getResultList();
     }
 
     @Override

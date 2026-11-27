@@ -40,12 +40,12 @@ class RecommendationInputReaderTest {
     @Test void 의상_81개이면_속성_조회와_DTO_생성_전에_종료한다() {
         UUID ownerId = UUID.randomUUID();
         Clothes untouched = mock(Clothes.class);
-        when(clothesRepository.findPage(ownerId, null, null, null, 81))
+        when(clothesRepository.findForStyleReferences(ownerId, 81))
                 .thenReturn(Collections.nCopies(81, untouched));
 
         assertThat(reader.readForStyleReferences(ownerId, 80)).isEmpty();
 
-        verify(clothesRepository).findPage(ownerId, null, null, null, 81);
+        verify(clothesRepository).findForStyleReferences(ownerId, 81);
         verifyNoMoreInteractions(clothesRepository);
         verifyNoInteractions(untouched, attributesRepository, weatherRepository, profileService);
     }
@@ -59,7 +59,7 @@ class RecommendationInputReaderTest {
         }).toList();
         var ids = clothes.stream().map(Clothes::getId).toList();
         var definition = new ClothesAttributeDefinition("색상", List.of("분홍"));
-        when(clothesRepository.findPage(ownerId, null, null, null, 81)).thenReturn(clothes);
+        when(clothesRepository.findForStyleReferences(ownerId, 81)).thenReturn(clothes);
         when(attributesRepository.findAllByClothes_IdIn(ids))
                 .thenReturn(List.of(new ClothesAttribute(clothes.get(0), definition, "분홍")));
 
