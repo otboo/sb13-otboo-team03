@@ -102,6 +102,13 @@ class WardrobeReferenceWarmupTest {
             fixture.publish(); verifyNoInteractions(fixture.reader, fixture.references);
         }
     }
+    @Test void 종료_후_커밋한_이벤트도_의상_저장_결과에_영향을_주지_않는다() {
+        try (var fixture = new Fixture(true)) {
+            fixture.context.getBean(WardrobeReferenceWarmup.class).close();
+            assertThatCode(fixture::publish).doesNotThrowAnyException();
+            verifyNoInteractions(fixture.reader, fixture.references);
+        }
+    }
 
     private static final class Fixture implements AutoCloseable {
         final AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();

@@ -96,4 +96,19 @@ class OllamaEmbeddingClientTest {
             fixture.server.verify();
         } finally { Thread.interrupted(); }
     }
+    @Test void 마지막_모델_확인_중_취소되면_벡터를_반환하지_않는다() {
+        expectTags(fixture.properties.modelDigest());
+        fixture.server.expect(requestTo("http://localhost:11434/api/embed")).andRespond(withSuccess(
+                JsonMapper.builder().build().writeValueAsString(Map.of("embeddings", List.of(RagTestFixtures.vector(0)))),
+                MediaType.APPLICATION_JSON));
+        fixture.server.expect(requestTo("http://localhost:11434/api/tags")).andRespond(request -> {
+            Thread.currentThread().interrupt();
+            return withSuccess(tags(fixture.properties.modelDigest()), MediaType.APPLICATION_JSON).createResponse(request);
+        });
+        try {
+            assertThatThrownBy(() -> fixture.client.embed(List.of("옷장"))).isInstanceOf(ReferenceRetrievalException.class);
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            fixture.server.verify();
+        } finally { Thread.interrupted(); }
+    }
 }
