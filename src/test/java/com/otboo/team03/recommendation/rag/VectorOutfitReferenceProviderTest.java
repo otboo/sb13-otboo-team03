@@ -3,7 +3,10 @@ package com.otboo.team03.recommendation.rag;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.system.CapturedOutput;
@@ -88,5 +91,69 @@ class VectorOutfitReferenceProviderTest {
             assertThatCode(() -> provider.prepare(input)).doesNotThrowAnyException();
             verifyNoInteractions(embedding, store);
         }
+    }
+    @Test void 요청_스레드의_인터럽트를_유지하고_공유_검색은_완료한다() throws Exception {
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(embedding.embed(anyList())).thenAnswer(call -> {
+            started.countDown(); release.await(5, TimeUnit.SECONDS); return List.of(vector(0));
+        });
+        when(store.search(anyString(), anyString(), any(), anyDouble(), anyInt()))
+                .thenReturn(List.of(new PgVectorReferenceStore.Hit("uniqlo-brown-black", .9)));
+        try (var provider = provider(Map.of())) {
+            var input = brownDressWithBlackBag();
+            provider.prepare(input);
+            assertThat(started.await(1, TimeUnit.SECONDS)).isTrue();
+            Thread.currentThread().interrupt();
+            try {
+                assertThat(provider.find(input)).isEmpty();
+                assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            } finally { Thread.interrupted(); }
+            release.countDown();
+            assertThat(provider.find(input)).hasSize(1);
+            verify(embedding).embed(anyList());
+        } finally { release.countDown(); }
+    }
+    @Test void 취소된_검색_작업은_벡터_DB에_접근하지_않는다() throws Exception {
+        when(embedding.embed(anyList())).thenAnswer(call -> {
+            Thread.currentThread().interrupt(); return List.of(vector(0));
+        });
+        try (var provider = provider(Map.of())) {
+            assertThat(provider.find(brownDressWithBlackBag())).isEmpty();
+            verifyNoInteractions(store);
+        }
+    }
+    @Test void 종료하면_대기_요청을_해제하고_늦게_도착한_검색_결과도_버린다() throws Exception {
+        var searching = new CountDownLatch(1);
+        var waiting = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var lookups = new AtomicInteger();
+        var worker = new AtomicReference<Thread>();
+        var caller = Executors.newSingleThreadExecutor();
+        when(embedding.embed(anyList())).thenReturn(List.of(vector(0)));
+        when(store.search(anyString(), anyString(), any(), anyDouble(), anyInt())).thenAnswer(call -> {
+            worker.set(Thread.currentThread()); searching.countDown();
+            // 종료 요청을 받더라도 이미 진행 중인 DB 호출이 뒤늦게 반환하는 상황.
+            try { release.await(5, TimeUnit.SECONDS); }
+            catch (InterruptedException ignored) { release.await(5, TimeUnit.SECONDS); }
+            return List.of(new PgVectorReferenceStore.Hit("uniqlo-brown-black", .9));
+        });
+        try (var provider = new VectorOutfitReferenceProvider(properties(Map.of()), catalog(), embedding, store,
+                new ReferenceCompatibility(), JsonMapper.builder().build(), null, () -> {
+                    if (lookups.incrementAndGet() == 2) waiting.countDown();
+                    return 0;
+                })) {
+            var input = brownDressWithBlackBag();
+            provider.prepare(input);
+            assertThat(searching.await(1, TimeUnit.SECONDS)).isTrue();
+            var result = caller.submit(() -> provider.find(input));
+            assertThat(waiting.await(1, TimeUnit.SECONDS)).isTrue();
+            provider.close();
+            assertThat(result.get(1, TimeUnit.SECONDS)).isEmpty();
+            release.countDown();
+            worker.get().join(2000);
+            assertThat(worker.get().isAlive()).isFalse();
+            verify(store).search(anyString(), anyString(), any(), anyDouble(), anyInt());
+        } finally { release.countDown(); caller.shutdownNow(); }
     }
 }

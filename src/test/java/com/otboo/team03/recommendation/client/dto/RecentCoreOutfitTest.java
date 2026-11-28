@@ -26,8 +26,11 @@ class RecentCoreOutfitTest {
     }
     @Test void 삭제되거나_다른_사용자_ID와_불완전_기록은_보내지_않는다() {
         var top = item(ClothesType.TOP); var bottom = item(ClothesType.BOTTOM); var dress = item(ClothesType.DRESS);
+        var anotherTop = item(ClothesType.TOP); var anotherBottom = item(ClothesType.BOTTOM);
         var input = new LlmRecommendationInput(new LlmRecommendationInput.WeatherContext(null, null, null, null, null, null, null),
-                3, Set.of(), List.of(top, bottom, dress), List.of(Set.of(top.clothesId(), UUID.randomUUID()),
+                3, Set.of(), List.of(top, bottom, dress, anotherTop, anotherBottom),
+                List.of(Set.of(top.clothesId(), anotherTop.clothesId()), Set.of(bottom.clothesId(), anotherBottom.clothesId()),
+                Set.of(), Set.of(top.clothesId(), UUID.randomUUID()),
                 Set.of(top.clothesId(), bottom.clothesId(), dress.clothesId()), Set.of(UUID.randomUUID()), Set.of(dress.clothesId())));
         assertThat(input.recentCoreOutfitIds()).containsExactly(Set.of(dress.clothesId()));
     }

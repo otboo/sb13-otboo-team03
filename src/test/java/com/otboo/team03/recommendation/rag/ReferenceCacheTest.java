@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.DataAccessResourceFailureException;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -124,10 +125,12 @@ class ReferenceCacheTest {
             verify(embeddings, times(2)).embed(anyList());
         }
     }
-    @Test void 다른_옷장의_검색이_두개_진행중이면_새_대기열을_만들지_않는다() throws Exception {
+    @ParameterizedTest
+    @ValueSource(ints = {2, 256})
+    void 캐시나_작업이_진행중인_검색으로_가득_차면_추가_검색을_거부한다(int cacheEntries) throws Exception {
         CountDownLatch release = new CountDownLatch(1);
         when(embeddings.embed(anyList())).thenAnswer(call -> { release.await(3, TimeUnit.SECONDS); return List.of(vector(0)); });
-        try (var provider = provider(Map.of("retrieval-timeout", "100ms"))) {
+        try (var provider = provider(Map.of("retrieval-timeout", "100ms", "cache-entries", cacheEntries))) {
             provider.find(brownDressWithBlackBag()); provider.find(blueShirtAndNavyPants());
             assertThat(provider.find(greyDressWithBlackOuter())).isEmpty();
             verify(embeddings, times(2)).embed(anyList());
