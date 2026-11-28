@@ -1,11 +1,16 @@
 package com.otboo.team03.profile.controller;
 
 import com.otboo.team03.global.exception.ErrorCode;
+import com.otboo.team03.global.exception.ErrorResponse;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.global.security.OtbooUserDetails;
 import com.otboo.team03.profile.dto.ProfileDto;
 import com.otboo.team03.profile.dto.ProfileUpdateRequest;
 import com.otboo.team03.profile.service.ProfileService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -29,6 +34,13 @@ public class ProfileController {
   private final ProfileService profileService;
 
   // 프로필 단건 조회(GET)
+  @Operation(
+      responses = {
+          @ApiResponse(responseCode = "200", description = "프로필 조회 성공",
+              content = @Content(schema = @Schema(implementation = ProfileDto.class))),
+          @ApiResponse(responseCode = "400", description = "프로필 조회 실패",
+              content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+      })
   @GetMapping
   public ResponseEntity<ProfileDto> getProfile(
       @PathVariable UUID userId,
@@ -45,6 +57,13 @@ public class ProfileController {
   }
 
   // 프로필 수정(PATCH)
+  @Operation(
+      responses = {
+          @ApiResponse(responseCode = "200", description = "프로필 업데이트 성공",
+              content = @Content(schema = @Schema(implementation = ProfileDto.class))),
+          @ApiResponse(responseCode = "400", description = "프로필 업데이트 실패",
+              content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+      })
   @PatchMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ResponseEntity<ProfileDto> updateProfile(
       @PathVariable UUID userId,
