@@ -11,12 +11,14 @@ import com.otboo.team03.recommendation.client.GroqOutfitClient;
 import com.otboo.team03.recommendation.client.dto.LlmOutfitDecision;
 import com.otboo.team03.recommendation.client.dto.LlmRecommendationInput;
 import com.otboo.team03.recommendation.repository.RedisRecommendationHistoryRepository;
+import com.otboo.team03.recommendation.rag.OutfitReferenceProvider;
 import com.otboo.team03.support.PostgresTestSupport;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
 import com.otboo.team03.weather.entity.*;
 import com.otboo.team03.weather.repository.WeatherRepository;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -71,6 +73,7 @@ class LlmRecommendationIntegrationTest extends PostgresTestSupport {
     @MockitoBean private JwtRegistry jwtRegistry;
     @MockitoBean private ImageStorage imageStorage;
     @MockitoBean private GroqOutfitClient client;
+    @MockitoBean private OutfitReferenceProvider references;
     private Fixture cleanupFixture;
 
     @AfterEach
@@ -95,7 +98,7 @@ class LlmRecommendationIntegrationTest extends PostgresTestSupport {
     }
 
     @Test
-    void 사전에_없는_제목과_속성으로_기존_추천과_다른_원피스를_선택하고_최종_결과만_기록한다() throws Exception {
+    void 모든_제목과_속성을_전달하고_ID_응답으로_선택한_원피스와_최종_이력을_기록한다() throws Exception {
         Fixture fixture = fixture();
         when(client.serializeInput(any())).thenAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
@@ -108,15 +111,13 @@ class LlmRecommendationIntegrationTest extends PostgresTestSupport {
             });
             assertThat(input.temperatureSensitivity()).isEqualTo(3);
             assertThat(input.weather().precipitationType()).isEqualTo(PrecipitationType.RAIN);
+            assertThat(input.weather().forecastDate()).isEqualTo(LocalDate.of(2026, 11, 21));
             return "input";
         });
         when(client.recommend(any(), eq("input"))).thenAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            return new LlmOutfitDecision(List.of(fixture.dressId()), List.of(
-                    new LlmOutfitDecision.Analysis(fixture.dressId(), List.of(
-                            new LlmOutfitDecision.Feature("비침", "있음", "비침 있음", LlmOutfitDecision.Source.ATTRIBUTE),
-                            new LlmOutfitDecision.Feature("기장", "크롭", "크롭", LlmOutfitDecision.Source.TITLE)))
-            ), "제목과 원단 특징을 고려한 코디입니다.");
+            LlmRecommendationInput input = invocation.getArgument(0);
+            return new LlmOutfitDecision(List.of(fixture.dressId()));
         });
 
         mvc.perform(get("/api/recommendations").header("Authorization", "Bearer " + token(fixture.ownerId()))
@@ -124,9 +125,11 @@ class LlmRecommendationIntegrationTest extends PostgresTestSupport {
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.clothes.length()").value(1))
+                .andExpect(jsonPath("$.clothesIds").doesNotExist())
+                .andExpect(jsonPath("$.analyses").doesNotExist())
                 .andExpect(jsonPath("$.clothes[0].clothesId").value(fixture.dressId().toString()))
                 .andExpect(jsonPath("$.clothes[0].attributes[0].definitionName").value("원단 특징"));
-        assertThat(history.find(fixture.ownerId(), fixture.weatherId())).containsExactly(fixture.dressId());
+        assertThat(history.findRecent(fixture.ownerId(), fixture.weatherId())).containsExactly(Set.of(fixture.dressId()));
         verify(client, times(1)).recommend(any(), anyString());
     }
 
@@ -142,24 +145,23 @@ class LlmRecommendationIntegrationTest extends PostgresTestSupport {
                 .andExpect(jsonPath("$.clothes.length()").value(2))
                 .andExpect(jsonPath("$.clothes[0].clothesId").value(fixture.topId().toString()))
                 .andExpect(jsonPath("$.clothes[1].clothesId").value(fixture.bottomId().toString()));
-        assertThat(history.find(fixture.ownerId(), fixture.weatherId()))
-                .containsExactlyInAnyOrder(fixture.topId(), fixture.bottomId());
+        assertThat(history.findRecent(fixture.ownerId(), fixture.weatherId()))
+                .containsExactly(Set.of(fixture.topId(), fixture.bottomId()));
     }
 
     @Test
     void 다른_사용자_의상_ID를_반환하면_기존_추천으로_복구한다() throws Exception {
         Fixture fixture = fixture();
         when(client.serializeInput(any())).thenReturn("input");
-        when(client.recommend(any(), anyString())).thenReturn(new LlmOutfitDecision(
-                List.of(fixture.otherDressId()), List.of(new LlmOutfitDecision.Analysis(fixture.otherDressId(), List.of())), "잘못된 선택"));
+        when(client.recommend(any(), anyString())).thenReturn(new LlmOutfitDecision(List.of(fixture.otherDressId())));
 
         mvc.perform(get("/api/recommendations").header("Authorization", "Bearer " + token(fixture.ownerId()))
                         .param("weatherId", fixture.weatherId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.clothes.length()").value(2))
                 .andExpect(jsonPath("$.clothes[0].clothesId").value(fixture.topId().toString()));
-        assertThat(history.find(fixture.ownerId(), fixture.weatherId()))
-                .containsExactlyInAnyOrder(fixture.topId(), fixture.bottomId());
+        assertThat(history.findRecent(fixture.ownerId(), fixture.weatherId()))
+                .containsExactly(Set.of(fixture.topId(), fixture.bottomId()));
     }
 
     private Fixture fixture() {

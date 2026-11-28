@@ -112,6 +112,14 @@ tasks.named('test') {
     finalizedBy tasks.named('jacocoTestReport')
 }
 
+tasks.register('indexOutfitReferences', JavaExec) {
+    group = 'application'
+    description = 'Index the reviewed style summaries into the separate pgvector database (no Groq calls).'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.otboo.team03.recommendation.rag.ReferenceIndexCommand'
+    args '--otboo.recommendation.rag.read-timeout=120s'
+}
+
 jacoco {
     toolVersion = '0.8.14'
 }

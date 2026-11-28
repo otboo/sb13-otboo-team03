@@ -172,6 +172,20 @@ class ClothesCreateIntegrationTest {
     }
 
     @Test
+    @DisplayName("목록 API는 사전 검색과 별개로 이름 ASC, ID ASC 정렬을 유지한다")
+    void listKeepsNameAndIdOrdering() {
+        var created = java.util.stream.Stream.of("z-shirt", "a-shirt", "a-shirt")
+                .map(name -> service.create(new ClothesCreateRequest(owner.getId(), name, ClothesType.TOP,
+                        List.of(new ClothesAttributeDto(color.getId(), "파랑"))))).toList();
+        var expectedIds = created.stream().sorted(java.util.Comparator.comparing(ClothesDto::name)
+                        .thenComparing(dto -> dto.id().toString()))
+                .map(ClothesDto::id).toList();
+
+        assertThat(service.findAll(owner.getId(), 10, null, null, null).data())
+                .extracting(ClothesDto::id).containsExactlyElementsOf(expectedIds);
+    }
+
+    @Test
     @DisplayName("같은 이름의 의상도 커서로 중복 없이 이어 조회하고 타입 필터를 적용한다")
     void cursorPagesWithSameNameAndFilter() {
         ClothesDto first = service.create(request());

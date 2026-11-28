@@ -27,6 +27,29 @@ services:
       timeout: 5s
       retries: 5
 
+  reference-db:
+    image: pgvector/pgvector:0.8.7-pg17
+    environment:
+      POSTGRES_DB: outfit_references
+      POSTGRES_USER: ${RAG_POSTGRES_USER:-outfit_references}
+      POSTGRES_PASSWORD: ${RAG_POSTGRES_PASSWORD:-outfit_reference_local}
+    ports:
+      - "127.0.0.1:${RAG_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - reference_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:0.40.18
+    ports:
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
   app:
     build:
       context: .
@@ -41,6 +64,10 @@ services:
       POSTGRES_PORT: 5432
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      OLLAMA_BASE_URL: http://ollama:11434
+      RAG_JDBC_URL: jdbc:postgresql://reference-db:5432/outfit_references
+      RAG_POSTGRES_USER: ${RAG_POSTGRES_USER:-outfit_references}
+      RAG_POSTGRES_PASSWORD: ${RAG_POSTGRES_PASSWORD:-outfit_reference_local}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN}
@@ -64,3 +91,5 @@ services:
 
 volumes:
   postgres_data:
+  reference_data:
+  ollama_data:

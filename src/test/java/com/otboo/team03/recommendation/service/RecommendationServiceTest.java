@@ -22,6 +22,8 @@ import com.otboo.team03.recommendation.repository.RedisRecommendationHistoryRepo
 import com.otboo.team03.weather.entity.Weather;
 import com.otboo.team03.weather.exception.WeatherNotFoundException;
 import com.otboo.team03.weather.repository.WeatherRepository;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -128,7 +130,7 @@ class RecommendationServiceTest {
         List<Clothes> clothes = List.of(firstDress, alternativeDress);
         when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(clothes);
         AtomicReference<Set<UUID>> savedIds = new AtomicReference<>(Set.of());
-        when(historyRepository.find(userId, weatherId)).thenAnswer(invocation -> savedIds.get());
+        when(historyRepository.findRecent(userId, weatherId)).thenAnswer(invocation -> savedIds.get().isEmpty() ? List.of() : List.of(savedIds.get()));
         doAnswer(invocation -> {
             Set<UUID> ids = invocation.getArgument(2);
             savedIds.set(Set.copyOf(ids));
@@ -148,7 +150,7 @@ class RecommendationServiceTest {
                 Map.of(firstDress.getId(), UNKNOWN, alternativeDress.getId(), UNKNOWN),
                 Map.of(firstDress.getId(), SleeveLength.UNKNOWN, alternativeDress.getId(), SleeveLength.UNKNOWN),
                 28.0, 3, Set.of(firstDress.getId()));
-        verify(historyRepository, times(2)).find(userId, weatherId);
+        verify(historyRepository, times(2)).findRecent(userId, weatherId);
         verify(historyRepository).save(userId, weatherId, Set.of(firstDress.getId()));
         verify(historyRepository).save(userId, weatherId, Set.of(alternativeDress.getId()));
     }
@@ -159,7 +161,7 @@ class RecommendationServiceTest {
         when(profileService.getTemperatureSensitivity(userId)).thenReturn(null);
         when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(List.of());
         Set<UUID> previousIds = Set.of(UUID.randomUUID());
-        when(historyRepository.find(userId, weatherId)).thenReturn(previousIds);
+        when(historyRepository.findRecent(userId, weatherId)).thenReturn(List.of(previousIds));
         when(algorithm.recommend(List.of(), Map.of(), Map.of(), 22.0, 3, previousIds)).thenReturn(List.of());
 
         var result = service.recommend(weatherId, userId);
@@ -218,6 +220,46 @@ class RecommendationServiceTest {
         Weather weather = mock(Weather.class);
         when(weatherRepository.findById(weatherId)).thenReturn(Optional.of(weather));
         when(weather.getTemperature()).thenReturn(temperature);
+        when(weather.getForecastAt()).thenReturn(Instant.parse("2026-04-10T00:00:00Z"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "2026-02-28T14:59:59Z,2026-02-28",
+            "2026-02-28T15:00:00Z,2026-03-01",
+            "2026-12-31T14:59:59Z,2026-12-31",
+            "2026-12-31T15:00:00Z,2027-01-01"
+    })
+    void 한국_시간의_예보_대상_날짜와_등록_색상을_그대로_전달한다(
+            Instant forecastAt, LocalDate expectedDate) {
+        givenTemperature(17.0);
+        Weather weather = weatherRepository.findById(weatherId).orElseThrow();
+        when(weather.getForecastAt()).thenReturn(forecastAt);
+        when(profileService.getTemperatureSensitivity(userId)).thenReturn(3);
+        Clothes dress = mock(Clothes.class);
+        UUID dressId = UUID.randomUUID();
+        when(dress.getId()).thenReturn(dressId);
+        when(dress.getName()).thenReturn("분홍 원피스");
+        when(dress.getType()).thenReturn(ClothesType.DRESS);
+        when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(List.of(dress));
+        var color = new ClothesAttribute(dress,
+                new ClothesAttributeDefinition("색상", List.of("파랑")), "파랑");
+        when(clothesAttributeRepository.findAllByClothes_IdIn(List.of(dressId))).thenReturn(List.of(color));
+        RecommendationInputReader reader = new RecommendationInputReader(
+                clothesRepository, clothesAttributeRepository, weatherRepository, profileService,
+                attributeAnalyzer, attributeEstimator, sleeveAnalyzer);
+
+        var input = reader.read(weatherId, userId).llmInput(Set.of(), List.of());
+
+        assertThat(input.weather().forecastDate()).isEqualTo(expectedDate);
+        assertThat(input.adjustedTemperature()).isEqualTo(17.0);
+        assertThat(input.wardrobe()).singleElement().satisfies(item -> {
+            assertThat(item.name()).isEqualTo("분홍 원피스");
+            assertThat(item.attributes()).singleElement().satisfies(attribute -> {
+                assertThat(attribute.name()).isEqualTo("색상");
+                assertThat(attribute.value()).isEqualTo("파랑");
+            });
+        });
     }
 
     @Test
@@ -448,6 +490,25 @@ class RecommendationServiceTest {
         when(clothes.getId()).thenReturn(UUID.randomUUID());
         when(clothes.getType()).thenReturn(type);
         return clothes;
+    }
+
+    @Test
+    void 직전뿐_아니라_최근_기본코디를_LLM에_전달한다() {
+        givenTemperature(22.0);
+        when(profileService.getTemperatureSensitivity(userId)).thenReturn(3);
+        Clothes a = candidate(ClothesType.DRESS), b = candidate(ClothesType.DRESS), c = candidate(ClothesType.DRESS);
+        UUID aId = a.getId(), bId = b.getId(), cId = c.getId();
+        when(clothesRepository.findAllByOwner_Id(userId)).thenReturn(List.of(a, b, c));
+        when(historyRepository.findRecent(userId, weatherId)).thenReturn(List.of(Set.of(aId), Set.of(bId), Set.of(aId)));
+        when(algorithm.recommend(anyList(), anyMap(), anyMap(), eq(22.0), eq(3), eq(Set.of(aId)))).thenReturn(List.of(c));
+        when(llmRecommender.recommend(any())).thenAnswer(call -> {
+            com.otboo.team03.recommendation.client.dto.LlmRecommendationInput input = call.getArgument(0);
+            assertThat(input.previousOutfitIds()).isEqualTo(Set.of(aId));
+            assertThat(input.recentCoreOutfitIds()).containsExactly(Set.of(aId), Set.of(bId));
+            return Optional.empty();
+        });
+        when(clothesService.toClothesDto(c, List.of())).thenReturn(new ClothesDto(cId, userId, "다른 원피스", null, ClothesType.DRESS, List.of()));
+        assertThat(service.recommend(weatherId, userId).clothes()).extracting(item -> item.clothesId()).containsExactly(c.getId());
     }
 
     @ParameterizedTest

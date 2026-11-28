@@ -1,35 +1,42 @@
 package com.otboo.team03.recommendation.client;
 
 import com.otboo.team03.recommendation.config.RecommendationLlmProperties;
-import com.otboo.team03.recommendation.client.dto.LlmOutfitDecision;
 import com.otboo.team03.recommendation.client.dto.LlmRecommendationInput;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
-/** 모델 지시문과 자유 속성 응답 스키마를 구성한다. HTTP 전송은 클라이언트가 담당한다. */
+/** 모델 지시문과 소유 의상 ID 응답 스키마를 구성한다. HTTP 전송은 클라이언트가 담당한다. */
 @Component
 public class GroqOutfitRequestFactory {
 
     private final RecommendationLlmProperties properties;
     private final String systemPrompt;
+    private final String referencePrompt;
 
     public GroqOutfitRequestFactory(RecommendationLlmProperties properties,
             @Value("classpath:prompts/outfit-recommendation-system.txt") Resource promptResource) throws IOException {
         this.properties = properties;
         this.systemPrompt = promptResource.getContentAsString(StandardCharsets.UTF_8);
+        this.referencePrompt = new ClassPathResource("prompts/outfit-reference-guidance.txt")
+                .getContentAsString(StandardCharsets.UTF_8);
     }
 
-    public Map<String, Object> create(LlmRecommendationInput input, String serializedInput) {
+    public Map<String, Object> create(LlmRecommendationInput input, String serializedInput, String serializedReferences) {
+        boolean hasReferences = serializedReferences != null && !serializedReferences.isBlank();
+        List<Map<String, String>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "system", "content", systemPrompt + (hasReferences ? "\n" + referencePrompt : "")));
+        messages.add(Map.of("role", "user", "content", serializedInput));
+        if (hasReferences) messages.add(Map.of("role", "user", "content", serializedReferences));
         return Map.of(
                 "model", properties.model(),
-                "messages", List.of(Map.of("role", "system", "content", systemPrompt),
-                        Map.of("role", "user", "content", serializedInput)),
+                "messages", messages,
                 "reasoning_effort", "low",
                 "max_completion_tokens", properties.maxCompletionTokens(),
                 "response_format", Map.of("type", "json_schema", "json_schema",
@@ -37,24 +44,9 @@ public class GroqOutfitRequestFactory {
     }
 
     private Map<String, Object> schema(LlmRecommendationInput input) {
-        Map<String, Object> text = Map.of("type", "string");
-        Map<String, Object> evidence = Map.of(
-                "type", "string",
-                "description", "먼저 이 분석의 clothesId와 같은 wardrobe 항목을 찾고, 그 의상의 원문에서만 그대로 복사한 연속된 문구. "
-                        + "source가 TITLE이면 의상의 name, ATTRIBUTE이면 attributes[].value 중 하나에서 인용한다. "
-                        + "같은 코디의 다른 의상에 있는 문구도 가져오지 않는다. 아우터의 방수 속성은 다른 상의의 근거가 아니다. "
-                        + "원문에 없는 속성 이름이나 구분 기호, JSON 구문을 덧붙이지 않는다. "
-                        + "예: 속성이 {name: 두께, value: 얇음}이면 evidence는 얇음이며 두께: 얇음이 아니다.");
         Map<String, Object> clothesId = Map.of("type", "string", "enum", input.wardrobe().stream()
                 .map(item -> item.clothesId().toString()).toList());
-        Map<String, Object> feature = object(Map.of("name", text, "value", text, "evidence", evidence,
-                "source", Map.of("type", "string", "enum", Arrays.stream(LlmOutfitDecision.Source.values()).map(Enum::name).toList())),
-                List.of("name", "value", "evidence", "source"));
-        Map<String, Object> analysis = object(Map.of("clothesId", clothesId,
-                "features", Map.of("type", "array", "items", feature)), List.of("clothesId", "features"));
-        return object(Map.of("clothesIds", Map.of("type", "array", "items", clothesId),
-                        "analyses", Map.of("type", "array", "items", analysis), "reason", text),
-                List.of("clothesIds", "analyses", "reason"));
+        return object(Map.of("clothesIds", Map.of("type", "array", "items", clothesId)), List.of("clothesIds"));
     }
 
     private Map<String, Object> object(Map<String, Object> properties, List<String> required) {
